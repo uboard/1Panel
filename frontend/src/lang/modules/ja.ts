@@ -216,7 +216,7 @@ const message = {
             logout: 'ログアウト',
             agreeTitle: '合意',
             agreeContent:
-                'あなたの正当な権利と利益をよりよく保護するために、次の契約とラコを読んで同意してください。<a href = "https://www.fit2cloud.com/legal/licenses.html" target="_blank">コミュニティライセンス契約</a>＆raquo;',
+                'あなたの正当な権利と利益をよりよく保護するために、次の契約とラコを読んで同意してください。',
             passkeyFailed: 'パスキーでのログインに失敗しました。再試行してください',
             passkeyNotSupported: '現在のブラウザまたは環境はパスキーに対応していません',
             passkeyToPassword: 'パスキーが使えませんか？パスワードでログインしてください',

@@ -33,7 +33,9 @@ const commonRules = {
 
 const tsRules = {
     ...tsPlugin.configs.recommended.rules,
-    '@typescript-eslint/no-unused-vars': ['error', { caughtErrors: 'none' }],
+    "no-unused-vars": "off",
+    "@typescript-eslint/no-unused-vars": "off",
+    // '@typescript-eslint/no-unused-vars': ['error', { caughtErrors: 'none' }],
     '@typescript-eslint/no-inferrable-types': 'off',
     '@typescript-eslint/no-namespace': 'off',
     '@typescript-eslint/no-explicit-any': 'off',

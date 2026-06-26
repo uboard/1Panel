@@ -84,11 +84,7 @@
                             <template #default>
                                 <span class="agree-title">
                                     {{ $t('commons.button.agree') }}
-                                    <a
-                                        class="agree"
-                                        href="https://www.fit2cloud.com/legal/licenses.html"
-                                        target="_blank"
-                                    >
+                                    <a class="agree">
                                         {{ $t('commons.login.licenseHelper') }}
                                     </a>
                                 </span>
@@ -198,11 +194,7 @@
                                 <template #default>
                                     <span class="agree-title">
                                         {{ $t('commons.button.agree') }}
-                                        <a
-                                            class="agree"
-                                            href="https://www.fit2cloud.com/legal/licenses.html"
-                                            target="_blank"
-                                        >
+                                        <a class="agree">
                                             {{ $t('commons.login.licenseHelper') }}
                                         </a>
                                     </span>
@@ -725,6 +717,7 @@ onMounted(async () => {
 
 :deep(.el-input__inner) {
     -webkit-box-shadow: 0 0 0px 1000px transparent inset !important;
+    box-shadow: 0 0 0px 1000px transparent inset !important;
     transition: background-color 50000s ease-in-out 0s;
 }
 

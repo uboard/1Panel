@@ -23,8 +23,6 @@ import (
 
 type LogService struct{}
 
-const logs = "https://resource.fit2cloud.com/installation-log.sh"
-
 type ILogService interface {
 	CreateLoginLog(operation model.LoginLog) error
 	PageLoginLog(ctx *gin.Context, search dto.SearchLgLogWithPage) (int64, interface{}, error)
@@ -119,7 +117,7 @@ func (u *LogService) CleanLogs(logtype string) error {
 }
 
 func writeLogs(version string) {
-	_ = runRemoteShellScript(logs, "1p", "upgrade", version)
+	return;
 }
 
 func runRemoteShellScript(url string, args ...string) error {

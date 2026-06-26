@@ -29,10 +29,6 @@
                             <span>
                                 {{ $t(expiresAlertKey, [expiresInfo]) }}
                             </span>
-                            <span @click="goXpack" class="flex items-center justify-center gap-0.5 jump">
-                                <el-icon><Position /></el-icon>
-                                {{ $t('firewall.quickJump') }}
-                            </span>
                         </div>
                     </div>
                 </template>
@@ -158,15 +154,6 @@ function loadExpiresAlert() {
     const diffSeconds = Math.abs(expires - currentTimestamp);
     expiresInfo.value = Math.floor(diffSeconds / daySeconds) + 1;
     expiresAlertVisible.value = expiresInfo.value <= 15;
-}
-
-function goXpack() {
-    if (isIntl.value && !isEnterprise.value) {
-        window.open('https://1panel.hk/pricing', '_blank', 'noopener,noreferrer');
-        return;
-    }
-    const url = isEnterprise.value ? 'https://1panel.cn/enterprise.html' : 'https://www.lxware.cn/1panel';
-    window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function handleExpiresAlertClose() {

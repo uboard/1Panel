@@ -25,12 +25,12 @@ html {
 .fade-transform-enter-from {
     opacity: 0;
     transition: all 0.2s;
-    transform: translateX(-30px);
+    // transform: translateX(-30px);
 }
 .fade-transform-leave-to {
     opacity: 0;
     transition: all 0.2s;
-    transform: translateX(30px);
+    // transform: translateX(30px);
 }
 
 /* Breadcrumb */
@@ -389,4 +389,8 @@ html {
             align-items: center;
         }
     }
+}
+
+.border-box {
+    box-sizing: border-box;
 }

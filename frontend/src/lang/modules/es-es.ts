@@ -217,7 +217,7 @@ const message = {
             logout: 'Cerrar sesión',
             agreeTitle: 'Acuerdo',
             agreeContent:
-                'Para proteger mejor sus derechos e intereses legítimos, por favor lea y acepte el siguiente acuerdo &laquo; <a href = "https://www.fit2cloud.com/legal/licenses.html" target = "_blank" > Acuerdo de Licencia Comunitaria </a> &raquo;',
+                'Para proteger mejor sus derechos e intereses legítimos, por favor lea y acepte el siguiente acuerdo &laquo; ',
             passkeyFailed: 'El inicio de sesión con Passkey falló, inténtalo de nuevo',
             passkeyNotSupported: 'El navegador o entorno actual no admite Passkey',
             passkeyToPassword: '¿Tienes problemas para usar una passkey? Usa la contraseña en su lugar',

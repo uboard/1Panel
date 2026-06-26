@@ -19,7 +19,7 @@
             </template>
         </el-menu-item>
 
-        <el-menu-item v-else-if="subItem.path === '/xpack/upage'" :index="''" @click="goUpage">
+        <el-menu-item v-else-if="subItem.path === '/xpack/upage'" :index="''">
             <el-icon v-if="subItem.meta?.icon && level === 0">
                 <SvgIcon :iconName="subItem.meta?.icon as string" />
             </el-icon>
@@ -46,10 +46,6 @@ import { RouteRecordRaw } from 'vue-router';
 import SvgIcon from '@/components/svg-icon/svg-icon.vue';
 
 defineProps<{ menuList: RouteRecordRaw[]; level?: number }>();
-
-const goUpage = () => {
-    window.open('https://www.lxware.cn/upage', '_blank', 'noopener,noreferrer');
-};
 </script>
 
 <style scoped lang="scss">

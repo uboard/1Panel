@@ -17,7 +17,7 @@
                     <div class="flex justify-center">
                         <SystemUpgrade class="upgrade" />
                     </div>
-                    <div class="flex w-full justify-center my-5 flex-wrap md:flex-row gap-4">
+                    <!-- <div class="flex w-full justify-center my-5 flex-wrap md:flex-row gap-4">
                         <el-link @click="toDoc" class="system-link">
                             <el-icon><Document /></el-icon>
                             <span>{{ $t('setting.doc2') }}</span>
@@ -34,7 +34,7 @@
                             <svg-icon iconName="p-star"></svg-icon>
                             <span>{{ $t('setting.star') }}</span>
                         </el-link>
-                    </div>
+                    </div> -->
                 </div>
             </template>
         </LayoutContent>
@@ -51,18 +51,18 @@ const { docsUrl, themeConfig } = useGlobalStore();
 const loading = ref();
 const logoLoadFailed = ref(false);
 
-const toDoc = () => {
-    window.open(docsUrl.value, '_blank', 'noopener,noreferrer');
-};
-const toGithub = () => {
-    window.open('https://github.com/1Panel-dev/1Panel', '_blank', 'noopener,noreferrer');
-};
-const toIssue = () => {
-    window.open('https://github.com/1Panel-dev/1Panel/issues', '_blank', 'noopener,noreferrer');
-};
-const toGithubStar = () => {
-    window.open('https://github.com/1Panel-dev/1Panel', '_blank', 'noopener,noreferrer');
-};
+// const toDoc = () => {
+//     window.open(docsUrl.value, '_blank', 'noopener,noreferrer');
+// };
+// const toGithub = () => {
+//     window.open('https://github.com/1Panel-dev/1Panel', '_blank', 'noopener,noreferrer');
+// };
+// const toIssue = () => {
+//     window.open('https://github.com/1Panel-dev/1Panel/issues', '_blank', 'noopener,noreferrer');
+// };
+// const toGithubStar = () => {
+//     window.open('https://github.com/1Panel-dev/1Panel', '_blank', 'noopener,noreferrer');
+// };
 
 onMounted(() => {
     getSystemAvailable();

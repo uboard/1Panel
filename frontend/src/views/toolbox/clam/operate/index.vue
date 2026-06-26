@@ -132,7 +132,7 @@
                             <el-checkbox v-model="dialogData.rowData!.hasAlert" :label="$t('xpack.alert.isAlert')" />
                             <span class="input-help">{{ $t('xpack.alert.clamHelper') }}</span>
                         </el-form-item>
-                        <el-form-item
+                        <!-- <el-form-item
                             v-if="(dialogData.rowData!.hasAlert || dialogData.rowData!.hasSpec) && !isProductPro"
                         >
                             <span class="input-help logText">
@@ -141,7 +141,7 @@
                                     {{ $t('license.levelUpPro') }}
                                 </el-link>
                             </span>
-                        </el-form-item>
+                        </el-form-item> -->
                         <el-form-item
                             :label="$t('xpack.alert.alertMethod')"
                             v-if="dialogData.rowData!.hasAlert"

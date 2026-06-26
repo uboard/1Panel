@@ -211,7 +211,7 @@ const message = {
             errorAgree: '請點選同意社區軟體許可協議',
             agreeTitle: '服務協議及隱私保護',
             agreeContent:
-                '為了更好的保障您的合法權益，請您閱讀並同意以下協議 &laquo; <a href="https://www.fit2cloud.com/legal/licenses.html" target="_blank"> 飛致雲社區軟體許可協議 </a> &raquo;',
+                '為了更好的保障您的合法權益，請您閱讀並同意以下協議 &laquo; ',
             logout: '登出',
             passkeyFailed: '通行金鑰登入失敗，請重試',
             passkeyNotSupported: '目前瀏覽器或環境不支援通行金鑰',

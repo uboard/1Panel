@@ -1,11 +1,11 @@
 <template>
     <div>
         <LayoutContent title="vLLM">
-            <template #leftToolBar>
+            <!-- <template #leftToolBar>
                 <el-button type="primary" @click="goLicense">
                     {{ $t('license.levelUpPro') }}
                 </el-button>
-            </template>
+            </template> -->
             <template #prompt>
                 <el-alert type="info" :closable="false">
                     <template #title>

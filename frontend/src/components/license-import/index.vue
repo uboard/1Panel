@@ -55,9 +55,6 @@
                 >
                     {{ $t('commons.button.power') }}
                 </el-button>
-                <div class="mt-3 mb-5">
-                    <el-button text type="primary" @click="toEdition">{{ $t('license.knowMorePro') }}</el-button>
-                </div>
             </div>
         </DialogPro>
     </div>
@@ -117,14 +114,6 @@ const handleExceed: UploadProps['onExceed'] = (files) => {
     const file = files[0] as UploadRawFile;
     file.uid = genFileId();
     uploadRef.value!.handleStart(file);
-};
-
-const toEdition = () => {
-    if (!isIntl.value) {
-        window.open('https://1panel.cn/versions.html' + '', '_blank', 'noopener,noreferrer');
-    } else {
-        window.open('https://1panel.pro/pricing' + '', '_blank', 'noopener,noreferrer');
-    }
 };
 
 const submit = async () => {

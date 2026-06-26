@@ -124,24 +124,25 @@ onMounted(async () => {
     }
 });
 
-const FIXED_WIDTH = 1000;
+const FIXED_WIDTH = 500;
 const FIXED_HEIGHT = 415;
-const useWindowSize = () => {
-    const width = ref(window.innerWidth);
-    const height = ref(window.innerHeight);
+// const useWindowSize = () => {
+//     const width = ref(window.innerWidth);
+//     const height = ref(window.innerHeight);
 
-    const updateSize = () => {
-        width.value = window.innerWidth;
-        height.value = window.innerHeight;
-    };
+//     const updateSize = () => {
+//         width.value = window.innerWidth;
+//         height.value = window.innerHeight;
+//     };
 
-    onMounted(() => window.addEventListener('resize', updateSize));
-    onUnmounted(() => window.removeEventListener('resize', updateSize));
+//     onMounted(() => window.addEventListener('resize', updateSize));
+//     onUnmounted(() => window.removeEventListener('resize', updateSize));
 
-    return { width, height };
-};
-const { width } = useWindowSize();
-const showLogo = computed(() => width.value >= FIXED_WIDTH);
+//     return { width, height };
+// };
+// const { width } = useWindowSize();
+// const showLogo = computed(() => width.value >= FIXED_WIDTH);
+const showLogo = ref(false);
 const containerWidth = computed(() => `${FIXED_WIDTH}px`);
 const containerHeight = computed(() => `${FIXED_HEIGHT}px`);
 const loginGridStyle = computed(() => ({
@@ -149,7 +150,7 @@ const loginGridStyle = computed(() => ({
 }));
 const loginFormClass = computed(() => {
     return showLogo.value
-        ? 'flex items-center justify-center p-4 min-w-0'
-        : 'flex items-center justify-center p-4 w-full min-w-0';
+        ? 'flex items-center justify-center p-4 min-w-0 border-box'
+        : 'flex items-center justify-center p-4 w-full min-w-0 border-box';
 });
 </script>

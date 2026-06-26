@@ -217,7 +217,7 @@ const message = {
             logout: 'Log keluar',
             agreeTitle: 'Agreement',
             agreeContent:
-                'Untuk melindungi hak dan kepentingan sah anda dengan lebih baik, sila baca dan setuju dengan perjanjian berikut &laquo; <a href = "https://www.fit2cloud.com/legal/licenses.html" target = "_blank" > Perjanjian Lesen Komuniti </a> &raquo;',
+                'Untuk melindungi hak dan kepentingan sah anda dengan lebih baik, sila baca dan setuju dengan perjanjian berikut &laquo; ',
             passkeyFailed: 'Log masuk Passkey gagal, sila cuba lagi',
             passkeyNotSupported: 'Pelayar atau persekitaran semasa tidak menyokong passkey',
             passkeyToPassword: 'Ada masalah menggunakan passkey? Gunakan kata laluan sahaja',
