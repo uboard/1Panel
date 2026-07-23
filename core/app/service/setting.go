@@ -101,6 +101,10 @@ func (u *SettingService) GetSettingInfo() (*dto.SettingInfo, error) {
 		info.Edition = "cn"
 		_ = settingRepo.UpdateOrCreate("Edition", info.Edition)
 	}
+	if info.MenuAccordion == "" {
+		info.MenuAccordion = constant.StatusDisable
+		_ = settingRepo.UpdateOrCreate("MenuAccordion", info.MenuAccordion)
+	}
 	if info.ProxyPasswdKeep != constant.StatusEnable {
 		info.ProxyPasswd = ""
 	} else {
@@ -139,6 +143,10 @@ func (u *SettingService) GetSettingBaseInfo() (*dto.SettingBaseInfo, error) {
 	if info.Edition == "" {
 		info.Edition = "cn"
 		_ = settingRepo.UpdateOrCreate("Edition", info.Edition)
+	}
+	if info.MenuAccordion == "" {
+		info.MenuAccordion = constant.StatusDisable
+		_ = settingRepo.UpdateOrCreate("MenuAccordion", info.MenuAccordion)
 	}
 
 	return &info, err
@@ -704,6 +712,10 @@ func (u *SettingService) GetAppstoreConfig() (*dto.AppstoreConfig, error) {
 	if res.UpgradeBackup == "" {
 		res.UpgradeBackup = constant.StatusDisable
 	}
+	res.UpgradeDeleteImage, _ = settingRepo.GetValueByKey("UpgradeDeleteImage")
+	if res.UpgradeDeleteImage == "" {
+		res.UpgradeDeleteImage = constant.StatusDisable
+	}
 	res.UninstallDeleteBackup, _ = settingRepo.GetValueByKey("UninstallDeleteBackup")
 	if res.UninstallDeleteBackup == "" {
 		res.UninstallDeleteBackup = constant.StatusDisable
@@ -762,7 +774,7 @@ func checkProxy(req dto.ProxyUpdate) error {
 	case "", "close":
 		return nil
 	default:
-		return buserr.WithDetail("ErrNotSupportType", req.ProxyType, nil)
+		return buserr.WithName("ErrNotSupportType", req.ProxyType)
 	}
 	defer func() {
 		if r := recover(); r != nil {

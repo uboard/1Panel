@@ -63,6 +63,9 @@ var InitSetting = &gormigrate.Migration{
 		if err := tx.Create(&model.Setting{Key: "MenuTabs", Value: constant.StatusDisable}).Error; err != nil {
 			return err
 		}
+		if err := tx.Create(&model.Setting{Key: "MenuAccordion", Value: constant.StatusDisable}).Error; err != nil {
+			return err
+		}
 		if err := tx.Create(&model.Setting{Key: "PanelName", Value: "1Panel"}).Error; err != nil {
 			return err
 		}
@@ -191,6 +194,9 @@ var InitSetting = &gormigrate.Migration{
 			return err
 		}
 		if err := tx.Create(&model.Setting{Key: "UpgradeBackup", Value: "Enable"}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&model.Setting{Key: "UpgradeDeleteImage", Value: constant.StatusDisable}).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(&model.Setting{Key: "UninstallDeleteBackup", Value: constant.StatusDisable}).Error; err != nil {
@@ -877,6 +883,23 @@ var AddAppStoreInstallAllowPortSetting = &gormigrate.Migration{
 	},
 }
 
+var AddAppStoreUpgradeDeleteImageSetting = &gormigrate.Migration{
+	ID: "20260622-add-app-store-upgrade-delete-image-setting",
+	Migrate: func(tx *gorm.DB) error {
+		var setting model.Setting
+		if err := tx.Where("key = ?", "UpgradeDeleteImage").First(&setting).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return tx.Create(&model.Setting{Key: "UpgradeDeleteImage", Value: constant.StatusDisable}).Error
+			}
+			return err
+		}
+		if setting.Value == "" {
+			return tx.Model(&model.Setting{}).Where("key = ?", "UpgradeDeleteImage").Update("value", constant.StatusDisable).Error
+		}
+		return nil
+	},
+}
+
 var UpdateAiLocalModelMenuTitle = &gormigrate.Migration{
 	ID: "20260307-update-ai-local-model-menu-title",
 	Migrate: func(tx *gorm.DB) error {
@@ -1034,22 +1057,7 @@ var AddAIBenchmarkMenu = &gormigrate.Migration{
 		if !global.CONF.Base.IsEnterprise {
 			return nil
 		}
-		var menuJSON string
-		if err := tx.Model(&model.Setting{}).Where("key = ?", "HideMenu").Pluck("value", &menuJSON).Error; err != nil {
-			return err
-		}
-		if menuJSON == "" {
-			menuJSON = helper.LoadMenus()
-		}
-
-		var menus []dto.ShowMenu
-		if err := json.Unmarshal([]byte(menuJSON), &menus); err != nil {
-			return tx.Model(&model.Setting{}).
-				Where("key = ?", "HideMenu").
-				Update("value", helper.LoadMenus()).Error
-		}
-
-		newItem := dto.ShowMenu{
+		return helper.UpsertChildMenuByLabel(tx, "AI-Menu", dto.ShowMenu{
 			ID:       "45",
 			Disabled: false,
 			Title:    "aiTools.benchmark.title",
@@ -1057,23 +1065,7 @@ var AddAIBenchmarkMenu = &gormigrate.Migration{
 			Label:    "AIBenchmark",
 			Path:     "/ai/benchmark",
 			Sort:     160,
-		}
-
-		for i := range menus {
-			if menus[i].Label != "AI-Menu" {
-				continue
-			}
-			menus[i].Children = helper.UpsertMenuByLabel(menus[i].Children, newItem, "AIProxyManagement")
-			break
-		}
-
-		updatedJSON, err := json.Marshal(menus)
-		if err != nil {
-			return tx.Model(&model.Setting{}).
-				Where("key = ?", "HideMenu").
-				Update("value", helper.LoadMenus()).Error
-		}
-		return tx.Model(&model.Setting{}).Where("key = ?", "HideMenu").Update("value", string(updatedJSON)).Error
+		}, "AIProxyManagement")
 	},
 }
 
@@ -1083,36 +1075,16 @@ var AddAIProxyMenu = &gormigrate.Migration{
 		if !global.CONF.Base.IsEnterprise {
 			return nil
 		}
-		var menuJSON string
-		if err := tx.Model(&model.Setting{}).Where("key = ?", "HideMenu").Pluck("value", &menuJSON).Error; err != nil {
-			return err
-		}
-		if menuJSON == "" {
-			menuJSON = helper.LoadMenus()
-		}
-
-		var menus []dto.ShowMenu
-		if err := json.Unmarshal([]byte(menuJSON), &menus); err != nil {
-			return tx.Model(&model.Setting{}).
-				Where("key = ?", "HideMenu").
-				Update("value", helper.LoadMenus()).Error
-		}
-
-		for i := range menus {
-			if menus[i].Label != "AI-Menu" {
-				continue
+		return helper.UpdateHideMenu(tx, func(menus []dto.ShowMenu) []dto.ShowMenu {
+			for i := range menus {
+				if menus[i].Label != "AI-Menu" {
+					continue
+				}
+				menus[i].Children = buildAiMenuChildren(menus[i].Children)
+				break
 			}
-			menus[i].Children = buildAiMenuChildren(menus[i].Children)
-			break
-		}
-
-		updatedJSON, err := json.Marshal(menus)
-		if err != nil {
-			return tx.Model(&model.Setting{}).
-				Where("key = ?", "HideMenu").
-				Update("value", helper.LoadMenus()).Error
-		}
-		return tx.Model(&model.Setting{}).Where("key = ?", "HideMenu").Update("value", string(updatedJSON)).Error
+			return menus
+		})
 	},
 }
 
@@ -1122,6 +1094,21 @@ var AddSkillsHubMenu = &gormigrate.Migration{
 		if !global.CONF.Base.IsEnterprise {
 			return nil
 		}
+		return helper.UpsertChildMenuByLabel(tx, "AI-Menu", dto.ShowMenu{
+			ID:       "47",
+			Disabled: false,
+			Title:    "aiTools.skillsHub.title",
+			IsShow:   true,
+			Label:    "SkillsHub",
+			Path:     "/ai/skills-hub",
+			Sort:     155,
+		}, "AIProxyManagement")
+	},
+}
+
+var UpdateXpackSyncMenu = &gormigrate.Migration{
+	ID: "20260616-update-xpack-sync-menu",
+	Migrate: func(tx *gorm.DB) error {
 		var menuJSON string
 		if err := tx.Model(&model.Setting{}).Where("key = ?", "HideMenu").Pluck("value", &menuJSON).Error; err != nil {
 			return err
@@ -1137,20 +1124,19 @@ var AddSkillsHubMenu = &gormigrate.Migration{
 				Update("value", helper.LoadMenus()).Error
 		}
 
-		newItem := dto.ShowMenu{
-			ID:       "47",
-			Disabled: false,
-			Title:    "aiTools.skillsHub.title",
-			IsShow:   true,
-			Label:    "SkillsHub",
-			Path:     "/ai/skills-hub",
-			Sort:     155,
-		}
 		for i := range menus {
-			if menus[i].Label != "AI-Menu" {
+			if menus[i].Label != "Xpack-Menu" {
 				continue
 			}
-			menus[i].Children = helper.UpsertMenuByLabel(menus[i].Children, newItem, "AIProxyManagement")
+			for j := range menus[i].Children {
+				if menus[i].Children[j].ID != "115" && menus[i].Children[j].Label != "FileExange" {
+					continue
+				}
+				menus[i].Children[j].Title = "xpack.sync.menu"
+				menus[i].Children[j].Label = "Sync"
+				menus[i].Children[j].Path = "/xpack/sync"
+				break
+			}
 			break
 		}
 
@@ -1170,46 +1156,15 @@ var AddUserManagementMenu = &gormigrate.Migration{
 		if !global.CONF.Base.IsEnterprise {
 			return nil
 		}
-		var menuJSON string
-		if err := tx.Model(&model.Setting{}).Where("key = ?", "HideMenu").Pluck("value", &menuJSON).Error; err != nil {
-			return err
-		}
-		if menuJSON == "" {
-			menuJSON = helper.LoadMenus()
-		}
-
-		var menus []dto.ShowMenu
-		if err := json.Unmarshal([]byte(menuJSON), &menus); err != nil {
-			return tx.Model(&model.Setting{}).
-				Where("key = ?", "HideMenu").
-				Update("value", helper.LoadMenus()).Error
-		}
-
-		newItem := dto.ShowMenu{
+		return helper.UpsertChildMenuByLabel(tx, "Xpack-Menu", dto.ShowMenu{
 			ID:       "121",
 			Disabled: false,
 			Title:    "xpack.user.userManage",
 			IsShow:   true,
 			Label:    "UserManagement",
 			Path:     "/enterprise/users",
-			Sort:     350,
-		}
-
-		for i := range menus {
-			if menus[i].Label != "Xpack-Menu" {
-				continue
-			}
-			menus[i].Children = helper.UpsertMenuByLabel(menus[i].Children, newItem, "NodeDashboard")
-			break
-		}
-
-		updatedJSON, err := json.Marshal(menus)
-		if err != nil {
-			return tx.Model(&model.Setting{}).
-				Where("key = ?", "HideMenu").
-				Update("value", helper.LoadMenus()).Error
-		}
-		return tx.Model(&model.Setting{}).Where("key = ?", "HideMenu").Update("value", string(updatedJSON)).Error
+			Sort:     400,
+		}, "NodeDashboard")
 	},
 }
 
@@ -1219,46 +1174,40 @@ var AddOpsReportMenu = &gormigrate.Migration{
 		if !global.CONF.Base.IsEnterprise {
 			return nil
 		}
-		var menuJSON string
-		if err := tx.Model(&model.Setting{}).Where("key = ?", "HideMenu").Pluck("value", &menuJSON).Error; err != nil {
-			return err
-		}
-		if menuJSON == "" {
-			menuJSON = helper.LoadMenus()
-		}
-
-		var menus []dto.ShowMenu
-		if err := json.Unmarshal([]byte(menuJSON), &menus); err != nil {
-			return tx.Model(&model.Setting{}).
-				Where("key = ?", "HideMenu").
-				Update("value", helper.LoadMenus()).Error
-		}
-
-		newItem := dto.ShowMenu{
+		return helper.UpsertChildMenuByLabel(tx, "Xpack-Menu", dto.ShowMenu{
 			ID:       "122",
 			Disabled: false,
 			Title:    "xpack.opsReport.name",
 			IsShow:   true,
 			Label:    "OpsReport",
 			Path:     "/enterprise/ops-report",
-			Sort:     360,
-		}
+			Sort:     500,
+		}, "UserManagement")
+	},
+}
 
-		for i := range menus {
-			if menus[i].Label != "Xpack-Menu" {
-				continue
-			}
-			menus[i].Children = helper.UpsertMenuByLabel(menus[i].Children, newItem, "UserManagement")
-			break
+var AddVirtualMachineMenu = &gormigrate.Migration{
+	ID: "20260623-add-virtual-machine-menu",
+	Migrate: func(tx *gorm.DB) error {
+		if !global.CONF.Base.IsEnterprise {
+			return nil
 		}
+		return helper.UpsertChildMenuByLabel(tx, "Xpack-Menu", dto.ShowMenu{
+			ID:       "123",
+			Disabled: false,
+			Title:    "xpack.vm.title",
+			IsShow:   true,
+			Label:    "VirtualMachine",
+			Path:     "/enterprise/vm",
+			Sort:     900,
+		}, "Upage")
+	},
+}
 
-		updatedJSON, err := json.Marshal(menus)
-		if err != nil {
-			return tx.Model(&model.Setting{}).
-				Where("key = ?", "HideMenu").
-				Update("value", helper.LoadMenus()).Error
-		}
-		return tx.Model(&model.Setting{}).Where("key = ?", "HideMenu").Update("value", string(updatedJSON)).Error
+var UpdateXpackMenuSort = &gormigrate.Migration{
+	ID: "20260706-update-xpack-menu-sort",
+	Migrate: func(tx *gorm.DB) error {
+		return helper.UpdateChildMenuSortByLabel(tx, "Xpack-Menu", helper.XpackMenuSort())
 	},
 }
 
@@ -1312,6 +1261,23 @@ var AddAlertAuditUser = &gormigrate.Migration{
 			), username).Error; err != nil {
 				return err
 			}
+		}
+		return nil
+	},
+}
+
+var AddMenuAccordionSetting = &gormigrate.Migration{
+	ID: "20260701-add-menu-accordion-setting",
+	Migrate: func(tx *gorm.DB) error {
+		var setting model.Setting
+		if err := tx.Where("key = ?", "MenuAccordion").First(&setting).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return tx.Create(&model.Setting{Key: "MenuAccordion", Value: constant.StatusDisable}).Error
+			}
+			return err
+		}
+		if setting.Value == "" {
+			return tx.Model(&model.Setting{}).Where("key = ?", "MenuAccordion").Update("value", constant.StatusDisable).Error
 		}
 		return nil
 	},
