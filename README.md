@@ -4,7 +4,7 @@
 > Takes ~60 seconds.
 
 ```bash
-bash -c "$(curl -sSL https://raw.githubusercontent.com/uboard/1Panel/hk/quick_start.sh)"
+bash -c "$(curl -sSL https://raw.githubusercontent.com/uboard/1Panel/dev-hk/quick_start.sh)"
 ```
 
 After installation, open `http://<your-server-ip>:<port>/<security-path>` in your browser.  
