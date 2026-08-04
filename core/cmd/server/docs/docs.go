@@ -241,6 +241,47 @@ const docTemplate = `{
 				]
 			}
 		},
+		"/ai/accounts/models/discover": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.AgentAccountModelDiscoverReq"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"items": {
+								"$ref": "#/definitions/dto.AgentAccountModel"
+							},
+							"type": "array"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Discover custom provider models",
+				"tags": [
+					"AI"
+				]
+			}
+		},
 		"/ai/accounts/models/update": {
 			"post": {
 				"consumes": [
@@ -12793,51 +12834,6 @@ const docTemplate = `{
 				}
 			}
 		},
-		"/databases/bind": {
-			"post": {
-				"consumes": [
-					"application/json"
-				],
-				"parameters": [
-					{
-						"description": "request",
-						"in": "body",
-						"name": "request",
-						"required": true,
-						"schema": {
-							"$ref": "#/definitions/dto.BindUser"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "OK"
-					}
-				},
-				"security": [
-					{
-						"ApiKeyAuth": []
-					},
-					{
-						"Timestamp": []
-					}
-				],
-				"summary": "Bind user of mysql database",
-				"tags": [
-					"Database Mysql"
-				],
-				"x-panel-log": {
-					"BeforeFunctions": [],
-					"bodyKeys": [
-						"database",
-						"username"
-					],
-					"formatEN": "bind mysql database [database] [username]",
-					"formatZH": "绑定 mysql 数据库名 [database] [username]",
-					"paramKeys": []
-				}
-			}
-		},
 		"/databases/change/access": {
 			"post": {
 				"consumes": [
@@ -12867,26 +12863,17 @@ const docTemplate = `{
 						"Timestamp": []
 					}
 				],
-				"summary": "Change mysql access",
+				"summary": "Change mysql root access",
 				"tags": [
 					"Database Mysql"
 				],
 				"x-panel-log": {
-					"BeforeFunctions": [
-						{
-							"db": "database_mysqls",
-							"input_column": "id",
-							"input_value": "id",
-							"isList": false,
-							"output_column": "name",
-							"output_value": "name"
-						}
-					],
+					"BeforeFunctions": [],
 					"bodyKeys": [
-						"id"
+						"database"
 					],
-					"formatEN": "Update database [name] access",
-					"formatZH": "更新数据库 [name] 访问权限",
+					"formatEN": "Update database [database] root access",
+					"formatZH": "更新数据库 [database] root 访问权限",
 					"paramKeys": []
 				}
 			}
@@ -12920,26 +12907,17 @@ const docTemplate = `{
 						"Timestamp": []
 					}
 				],
-				"summary": "Change mysql password",
+				"summary": "Change mysql root password",
 				"tags": [
 					"Database Mysql"
 				],
 				"x-panel-log": {
-					"BeforeFunctions": [
-						{
-							"db": "database_mysqls",
-							"input_column": "id",
-							"input_value": "id",
-							"isList": false,
-							"output_column": "name",
-							"output_value": "name"
-						}
-					],
+					"BeforeFunctions": [],
 					"bodyKeys": [
-						"id"
+						"database"
 					],
-					"formatEN": "Update database [name] password",
-					"formatZH": "更新数据库 [name] 密码",
+					"formatEN": "Update database [database] root password",
+					"formatZH": "更新数据库 [database] root 密码",
 					"paramKeys": []
 				}
 			}
@@ -13623,6 +13601,185 @@ const docTemplate = `{
 					}
 				],
 				"summary": "List mysql database format collation options",
+				"tags": [
+					"Database Mysql"
+				]
+			}
+		},
+		"/databases/grants": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.MysqlGrantCreate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Grant mysql user",
+				"tags": [
+					"Database Mysql"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"database",
+						"db",
+						"username",
+						"host"
+					],
+					"formatEN": "grant mysql database [database] user [username]@[host] access to [db]",
+					"formatZH": "授权 mysql 数据库 [database] 用户 [username]@[host] 访问 [db]",
+					"paramKeys": []
+				}
+			}
+		},
+		"/databases/grants/del": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.MysqlGrantDelete"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Revoke mysql grant",
+				"tags": [
+					"Database Mysql"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"database",
+						"db",
+						"username",
+						"host"
+					],
+					"formatEN": "revoke mysql database [database] user [username]@[host] access to [db]",
+					"formatZH": "取消 mysql 数据库 [database] 用户 [username]@[host] 对 [db] 的授权",
+					"paramKeys": []
+				}
+			}
+		},
+		"/databases/grants/search": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.MysqlUserSearch"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"items": {
+								"$ref": "#/definitions/dto.MysqlGrant"
+							},
+							"type": "array"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "List mysql grants",
+				"tags": [
+					"Database Mysql"
+				]
+			}
+		},
+		"/databases/grants/summary": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.MysqlGrantSummarySearch"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"additionalProperties": {
+								"items": {
+									"$ref": "#/definitions/dto.MysqlUser"
+								},
+								"type": "array"
+							},
+							"type": "object"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "List mysql grant summary",
 				"tags": [
 					"Database Mysql"
 				]
@@ -14955,6 +15112,279 @@ const docTemplate = `{
 				"tags": [
 					"Database Mysql"
 				]
+			}
+		},
+		"/databases/users": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.MysqlUserCreate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Create mysql user",
+				"tags": [
+					"Database Mysql"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"database",
+						"username",
+						"host"
+					],
+					"formatEN": "create mysql database [database] user [username]@[host]",
+					"formatZH": "创建 mysql 数据库 [database] 用户 [username]@[host]",
+					"paramKeys": []
+				}
+			}
+		},
+		"/databases/users/del": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.MysqlUserDelete"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Delete mysql user",
+				"tags": [
+					"Database Mysql"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"database",
+						"username",
+						"host"
+					],
+					"formatEN": "delete mysql database [database] user [username]@[host]",
+					"formatZH": "删除 mysql 数据库 [database] 用户 [username]@[host]",
+					"paramKeys": []
+				}
+			}
+		},
+		"/databases/users/password": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.MysqlUserPassword"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Change mysql user password",
+				"tags": [
+					"Database Mysql"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"database",
+						"username",
+						"host"
+					],
+					"formatEN": "update mysql database [database] user [username]@[host] password",
+					"formatZH": "更新 mysql 数据库 [database] 用户 [username]@[host] 密码",
+					"paramKeys": []
+				}
+			}
+		},
+		"/databases/users/password/save": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.MysqlUserPassword"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Save mysql user password locally",
+				"tags": [
+					"Database Mysql"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"database",
+						"username",
+						"host"
+					],
+					"formatEN": "save mysql database [database] user [username]@[host] password locally",
+					"formatZH": "补充 mysql 数据库 [database] 用户 [username]@[host] 密码",
+					"paramKeys": []
+				}
+			}
+		},
+		"/databases/users/search": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.MysqlUserSearch"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"items": {
+								"$ref": "#/definitions/dto.MysqlUser"
+							},
+							"type": "array"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "List mysql users",
+				"tags": [
+					"Database Mysql"
+				]
+			}
+		},
+		"/databases/users/update": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.MysqlUserUpdate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Update mysql user",
+				"tags": [
+					"Database Mysql"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"database",
+						"username",
+						"host",
+						"newHost",
+						"description"
+					],
+					"formatEN": "update mysql database [database] user [username] access [host] =\u003e [newHost] description [description]",
+					"formatZH": "更新 mysql 数据库 [database] 用户 [username] 访问权限 [host] =\u003e [newHost] 描述 [description]",
+					"paramKeys": []
+				}
 			}
 		},
 		"/databases/variables": {
@@ -17611,6 +18041,89 @@ const docTemplate = `{
 				}
 			}
 		},
+		"/hosts/diagnostics/goroutines": {
+			"get": {
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.RuntimeGoroutineSnapshot"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Load grouped goroutine snapshot",
+				"tags": [
+					"RuntimeDiagnostics"
+				]
+			}
+		},
+		"/hosts/diagnostics/profiles": {
+			"post": {
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.RuntimeProfileCreate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"type": "file"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Capture runtime profile",
+				"tags": [
+					"RuntimeDiagnostics"
+				]
+			}
+		},
+		"/hosts/diagnostics/summary": {
+			"get": {
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.RuntimeDiagnosticsSummary"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Load runtime diagnostics summary",
+				"tags": [
+					"RuntimeDiagnostics"
+				]
+			}
+		},
 		"/hosts/disks": {
 			"get": {
 				"description": "Get information about all disks including partitioned and unpartitioned disks",
@@ -18932,6 +19445,34 @@ const docTemplate = `{
 				]
 			}
 		},
+		"/hosts/ssh/log/clean": {
+			"post": {
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Clean host SSH logs",
+				"tags": [
+					"SSH"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [],
+					"formatEN": "clean SSH login logs",
+					"formatZH": "清空 SSH 登录日志",
+					"paramKeys": []
+				}
+			}
+		},
 		"/hosts/ssh/log/export": {
 			"post": {
 				"consumes": [
@@ -19771,6 +20312,104 @@ const docTemplate = `{
 					}
 				],
 				"summary": "Load system log files",
+				"tags": [
+					"Logs"
+				]
+			}
+		},
+		"/logs/system/read": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.SystemLogReq"
+						}
+					}
+				],
+				"produces": [
+					"application/json"
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.SystemLogRes"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Read host logs",
+				"tags": [
+					"Logs"
+				]
+			}
+		},
+		"/logs/system/services": {
+			"get": {
+				"produces": [
+					"application/json"
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"items": {
+								"type": "string"
+							},
+							"type": "array"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "List running host services",
+				"tags": [
+					"Logs"
+				]
+			}
+		},
+		"/logs/system/status": {
+			"get": {
+				"produces": [
+					"application/json"
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.SystemLogStatus"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Get host system log status",
 				"tags": [
 					"Logs"
 				]
@@ -28214,6 +28853,9 @@ const docTemplate = `{
 				"apiType": {
 					"type": "string"
 				},
+				"authMode": {
+					"type": "string"
+				},
 				"baseURL": {
 					"type": "string"
 				},
@@ -28234,6 +28876,9 @@ const docTemplate = `{
 				},
 				"rememberApiKey": {
 					"type": "boolean"
+				},
+				"verifyModel": {
+					"type": "string"
 				}
 			},
 			"required": [
@@ -28261,6 +28906,9 @@ const docTemplate = `{
 					"type": "string"
 				},
 				"apiType": {
+					"type": "string"
+				},
+				"authMode": {
 					"type": "string"
 				},
 				"baseUrl": {
@@ -28298,32 +28946,20 @@ const docTemplate = `{
 				},
 				"verified": {
 					"type": "boolean"
+				},
+				"verifyModel": {
+					"type": "string"
 				}
 			},
 			"type": "object"
 		},
 		"dto.AgentAccountModel": {
 			"properties": {
-				"contextWindow": {
-					"type": "integer"
-				},
 				"id": {
 					"type": "string"
 				},
-				"input": {
-					"items": {
-						"type": "string"
-					},
-					"type": "array"
-				},
-				"maxTokens": {
-					"type": "integer"
-				},
 				"name": {
 					"type": "string"
-				},
-				"reasoning": {
-					"type": "boolean"
 				},
 				"recordId": {
 					"type": "integer"
@@ -28358,6 +28994,29 @@ const docTemplate = `{
 			"required": [
 				"accountId",
 				"recordId"
+			],
+			"type": "object"
+		},
+		"dto.AgentAccountModelDiscoverReq": {
+			"properties": {
+				"apiKey": {
+					"type": "string"
+				},
+				"apiType": {
+					"type": "string"
+				},
+				"baseURL": {
+					"type": "string"
+				},
+				"provider": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"apiKey",
+				"apiType",
+				"baseURL",
+				"provider"
 			],
 			"type": "object"
 		},
@@ -28427,6 +29086,9 @@ const docTemplate = `{
 				"apiType": {
 					"type": "string"
 				},
+				"authMode": {
+					"type": "string"
+				},
 				"baseURL": {
 					"type": "string"
 				},
@@ -28444,6 +29106,9 @@ const docTemplate = `{
 				},
 				"syncAgents": {
 					"type": "boolean"
+				},
+				"verifyModel": {
+					"type": "string"
 				}
 			},
 			"required": [
@@ -28459,7 +29124,16 @@ const docTemplate = `{
 				"apiKey": {
 					"type": "string"
 				},
+				"apiType": {
+					"type": "string"
+				},
+				"authMode": {
+					"type": "string"
+				},
 				"baseURL": {
+					"type": "string"
+				},
+				"model": {
 					"type": "string"
 				},
 				"provider": {
@@ -28468,6 +29142,7 @@ const docTemplate = `{
 			},
 			"required": [
 				"apiKey",
+				"apiType",
 				"provider"
 			],
 			"type": "object"
@@ -29471,9 +30146,6 @@ const docTemplate = `{
 				"containerName": {
 					"type": "string"
 				},
-				"contextWindow": {
-					"type": "integer"
-				},
 				"createdAt": {
 					"type": "string"
 				},
@@ -29484,9 +30156,6 @@ const docTemplate = `{
 					"type": "string"
 				},
 				"id": {
-					"type": "integer"
-				},
-				"maxTokens": {
 					"type": "integer"
 				},
 				"message": {
@@ -31250,33 +31919,6 @@ const docTemplate = `{
 			],
 			"type": "object"
 		},
-		"dto.BindUser": {
-			"properties": {
-				"database": {
-					"type": "string"
-				},
-				"db": {
-					"type": "string"
-				},
-				"password": {
-					"type": "string"
-				},
-				"permission": {
-					"type": "string"
-				},
-				"username": {
-					"type": "string"
-				}
-			},
-			"required": [
-				"database",
-				"db",
-				"password",
-				"permission",
-				"username"
-			],
-			"type": "object"
-		},
 		"dto.CaptchaResponse": {
 			"properties": {
 				"captchaID": {
@@ -32236,11 +32878,38 @@ const docTemplate = `{
 		},
 		"dto.ContainerNetwork": {
 			"properties": {
+				"aliases": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"driverOpts": {
+					"additionalProperties": {
+						"type": "string"
+					},
+					"type": "object"
+				},
+				"gwPriority": {
+					"type": "integer"
+				},
 				"ipv4": {
 					"type": "string"
 				},
 				"ipv6": {
 					"type": "string"
+				},
+				"linkLocalIPs": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"links": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
 				},
 				"macAddr": {
 					"type": "string"
@@ -33210,6 +33879,9 @@ const docTemplate = `{
 				},
 				"procs": {
 					"type": "integer"
+				},
+				"runningTime": {
+					"$ref": "#/definitions/dto.RunningTime"
 				},
 				"shotTime": {
 					"type": "string"
@@ -34676,6 +35348,9 @@ const docTemplate = `{
 				"ko": {
 					"type": "string"
 				},
+				"lo": {
+					"type": "string"
+				},
 				"ms": {
 					"type": "string"
 				},
@@ -34728,7 +35403,8 @@ const docTemplate = `{
 						"pt-BR",
 						"tr",
 						"es-ES",
-						"fa"
+						"fa",
+						"lo"
 					],
 					"type": "string"
 				},
@@ -34764,6 +35440,9 @@ const docTemplate = `{
 					"type": "boolean"
 				},
 				"language": {
+					"type": "string"
+				},
+				"menuAccordion": {
 					"type": "string"
 				},
 				"menuTabs": {
@@ -35299,9 +35978,7 @@ const docTemplate = `{
 				"format",
 				"from",
 				"name",
-				"password",
-				"permission",
-				"username"
+				"permission"
 			],
 			"type": "object"
 		},
@@ -35410,6 +36087,84 @@ const docTemplate = `{
 					"type": "string"
 				}
 			},
+			"type": "object"
+		},
+		"dto.MysqlGrant": {
+			"properties": {
+				"database": {
+					"type": "string"
+				},
+				"host": {
+					"type": "string"
+				},
+				"username": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.MysqlGrantCreate": {
+			"properties": {
+				"database": {
+					"type": "string"
+				},
+				"db": {
+					"type": "string"
+				},
+				"host": {
+					"type": "string"
+				},
+				"username": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"database",
+				"db",
+				"host",
+				"username"
+			],
+			"type": "object"
+		},
+		"dto.MysqlGrantDelete": {
+			"properties": {
+				"database": {
+					"type": "string"
+				},
+				"db": {
+					"type": "string"
+				},
+				"host": {
+					"type": "string"
+				},
+				"username": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"database",
+				"db",
+				"host",
+				"username"
+			],
+			"type": "object"
+		},
+		"dto.MysqlGrantSummarySearch": {
+			"properties": {
+				"database": {
+					"type": "string"
+				},
+				"dbs": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				}
+			},
+			"required": [
+				"database",
+				"dbs"
+			],
 			"type": "object"
 		},
 		"dto.MysqlLoadDB": {
@@ -35548,6 +36303,131 @@ const docTemplate = `{
 					"type": "string"
 				}
 			},
+			"type": "object"
+		},
+		"dto.MysqlUser": {
+			"properties": {
+				"description": {
+					"type": "string"
+				},
+				"host": {
+					"type": "string"
+				},
+				"isDelete": {
+					"type": "boolean"
+				},
+				"password": {
+					"type": "string"
+				},
+				"username": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.MysqlUserCreate": {
+			"properties": {
+				"database": {
+					"type": "string"
+				},
+				"description": {
+					"type": "string"
+				},
+				"host": {
+					"type": "string"
+				},
+				"password": {
+					"type": "string"
+				},
+				"username": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"database",
+				"host",
+				"password",
+				"username"
+			],
+			"type": "object"
+		},
+		"dto.MysqlUserDelete": {
+			"properties": {
+				"database": {
+					"type": "string"
+				},
+				"host": {
+					"type": "string"
+				},
+				"username": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"database",
+				"host",
+				"username"
+			],
+			"type": "object"
+		},
+		"dto.MysqlUserPassword": {
+			"properties": {
+				"database": {
+					"type": "string"
+				},
+				"host": {
+					"type": "string"
+				},
+				"password": {
+					"type": "string"
+				},
+				"username": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"database",
+				"host",
+				"password",
+				"username"
+			],
+			"type": "object"
+		},
+		"dto.MysqlUserSearch": {
+			"properties": {
+				"database": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"database"
+			],
+			"type": "object"
+		},
+		"dto.MysqlUserUpdate": {
+			"properties": {
+				"database": {
+					"type": "string"
+				},
+				"description": {
+					"type": "string"
+				},
+				"host": {
+					"type": "string"
+				},
+				"newHost": {
+					"type": "string"
+				},
+				"username": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"database",
+				"host",
+				"newHost",
+				"username"
+			],
 			"type": "object"
 		},
 		"dto.MysqlVariables": {
@@ -36580,9 +37460,41 @@ const docTemplate = `{
 			},
 			"type": "object"
 		},
+		"dto.ProviderAPIInfo": {
+			"properties": {
+				"apiType": {
+					"type": "string"
+				},
+				"authModes": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"baseUrl": {
+					"type": "string"
+				},
+				"defaultAuthMode": {
+					"type": "string"
+				},
+				"editableBaseUrl": {
+					"type": "boolean"
+				}
+			},
+			"type": "object"
+		},
 		"dto.ProviderInfo": {
 			"properties": {
+				"apiTypes": {
+					"items": {
+						"$ref": "#/definitions/dto.ProviderAPIInfo"
+					},
+					"type": "array"
+				},
 				"baseUrl": {
+					"type": "string"
+				},
+				"defaultApiType": {
 					"type": "string"
 				},
 				"displayName": {
@@ -36602,26 +37514,11 @@ const docTemplate = `{
 		},
 		"dto.ProviderModelInfo": {
 			"properties": {
-				"contextWindow": {
-					"type": "integer"
-				},
 				"id": {
 					"type": "string"
 				},
-				"input": {
-					"items": {
-						"type": "string"
-					},
-					"type": "array"
-				},
-				"maxTokens": {
-					"type": "integer"
-				},
 				"name": {
 					"type": "string"
-				},
-				"reasoning": {
-					"type": "boolean"
 				}
 			},
 			"type": "object"
@@ -37016,6 +37913,106 @@ const docTemplate = `{
 			"required": [
 				"page",
 				"pageSize",
+				"type"
+			],
+			"type": "object"
+		},
+		"dto.RunningTime": {
+			"properties": {
+				"days": {
+					"type": "integer"
+				},
+				"hours": {
+					"type": "integer"
+				},
+				"minutes": {
+					"type": "integer"
+				},
+				"seconds": {
+					"type": "integer"
+				}
+			},
+			"type": "object"
+		},
+		"dto.RuntimeDiagnosticsSummary": {
+			"properties": {
+				"goroutines": {
+					"type": "integer"
+				},
+				"heapAlloc": {
+					"type": "integer"
+				},
+				"heapObjects": {
+					"type": "integer"
+				},
+				"rss": {
+					"type": "integer"
+				}
+			},
+			"type": "object"
+		},
+		"dto.RuntimeGoroutineGroup": {
+			"properties": {
+				"count": {
+					"type": "integer"
+				},
+				"stack": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"state": {
+					"type": "string"
+				},
+				"top": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.RuntimeGoroutineSnapshot": {
+			"properties": {
+				"capturedAt": {
+					"type": "string"
+				},
+				"goroutines": {
+					"items": {
+						"$ref": "#/definitions/dto.RuntimeGoroutineGroup"
+					},
+					"type": "array"
+				},
+				"groupCount": {
+					"type": "integer"
+				},
+				"total": {
+					"type": "integer"
+				},
+				"truncated": {
+					"type": "boolean"
+				}
+			},
+			"type": "object"
+		},
+		"dto.RuntimeProfileCreate": {
+			"properties": {
+				"duration": {
+					"maximum": 30,
+					"minimum": 5,
+					"type": "integer"
+				},
+				"type": {
+					"enum": [
+						"cpu",
+						"heap",
+						"goroutine",
+						"mutex",
+						"block"
+					],
+					"type": "string"
+				}
+			},
+			"required": [
 				"type"
 			],
 			"type": "object"
@@ -37555,6 +38552,9 @@ const docTemplate = `{
 				"language": {
 					"type": "string"
 				},
+				"menuAccordion": {
+					"type": "string"
+				},
 				"menuTabs": {
 					"type": "string"
 				},
@@ -37905,6 +38905,91 @@ const docTemplate = `{
 			],
 			"type": "object"
 		},
+		"dto.SystemLogItem": {
+			"properties": {
+				"message": {
+					"type": "string"
+				},
+				"priority": {
+					"type": "string"
+				},
+				"raw": {
+					"type": "string"
+				},
+				"service": {
+					"type": "string"
+				},
+				"time": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.SystemLogReq": {
+			"properties": {
+				"cursor": {
+					"type": "string"
+				},
+				"endTime": {
+					"type": "string"
+				},
+				"keyword": {
+					"type": "string"
+				},
+				"pageSize": {
+					"maximum": 500,
+					"minimum": 1,
+					"type": "integer"
+				},
+				"priority": {
+					"type": "string"
+				},
+				"service": {
+					"type": "string"
+				},
+				"startTime": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.SystemLogRes": {
+			"properties": {
+				"hasMore": {
+					"type": "boolean"
+				},
+				"items": {
+					"items": {
+						"$ref": "#/definitions/dto.SystemLogItem"
+					},
+					"type": "array"
+				},
+				"nextCursor": {
+					"type": "string"
+				},
+				"source": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.SystemLogStatus": {
+			"properties": {
+				"keywordFilterSupported": {
+					"type": "boolean"
+				},
+				"message": {
+					"type": "string"
+				},
+				"source": {
+					"type": "string"
+				},
+				"version": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
 		"dto.Tag": {
 			"properties": {
 				"key": {
@@ -38229,6 +39314,9 @@ const docTemplate = `{
 				"group": {
 					"type": "string"
 				},
+				"isAppendOnly": {
+					"type": "boolean"
+				},
 				"isDetail": {
 					"type": "boolean"
 				},
@@ -38236,6 +39324,9 @@ const docTemplate = `{
 					"type": "boolean"
 				},
 				"isHidden": {
+					"type": "boolean"
+				},
+				"isImmutable": {
 					"type": "boolean"
 				},
 				"isSymlink": {
@@ -40526,6 +41617,10 @@ const docTemplate = `{
 					},
 					"type": "array"
 				},
+				"gatewayArgs": {
+					"maxLength": 4096,
+					"type": "string"
+				},
 				"gatewayImage": {
 					"type": "string"
 				},
@@ -40657,6 +41752,10 @@ const docTemplate = `{
 						"$ref": "#/definitions/request.Environment"
 					},
 					"type": "array"
+				},
+				"gatewayArgs": {
+					"maxLength": 4096,
+					"type": "string"
 				},
 				"gatewayImage": {
 					"type": "string"
@@ -44072,6 +45171,9 @@ const docTemplate = `{
 				"group": {
 					"type": "string"
 				},
+				"isAppendOnly": {
+					"type": "boolean"
+				},
 				"isDetail": {
 					"type": "boolean"
 				},
@@ -44079,6 +45181,9 @@ const docTemplate = `{
 					"type": "boolean"
 				},
 				"isHidden": {
+					"type": "boolean"
+				},
+				"isImmutable": {
 					"type": "boolean"
 				},
 				"isSymlink": {
@@ -44340,6 +45445,9 @@ const docTemplate = `{
 						"$ref": "#/definitions/request.Environment"
 					},
 					"type": "array"
+				},
+				"gatewayArgs": {
+					"type": "string"
 				},
 				"gatewayImage": {
 					"type": "string"

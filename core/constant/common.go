@@ -63,8 +63,10 @@ var WebUrlMap = map[string]struct{}{
 	"/ai/ai-proxy/api-keys":     {},
 	"/ai/ai-proxy/groups":       {},
 	"/ai/ai-proxy/model-groups": {},
+	"/ai/ai-proxy/smart-route":  {},
 	"/ai/ai-proxy/usage":        {},
 	"/ai/ai-proxy/content":      {},
+	"/ai/ai-proxy/setting":      {},
 	"/ai/skills-hub":            {},
 	"/ai/skills-hub/targets":    {},
 	"/ai/benchmark":             {},
@@ -122,6 +124,7 @@ var WebUrlMap = map[string]struct{}{
 
 	"/logs":           {},
 	"/logs/operation": {},
+	"/logs/host":      {},
 	"/logs/login":     {},
 	"/logs/website":   {},
 	"/logs/system":    {},
@@ -208,6 +211,7 @@ var WebUrlMap = map[string]struct{}{
 	"/enterprise/ops-report/alert":    {},
 	"/enterprise/ops-report/history":  {},
 	"/enterprise/ops-report/settings": {},
+	"/enterprise/vm/overview":         {},
 	"/enterprise/vm/list":             {},
 	"/enterprise/vm/isos":             {},
 	"/enterprise/vm/templates":        {},
@@ -220,6 +224,7 @@ var DynamicRoutes = []string{
 	`^/databases/mysql/setting/[^/]+/[^/]+$`,
 	`^/databases/postgresql/setting/[^/]+/[^/]+$`,
 	`^/websites/[^/]+/config/[^/]+$`,
+	`^/xpack/waf/websites/[^/]+$`,
 	`^/s/[A-Za-z0-9]{10,16}$`,
 }
 

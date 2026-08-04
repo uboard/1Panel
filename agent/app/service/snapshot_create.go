@@ -193,21 +193,48 @@ func handleSnapshot(req dto.SnapshotCreate, taskItem *task.Task, jobID, retry, t
 		req.InterruptStep = ""
 	}
 	if len(req.InterruptStep) == 0 || req.InterruptStep == "SnapUpload" {
+		uploadTimeout := time.Duration(timeout) * time.Second
 		taskItem.AddSubTaskWithAliasAndOps(
 			"SnapUpload",
 			func(t *task.Task) error {
-				return snapUpload(itemHelper, req.SourceAccountIDs, req.DownloadAccountID, retry, fmt.Sprintf("%s.tar.gz", rootDir))
-			}, nil, int(retry), time.Duration(timeout)*time.Second,
+				return snapUpload(itemHelper, req.SourceAccountIDs, req.DownloadAccountID, retry, fmt.Sprintf("%s.tar.gz", rootDir), uploadTimeout)
+			}, nil, int(retry), uploadTimeout,
 		)
 		req.InterruptStep = ""
 	}
 	if err := taskItem.Execute(); err != nil {
 		_ = snapshotRepo.Update(req.ID, map[string]interface{}{"status": constant.StatusFailed, "message": err.Error(), "interrupt_step": taskItem.Task.CurrentStep})
+		if jobID != 0 {
+			cleanupFailedCronjobSnapshot(req, rootDir)
+		}
 		return err
 	}
 	_ = snapshotRepo.Update(req.ID, map[string]interface{}{"status": constant.StatusSuccess, "interrupt_step": ""})
 	_ = os.RemoveAll(rootDir)
 	return nil
+}
+
+func cleanupFailedCronjobSnapshot(req dto.SnapshotCreate, rootDir string) {
+	if err := os.RemoveAll(rootDir); err != nil {
+		global.LOG.Errorf("remove failed cronjob snapshot directory %s failed, err: %v", rootDir, err)
+	}
+
+	fileName := path.Base(rootDir) + ".tar.gz"
+	filePath := path.Join("system_snapshot", fileName)
+	if err := os.Remove(path.Join(global.Dir.LocalBackupDir, "tmp/system", fileName)); err != nil && !os.IsNotExist(err) {
+		global.LOG.Errorf("remove failed cronjob snapshot file %s failed, err: %v", filePath, err)
+	}
+
+	accounts := NewBackupClientMap(strings.Split(req.SourceAccountIDs, ","))
+	for _, account := range accounts {
+		if !account.isOk {
+			global.LOG.Errorf("remove failed cronjob snapshot file %s from %s failed, err: %s", filePath, account.name, account.message)
+			continue
+		}
+		if _, err := account.client.Delete(path.Join(account.backupPath, filePath)); err != nil {
+			global.LOG.Errorf("remove failed cronjob snapshot file %s from %s failed, err: %v", filePath, account.name, err)
+		}
+	}
 }
 
 type snapHelper struct {
@@ -561,15 +588,36 @@ func snapCompress(snap snapHelper, rootDir string, secret string) error {
 	return nil
 }
 
-func snapUpload(snap snapHelper, accounts string, downloadID, retry uint, file string) error {
+func snapUpload(snap snapHelper, accounts string, downloadID, retry uint, file string, timeout time.Duration) error {
 	snap.Task.Log("---------------------- 8 / 8 ----------------------")
 	snap.Task.LogStart(i18n.GetMsgByKey("SnapUpload"))
 
 	src := path.Join(global.Dir.LocalBackupDir, "tmp/system", path.Base(file))
 	dst := path.Join("system_snapshot", path.Base(file))
-	accountMap := NewBackupClientMap(strings.Split(accounts, ","))
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	downloadAccount := fmt.Sprintf("%d", downloadID)
+	accountMap := NewBackupClientMapWithContext(ctx, []string{downloadAccount})
 	if !accountMap[fmt.Sprintf("%d", downloadID)].isOk {
 		return buserr.New(i18n.GetMsgWithDetail("LoadBackupFailed", accountMap[fmt.Sprintf("%d", downloadID)].message))
 	}
-	return uploadWithMap(snap.Task, accountMap, src, dst, accounts, downloadID, retry)
+	remainingAccounts := make([]string, 0)
+	for _, account := range strings.Split(accounts, ",") {
+		if account == "" || account == downloadAccount {
+			continue
+		}
+		remainingAccounts = append(remainingAccounts, account)
+	}
+	if err := uploadWithMapWithContext(ctx, snap.Task, accountMap, src, dst, downloadAccount, downloadID, retry, false, len(remainingAccounts) == 0); err != nil {
+		return err
+	}
+	if len(remainingAccounts) == 0 {
+		return nil
+	}
+	optionalMap := NewBackupClientMapWithContext(ctx, remainingAccounts)
+	return uploadWithMapWithContext(ctx, snap.Task, optionalMap, src, dst, strings.Join(remainingAccounts, ","), downloadID, retry, false, true)
 }
