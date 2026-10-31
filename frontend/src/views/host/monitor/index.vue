@@ -2,7 +2,7 @@
     <div>
         <RouterButton :buttons="buttons" />
         <LayoutContent>
-            <router-view></router-view>
+            <RouterViewCache />
         </LayoutContent>
     </div>
 </template>
@@ -14,6 +14,10 @@ const buttons = [
     {
         label: i18n.global.t('menu.monitor'),
         path: '/hosts/monitor/monitor',
+    },
+    {
+        label: i18n.global.t('commons.button.export'),
+        path: '/hosts/monitor/export',
     },
     {
         label: i18n.global.t('file.setting'),

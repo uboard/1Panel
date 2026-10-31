@@ -45,14 +45,7 @@
                 <el-select v-model="req.websiteGroupId" @change="search()" class="p-w-200" :disabled="disabledConfig">
                     <template #prefix>{{ $t('commons.table.group') }}</template>
                     <el-option :label="$t('commons.table.all')" :value="0"></el-option>
-                    <div v-for="item in groups" :key="item.id">
-                        <el-option
-                            v-if="item.name === 'Default'"
-                            :label="$t('commons.table.default')"
-                            :value="item.id"
-                        />
-                        <el-option v-else :label="item.name" :value="item.id" />
-                    </div>
+                    <el-option v-for="item in groups" :key="item.id" :label="item.name" :value="item.id" />
                 </el-select>
                 <TableSearch @search="search()" v-model:searchName="req.name" :disabled="disabledConfig" />
                 <TableRefresh @search="search()" :disabled="disabledConfig" />
@@ -66,6 +59,8 @@
             </template>
             <template v-if="!openNginxConfig" #main>
                 <ComplexTable
+                    :selection-context="() => [req.name, req.type, req.websiteGroupId]"
+                    row-key="id"
                     :pagination-config="paginationConfig"
                     :default-sort="tableSort.order ? tableSort : undefined"
                     v-model:view-mode="viewMode"
@@ -75,8 +70,6 @@
                     :class="{ mask: disabledConfig }"
                     :heightDiff="310"
                     :columns="columns"
-                    @cell-mouse-enter="showFavorite"
-                    @cell-mouse-leave="hideFavorite"
                     localKey="websiteColumn"
                     v-model:selects="selects"
                     :tooltip-options="{
@@ -92,7 +85,7 @@
                         sortable
                         card-type="name"
                     >
-                        <template #default="{ row, $index, viewMode: columnViewMode }">
+                        <template #default="{ row, viewMode: columnViewMode }">
                             <div v-if="columnViewMode === 'card'" class="website-card-domain">
                                 <el-text
                                     type="primary"
@@ -104,7 +97,6 @@
                                 <Domain
                                     class="website-card-domain__actions"
                                     :row="row"
-                                    :is-hovered="true"
                                     :defaultHttpPort="appStatusRef?.getHttpPort?.() || 0"
                                     :defaultHttpsPort="appStatusRef?.getHttpsPort?.() || 0"
                                     :hide-name="true"
@@ -116,7 +108,6 @@
                             <Domain
                                 v-else
                                 :row="row"
-                                :is-hovered="hoveredRowIndex === $index"
                                 :defaultHttpPort="appStatusRef?.getHttpPort?.() || 0"
                                 :defaultHttpsPort="appStatusRef?.getHttpsPort?.() || 0"
                                 @favorite-change="favoriteWebsite"
@@ -348,6 +339,7 @@
 </template>
 
 <script lang="ts" setup>
+import { useSearchState } from '@/utils/search-reset';
 import Backups from '@/components/backup/index.vue';
 import UploadDialog from '@/components/upload/index.vue';
 import DefaultServer from '@/views/website/website/default/index.vue';
@@ -362,7 +354,7 @@ import BatchSetGroup from '@/views/website/website/batch-op/group.vue';
 import BatchSetHttps from '@/views/website/website/batch-op/https.vue';
 
 import i18n from '@/lang';
-import { onMounted, reactive, ref, computed } from 'vue';
+import { toRef, onMounted, reactive, ref, computed } from 'vue';
 import { batchOperate, opWebsite, searchWebsites, updateWebsite } from '@/api/modules/website';
 import { Website } from '@/api/interface/website';
 import { App } from '@/api/interface/app';
@@ -415,7 +407,6 @@ const data = ref();
 let groups = ref<Group.GroupInfo[]>([]);
 const dataRef = ref();
 const columns = ref([]);
-const hoveredRowIndex = ref(-1);
 const websiteDir = ref();
 const selects = ref([]);
 const batchReq = reactive({
@@ -432,9 +423,8 @@ const appStatusRef = ref();
 
 const pageState = usePageState(() => ({
     paginationConfig: {
-        cacheSizeKey: 'website-page-size',
         currentPage: 1,
-        pageSize: Number(localStorage.getItem('website-page-size')) || 20,
+        pageSize: 20,
         total: 0,
     },
     req: {
@@ -453,18 +443,19 @@ const pageState = usePageState(() => ({
 }));
 const paginationConfig = pageState.paginationConfig;
 const req = pageState.req;
+useSearchState(
+    'website/website/index',
+    {
+        search: toRef(req, 'name'),
+        page: toRef(paginationConfig, 'currentPage'),
+        pageSize: toRef(paginationConfig, 'pageSize'),
+    },
+    { onRevisit: () => search() },
+);
 const tableSort = pageState.tableSort;
 
 const goRouter = async (key: string) => {
     routerToNameWithQuery('AppAll', { install: key });
-};
-
-const showFavorite = (row: any) => {
-    hoveredRowIndex.value = data.value.findIndex((item) => item === row);
-};
-
-const hideFavorite = () => {
-    hoveredRowIndex.value = -1;
 };
 
 const favoriteWebsite = (row: Website.Website) => {
@@ -509,7 +500,6 @@ const search = async () => {
     req.pageSize = paginationConfig.pageSize;
 
     loading.value = true;
-    data.value = [];
     await searchWebsites(req)
         .then((res) => {
             data.value = res.data.items;

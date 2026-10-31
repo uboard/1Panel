@@ -2,6 +2,7 @@ import http from '@/api';
 import { ResPage } from '../interface';
 import { App } from '../interface/app';
 import { TimeoutEnum } from '@/enums/http-enum';
+import { resolveAppIconUrl } from '@/utils/app-icon';
 
 export const syncApp = (req: App.AppStoreSync) => {
     return http.post('apps/sync/remote', req);
@@ -99,8 +100,9 @@ export const getAppDefaultConfig = (key: string, name: string) => {
     return http.post<string>(`apps/installed/conf`, { type: key, name: name });
 };
 
-export const getAppInstallParams = (id: number) => {
-    return http.get<App.AppConfig>(`apps/installed/params/${id}`);
+export const getAppInstallParams = (id: number, node?: string) => {
+    const params = node ? `?operateNode=${encodeURIComponent(node)}` : '';
+    return http.get<App.AppConfig>(`apps/installed/params/${id}${params}`);
 };
 
 export const updateAppInstallParams = (req: any) => {
@@ -135,12 +137,23 @@ export const getCurrentNodeCustomAppConfig = () => {
     return http.get<App.CustomAppStoreConfig>(`/custom/app/config`);
 };
 
-export function getAppIconUrl(appKey: string, node?: string): string {
+export function getAppIconUrl(appKey: string, node?: string, icon = ''): string {
     const baseURL = import.meta.env.VITE_API_URL as string;
-    const params = node ? `?operateNode=${node}` : '';
-    return `${baseURL}/apps/icon/${appKey}${params}`;
+    return resolveAppIconUrl(appKey, node, icon, baseURL);
 }
 
 export const installAppToNodes = (param: App.InstallAppToNodes) => {
     return http.post(`/core/xpack/sync/app/install`, param);
+};
+
+export const getLocalAppSyncConfig = () => {
+    return http.get<App.LocalAppSyncConfig>('/core/xpack/settings/app/local-sync');
+};
+
+export const updateLocalAppSyncConfig = (config: App.LocalAppSyncConfig) => {
+    return http.post('/core/xpack/settings/app/local-sync', config);
+};
+
+export const dispatchLocalAppSync = (req: App.AppStoreSync) => {
+    return http.post('/core/xpack/settings/app/local-sync/dispatch', req);
 };

@@ -26,12 +26,6 @@
                 </div>
             </template>
             <div class="dropdown-menu" v-loading="loading || switchingNode">
-                <div class="dropdown-item" v-if="currentUser" @click="changeUserInfo">
-                    <SvgIcon class="icon" iconName="p-gerenzhongxin1" />
-                    {{ currentUser.name }}
-                </div>
-                <el-divider class="divider" />
-
                 <div class="dropdown-item" @click="openTask">
                     <SvgIcon class="icon" iconName="p-renwuzhongxin1" />
                     {{ $t('menu.msgCenter') }}
@@ -74,11 +68,6 @@
                         </el-icon>
                     </div>
                 </div>
-                <el-divider class="divider" />
-                <div class="dropdown-item" @click="logout">
-                    <SvgIcon class="icon" iconName="p-tuichudenglu3" />
-                    {{ $t('commons.login.logout') }}
-                </div>
             </div>
         </el-popover>
         <NodeDrawer
@@ -101,6 +90,7 @@ import { getAgentSettingInfo } from '@/api/modules/setting';
 import { computed, onMounted, ref } from 'vue';
 import bus from '@/global/bus';
 import { logOutApi } from '@/api/modules/auth';
+import { submitSAML2Navigation } from '@/utils/saml2';
 import router from '@/routers';
 import { loadProductProFromDB } from '@/utils/xpack';
 import { routerToNameWithQuery } from '@/utils/router';
@@ -128,7 +118,7 @@ const props = defineProps({
 
 const defaultNodeLimit = 8;
 
-const emit = defineEmits(['openTask', 'refresh']);
+const emit = defineEmits(['openTask', 'refresh', 'userChange']);
 bus.on('refreshTask', () => {
     checkTask();
 });
@@ -271,15 +261,22 @@ const openNodeDashboard = () => {
 };
 
 const logout = () => {
+    popoverVisible.value = false;
     ElMessageBox.confirm(i18n.global.t('commons.msg.sureLogOut'), i18n.global.t('commons.msg.infoTitle'), {
         confirmButtonText: i18n.global.t('commons.button.confirm'),
         cancelButtonText: i18n.global.t('commons.button.cancel'),
         type: 'warning',
     })
         .then(async () => {
-            await logOutApi();
+            const res = await logOutApi();
             globalStore.setLogStatus(false);
             globalStore.clearAuthInfo();
+            if (res.data?.saml2Navigation) {
+                try {
+                    submitSAML2Navigation(res.data.saml2Navigation);
+                    return;
+                } catch {}
+            }
             router.push({ name: 'entrance', params: { code: entrance.value } });
             MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
         })
@@ -290,12 +287,16 @@ const loadCurrentUser = async (currentNode?: string) => {
     const authInfo = await syncAuthInfo(currentNode);
     if (authInfo) {
         currentUser.value = authInfo;
+        emit('userChange', authInfo);
     }
 };
 const changeUserInfo = () => {
+    popoverVisible.value = false;
     loadCurrentUser();
     userInfoRef.value?.openDrawer();
 };
+
+defineExpose({ openUserInfo: changeUserInfo, logout });
 
 onMounted(() => {
     loadNodes();

@@ -216,6 +216,7 @@ export namespace File {
         url: string;
         ignoreCertificate?: boolean;
         useProxy?: boolean;
+        useServerFilename?: boolean;
     }
 
     export interface FileWgetRes {
@@ -233,6 +234,11 @@ export namespace File {
         name?: string;
         cover?: boolean;
         coverPaths?: string[];
+        taskID?: string;
+    }
+
+    export interface FileMoveStopReq {
+        taskID: string;
     }
 
     export interface FileDownload {

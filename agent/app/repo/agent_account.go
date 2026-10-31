@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/1Panel-dev/1Panel/agent/app/model"
+	"github.com/1Panel-dev/1Panel/agent/global"
 	"gorm.io/gorm"
 )
 
@@ -17,7 +18,8 @@ type IAgentAccountRepo interface {
 	Save(account *model.AgentAccount) error
 	DeleteByID(id uint) error
 	List(opts ...DBOption) ([]model.AgentAccount, error)
-	CountByProviders(providers []string) (map[string]int64, error)
+	CountTextByProviders(providers []string) (map[string]int64, error)
+	SaveLocal(account *model.AgentAccount, models []model.AgentAccountModel) error
 }
 
 func NewIAgentAccountRepo() IAgentAccountRepo {
@@ -67,7 +69,7 @@ func (a AgentAccountRepo) List(opts ...DBOption) ([]model.AgentAccount, error) {
 	return accounts, nil
 }
 
-func (a AgentAccountRepo) CountByProviders(providers []string) (map[string]int64, error) {
+func (a AgentAccountRepo) CountTextByProviders(providers []string) (map[string]int64, error) {
 	normalizedProviders := normalizeProviders(providers)
 	counts := make(map[string]int64, len(normalizedProviders))
 	for _, provider := range normalizedProviders {
@@ -86,6 +88,7 @@ func (a AgentAccountRepo) CountByProviders(providers []string) (map[string]int64
 		Model(&model.AgentAccount{}).
 		Select("provider, COUNT(*) as count").
 		Where("provider IN ?", normalizedProviders).
+		Scopes(WithTextAPIType()).
 		Group("provider").
 		Scan(&rows).Error; err != nil {
 		return nil, err
@@ -94,6 +97,25 @@ func (a AgentAccountRepo) CountByProviders(providers []string) (map[string]int64
 		counts[row.Provider] = row.Count
 	}
 	return counts, nil
+}
+
+func (a AgentAccountRepo) SaveLocal(account *model.AgentAccount, models []model.AgentAccountModel) error {
+	return global.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(account).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("account_id = ?", account.ID).Delete(&model.AgentAccountModel{}).Error; err != nil {
+			return err
+		}
+		if len(models) == 0 {
+			return nil
+		}
+		for i := range models {
+			models[i].AccountID = account.ID
+			models[i].SortOrder = i + 1
+		}
+		return tx.Create(&models).Error
+	})
 }
 
 func normalizeProviders(providers []string) []string {

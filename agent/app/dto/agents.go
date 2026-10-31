@@ -9,7 +9,8 @@ type AgentCreateReq struct {
 	WebUIPort         int      `json:"webUIPort" validate:"required,min=1,max=65535"`
 	BridgePort        int      `json:"bridgePort"`
 	AllowedOrigins    []string `json:"allowedOrigins"`
-	AgentType         string   `json:"agentType" validate:"required,oneof=openclaw copaw hermes-agent"`
+	AgentType         string   `json:"agentType" validate:"required,oneof=openclaw copaw hermes-agent deepseek-harness octop"`
+	AccessHost        string   `json:"accessHost"`
 	Model             string   `json:"model"`
 	AccountID         uint     `json:"accountId"`
 	Token             string   `json:"token"`
@@ -110,6 +111,7 @@ type AgentBatchOperateResult struct {
 }
 
 type AgentItem struct {
+	AccessHost           string    `json:"accessHost"`
 	ID                   uint      `json:"id"`
 	Name                 string    `json:"name"`
 	Remark               string    `json:"remark"`
@@ -162,16 +164,25 @@ type AgentWebsiteBindReq struct {
 }
 
 type AgentModelConfigUpdateReq struct {
-	AgentID   uint     `json:"agentId" validate:"required"`
-	AccountID uint     `json:"accountId" validate:"required"`
-	Model     string   `json:"model" validate:"required"`
-	Fallbacks []string `json:"fallbacks"`
+	AgentID   uint                 `json:"agentId" validate:"required"`
+	AccountID uint                 `json:"accountId" validate:"required"`
+	Model     string               `json:"model" validate:"required"`
+	Fallbacks []string             `json:"fallbacks"`
+	Metadata  []AgentModelMetadata `json:"metadata" validate:"dive"`
 }
 
 type AgentModelConfig struct {
-	AccountID uint     `json:"accountId"`
-	Model     string   `json:"model"`
-	Fallbacks []string `json:"fallbacks"`
+	AccountID uint                 `json:"accountId"`
+	Model     string               `json:"model"`
+	Fallbacks []string             `json:"fallbacks"`
+	Metadata  []AgentModelMetadata `json:"metadata"`
+}
+
+type AgentModelMetadata struct {
+	Model         string `json:"model" validate:"required"`
+	InputMode     string `json:"inputMode" validate:"required,oneof=auto text image"`
+	ContextWindow int    `json:"contextWindow" validate:"min=0"`
+	MaxTokens     int    `json:"maxTokens" validate:"min=0"`
 }
 
 type AgentHermesChatSessionItem struct {
@@ -322,29 +333,31 @@ type AgentAccountModelDeleteReq struct {
 }
 
 type AgentAccountCreateReq struct {
-	Provider       string              `json:"provider" validate:"required"`
-	Name           string              `json:"name" validate:"required"`
-	APIKey         string              `json:"apiKey" validate:"required"`
-	RememberAPIKey bool                `json:"rememberApiKey"`
-	BaseURL        string              `json:"baseURL"`
-	Models         []AgentAccountModel `json:"models"`
-	APIType        string              `json:"apiType" validate:"required"`
-	AuthMode       string              `json:"authMode"`
-	VerifyModel    string              `json:"verifyModel"`
-	Remark         string              `json:"remark"`
+	Provider             string              `json:"provider" validate:"required"`
+	Name                 string              `json:"name" validate:"required"`
+	APIKey               string              `json:"apiKey" validate:"required"`
+	RememberAPIKey       bool                `json:"rememberApiKey"`
+	BaseURL              string              `json:"baseURL"`
+	Models               []AgentAccountModel `json:"models"`
+	APIType              string              `json:"apiType" validate:"required"`
+	AuthMode             string              `json:"authMode"`
+	VerifyModel          string              `json:"verifyModel"`
+	ValidateAvailability *bool               `json:"validateAvailability"`
+	Remark               string              `json:"remark"`
 }
 
 type AgentAccountUpdateReq struct {
-	ID             uint   `json:"id" validate:"required"`
-	Name           string `json:"name" validate:"required"`
-	APIKey         string `json:"apiKey" validate:"required"`
-	RememberAPIKey bool   `json:"rememberApiKey"`
-	BaseURL        string `json:"baseURL"`
-	APIType        string `json:"apiType" validate:"required"`
-	AuthMode       string `json:"authMode"`
-	VerifyModel    string `json:"verifyModel"`
-	Remark         string `json:"remark"`
-	SyncAgents     bool   `json:"syncAgents"`
+	ID                   uint   `json:"id" validate:"required"`
+	Name                 string `json:"name" validate:"required"`
+	APIKey               string `json:"apiKey" validate:"required"`
+	RememberAPIKey       bool   `json:"rememberApiKey"`
+	BaseURL              string `json:"baseURL"`
+	APIType              string `json:"apiType" validate:"required"`
+	AuthMode             string `json:"authMode"`
+	VerifyModel          string `json:"verifyModel"`
+	ValidateAvailability *bool  `json:"validateAvailability"`
+	Remark               string `json:"remark"`
+	SyncAgents           bool   `json:"syncAgents"`
 }
 
 type AgentAccountVerifyReq struct {
@@ -363,6 +376,8 @@ type AgentAccountDeleteReq struct {
 type AgentAccountSearch struct {
 	PageInfo
 	Provider string `json:"provider"`
+	APIType  string `json:"apiType"`
+	TextOnly bool   `json:"textOnly"`
 	Name     string `json:"name"`
 }
 
@@ -371,6 +386,7 @@ type AgentAccountProviderCountReq struct {
 }
 
 type AgentAccountInfo struct {
+	AppInstallID    uint                `json:"appInstallId"`
 	ID              uint                `json:"id"`
 	MasterAccountID uint                `json:"masterAccountId"`
 	Provider        string              `json:"provider"`
@@ -394,11 +410,13 @@ type ProviderModelInfo struct {
 }
 
 type ProviderAPIInfo struct {
-	APIType         string   `json:"apiType"`
-	BaseURL         string   `json:"baseUrl"`
-	EditableBaseURL bool     `json:"editableBaseUrl"`
-	DefaultAuthMode string   `json:"defaultAuthMode"`
-	AuthModes       []string `json:"authModes"`
+	APIType                string              `json:"apiType"`
+	BaseURL                string              `json:"baseUrl"`
+	EditableBaseURL        bool                `json:"editableBaseUrl"`
+	SupportsModelDiscovery bool                `json:"supportsModelDiscovery"`
+	DefaultAuthMode        string              `json:"defaultAuthMode"`
+	AuthModes              []string            `json:"authModes"`
+	Models                 []ProviderModelInfo `json:"models"`
 }
 
 type ProviderInfo struct {
@@ -415,32 +433,53 @@ type AgentFeishuConfigReq struct {
 	AgentID uint `json:"agentId" validate:"required"`
 }
 
+type AgentFeishuTransition struct {
+	Confirmed         bool   `json:"confirmed"`
+	Streaming         bool   `json:"streaming"`
+	GroupSessionScope string `json:"groupSessionScope"`
+	RequireMention    string `json:"requireMention"`
+}
+
+type AgentFeishuSwitchReq struct {
+	AgentID           uint   `json:"agentId" validate:"required"`
+	TaskID            string `json:"taskID" validate:"required"`
+	Streaming         bool   `json:"streaming"`
+	GroupSessionScope string `json:"groupSessionScope" validate:"required,oneof=group group_sender group_topic group_topic_sender"`
+	RequireMention    string `json:"requireMention" validate:"required,oneof=true false"`
+}
+
 type AgentFeishuConfigUpdateReq struct {
-	AgentID        uint             `json:"agentId" validate:"required"`
-	Enabled        bool             `json:"enabled"`
-	ThreadSession  bool             `json:"threadSession"`
-	ReplyMode      string           `json:"replyMode" validate:"required"`
-	Streaming      bool             `json:"streaming"`
-	RequireMention string           `json:"requireMention" validate:"required,oneof=true false open"`
-	GroupPolicy    string           `json:"groupPolicy" validate:"required,oneof=open allowlist disabled"`
-	GroupAllowFrom []string         `json:"groupAllowFrom"`
-	Domain         string           `json:"domain"`
-	ConnectionMode string           `json:"connectionMode"`
-	Bots           []AgentFeishuBot `json:"bots" validate:"required,min=1"`
+	GroupSessionScope string           `json:"groupSessionScope" validate:"omitempty,oneof=group group_sender group_topic group_topic_sender"`
+	AgentID           uint             `json:"agentId" validate:"required"`
+	Enabled           bool             `json:"enabled"`
+	ThreadSession     bool             `json:"threadSession"`
+	ReplyMode         string           `json:"replyMode" validate:"required"`
+	Streaming         bool             `json:"streaming"`
+	RequireMention    string           `json:"requireMention" validate:"required,oneof=true false open"`
+	GroupPolicy       string           `json:"groupPolicy" validate:"required,oneof=open allowlist disabled"`
+	GroupAllowFrom    []string         `json:"groupAllowFrom"`
+	Domain            string           `json:"domain"`
+	ConnectionMode    string           `json:"connectionMode"`
+	Bots              []AgentFeishuBot `json:"bots" validate:"required,min=1"`
 }
 
 type AgentFeishuConfig struct {
-	Enabled        bool             `json:"enabled"`
-	ThreadSession  bool             `json:"threadSession"`
-	ReplyMode      string           `json:"replyMode"`
-	Streaming      bool             `json:"streaming"`
-	RequireMention string           `json:"requireMention"`
-	GroupPolicy    string           `json:"groupPolicy"`
-	GroupAllowFrom []string         `json:"groupAllowFrom"`
-	Domain         string           `json:"domain"`
-	ConnectionMode string           `json:"connectionMode"`
-	Bots           []AgentFeishuBot `json:"bots"`
-	Installed      bool             `json:"installed"`
+	BuiltinManaged    bool             `json:"builtinManaged"`
+	LegacyConfigured  bool             `json:"legacyConfigured"`
+	GroupSessionScope string           `json:"groupSessionScope"`
+	BuiltinAvailable  bool             `json:"builtinAvailable"`
+	Legacy            bool             `json:"legacy"`
+	Enabled           bool             `json:"enabled"`
+	ThreadSession     bool             `json:"threadSession"`
+	ReplyMode         string           `json:"replyMode"`
+	Streaming         bool             `json:"streaming"`
+	RequireMention    string           `json:"requireMention"`
+	GroupPolicy       string           `json:"groupPolicy"`
+	GroupAllowFrom    []string         `json:"groupAllowFrom"`
+	Domain            string           `json:"domain"`
+	ConnectionMode    string           `json:"connectionMode"`
+	Bots              []AgentFeishuBot `json:"bots"`
+	Installed         bool             `json:"installed"`
 }
 
 type AgentTelegramConfigReq struct {
@@ -598,6 +637,52 @@ type AgentPluginStatus struct {
 	Upgradable     bool   `json:"upgradable"`
 }
 
+type AgentPluginsReq struct {
+	AgentID uint `json:"agentId" validate:"required"`
+}
+
+type AgentPluginSearchReq struct {
+	AgentID uint   `json:"agentId" validate:"required"`
+	Keyword string `json:"keyword" validate:"required,max=100"`
+	Limit   int    `json:"limit" validate:"omitempty,min=1,max=100"`
+}
+
+type AgentPluginMarketInstallReq struct {
+	AgentID uint   `json:"agentId" validate:"required"`
+	Package string `json:"package" validate:"required,max=200"`
+	Version string `json:"version" validate:"required,max=100"`
+	TaskID  string `json:"taskID" validate:"required"`
+}
+
+type AgentPluginOperateReq struct {
+	AgentID  uint   `json:"agentId" validate:"required"`
+	PluginID string `json:"pluginId" validate:"required,max=200"`
+	Operate  string `json:"operate" validate:"required,oneof=enable disable update uninstall"`
+	TaskID   string `json:"taskID" validate:"required"`
+}
+
+type AgentPluginItem struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Origin  string `json:"origin"`
+	Enabled bool   `json:"enabled"`
+}
+
+type AgentPluginSearchItem struct {
+	Package          string   `json:"package"`
+	PluginID         string   `json:"pluginId"`
+	Name             string   `json:"name"`
+	Description      string   `json:"description"`
+	Version          string   `json:"version"`
+	Channel          string   `json:"channel"`
+	VerificationTier string   `json:"verificationTier"`
+	Categories       []string `json:"categories"`
+	Official         bool     `json:"official"`
+	Downloads        int64    `json:"downloads"`
+	Score            float64  `json:"score"`
+}
+
 type AgentDiscordConfigUpdateReq struct {
 	AgentID        uint              `json:"agentId" validate:"required"`
 	Enabled        bool              `json:"enabled"`
@@ -678,9 +763,9 @@ type AgentSecurityConfig struct {
 
 type AgentOtherConfigUpdateReq struct {
 	AgentID           uint   `json:"agentId" validate:"required"`
-	UserTimezone      string `json:"userTimezone" validate:"required"`
+	UserTimezone      string `json:"userTimezone"`
 	BrowserEnabled    bool   `json:"browserEnabled"`
-	NPMRegistry       string `json:"npmRegistry" validate:"required"`
+	NPMRegistry       string `json:"npmRegistry"`
 	DashboardUsername string `json:"dashboardUsername"`
 	DashboardPassword string `json:"dashboardPassword"`
 }

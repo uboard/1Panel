@@ -16,12 +16,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/1Panel-dev/1Panel/core/app/auth"
 	"github.com/1Panel-dev/1Panel/core/app/model"
 	"github.com/1Panel-dev/1Panel/core/app/repo"
 	"github.com/1Panel-dev/1Panel/core/cmd/server/docs"
 	"github.com/1Panel-dev/1Panel/core/constant"
 	"github.com/1Panel-dev/1Panel/core/global"
 	psessionUtils "github.com/1Panel-dev/1Panel/core/init/session/psession"
+	"github.com/1Panel-dev/1Panel/core/utils/mcpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -35,6 +37,19 @@ const (
 func OperationLog() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Request.Header.Del(headerNeedOperationResolve)
+		if mcpapi.IsRequest(c.Request) && c.GetBool("MCP_API_AUTH") {
+			c.Next()
+			return
+		}
+		switch c.Request.URL.Path {
+		case "/api/v2/core/auth/api/keys/reveal":
+			// Disclosure has its own audit and must not enter response-body capture.
+			c.Next()
+			return
+		case "/api/v2/core/mcp/credentials/create", "/api/v2/core/mcp/credentials/reveal", "/api/v2/core/mcp/credentials/rotate", "/api/v2/core/mcp/credentials/export":
+			c.Next()
+			return
+		}
 
 		if strings.Contains(c.Request.URL.Path, "search") || c.Request.Method == http.MethodGet {
 			c.Next()
@@ -42,8 +57,7 @@ func OperationLog() gin.HandlerFunc {
 		}
 
 		source := loadLogInfo(c.Request.URL.Path)
-		pathItem := strings.TrimPrefix(c.Request.URL.Path, "/api/v2")
-		pathItem = strings.TrimPrefix(pathItem, "/api/v2/core")
+		pathItem := normalizeOperationPath(c.Request.URL.Path)
 		currentNodeItem := c.Request.Header.Get("CurrentNode")
 		currentNode, _ := url.QueryUnescape(currentNodeItem)
 		record := &model.OperationLog{
@@ -93,6 +107,7 @@ func OperationLog() gin.HandlerFunc {
 					formatMap[key] = bodyMap[key]
 				}
 			}
+			redactCredentialSetting(record.Path, bodyMap, formatMap)
 		}
 		needAgentResolve := len(operationDic.BeforeFunctions) != 0 && len(currentNode) != 0 && currentNode != "local" && !strings.HasPrefix(record.Path, "/core")
 		allowCoreFallback := strings.HasPrefix(record.Path, "/core/xpack") || !ShouldProxyToAgent(c.Request.URL.Path) || len(currentNode) == 0 || currentNode == "local"
@@ -113,13 +128,28 @@ func OperationLog() gin.HandlerFunc {
 
 		c.Next()
 
+		if c.GetBool("API_KEY_AUDIT_RECORDED") {
+			return
+		}
+
 		record.User = LoadOperationUser(c)
-
-		if len(operationDic.BeforeFunctions) != 0 {
-			if needAgentResolve {
-				mergeResolvedData(writer.resolvedHeader, formatMap)
+		if c.GetBool("API_AUTH") {
+			if clientIP := c.GetString("API_AUTH_CLIENT_IP"); clientIP != "" {
+				record.IP = clientIP
 			}
+			record.AuthMethod = "api_key"
+			record.APIKeyID = c.GetString("API_AUTH_KEY_ID")
+			record.APIKeyName = c.GetString("API_AUTH_KEY_NAME")
+			if c.GetString("API_AUTH_KEY_KIND") == "legacy" {
+				record.APIKeyID = "legacy:" + c.GetString("API_AUTH_OWNER_TYPE") + ":" + c.GetString("API_AUTH_OWNER_ID")
+			}
+		} else if record.User != "" {
+			record.AuthMethod = "session"
+		}
 
+		// Handlers may supply audit values even without database resolution metadata.
+		mergeResolvedData(writer.resolvedHeader, formatMap)
+		if len(operationDic.BeforeFunctions) != 0 {
 			if allowCoreFallback && !hasAllResolvedData(formatMap, operationDic.BeforeFunctions) {
 				dbItem, err := newDB(record.Path)
 				if err == nil {
@@ -178,6 +208,13 @@ func OperationLog() gin.HandlerFunc {
 		if err := logRepo.CreateOperationLog(record); err != nil {
 			global.LOG.Errorf("create operation record failed, err: %v", err)
 		}
+	}
+}
+
+func redactCredentialSetting(operationPath string, body, values map[string]interface{}) {
+	key, _ := body["key"].(string)
+	if operationPath == "/core/settings/update" && auth.IsAPICredentialSetting(key) {
+		values["value"] = "[REDACTED]"
 	}
 }
 

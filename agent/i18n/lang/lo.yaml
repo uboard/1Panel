@@ -78,6 +78,9 @@ ErrAgentWebsiteBound: 'ຕົວແທນນີ້ຖືກຜູກມັດກ
 ErrAgentWebsiteTypeUnsupported: 'ສາມາດຜູກມັດໄດ້ສະເພາະເວັບໄຊປະເພດ Proxy ຫຼື Static ເທົ່ານັ້ນ'
 ErrAgentWebsiteInUse: 'ເວັບໄຊນີ້ຖືກຜູກມັດກັບຕົວແທນອື່ນແລ້ວ'
 ErrAgentWebsiteUnbindUnsupported: 'ເວັບໄຊທີ່ຕິດຕັ້ງແລ້ວບໍ່ສາມາດຍົກເລີກການຜູກມັດດ້ວຍຕົນເອງໄດ້'
+ErrQwenPawAuthRequest: 'ອັບເດດຂໍ້ມູນຢືນຢັນ QwenPaw ບໍ່ສຳເລັດ: {{ .err }}'
+ErrQwenPawAuthOutOfSync: 'ຂໍ້ມູນຢືນຢັນ QwenPaw ປັດຈຸບັນບໍ່ກົງກັບບັນທຶກຂອງ 1Panel. ກະລຸນາຣີເຊັດລະຫັດຜ່ານ QwenPaw ຫຼືກູ້ຄືນຂໍ້ມູນໃນໄຟລ໌ .env ຂອງແອັບ'
+ErrQwenPawAuthDisabled: 'QwenPaw ຍັງບໍ່ໄດ້ເປີດໃຊ້ການຢືນຢັນການເຂົ້າລະບົບ'
 ErrHermesPairingCodeUnavailable: 'ລະຫັດການຈັບຄູ່ໃນ Hermes ບໍ່ສາມາດໃຊ້ງານໄດ້ຊົ່ວຄາວ, ອາດຈະເກີດຈາກບັນຫາເຄືອຂ່າຍ. ກະລຸນາລອງໃໝ່ພາຍຫຼັງ.'
 ErrHermesFeishuGroupAllowlistRequiresAllowlist: 'ເມື່ອນະໂຍບາຍກຸ່ມ Feishu ແມ່ນ Allowlist, ນະໂຍບາຍ DM ບໍ່ສາມາດເປັນ Pairing Code ໄດ້.'
 
@@ -122,7 +125,14 @@ ErrAppNameExist: 'ຊື່ແອັບພລິເຄຊັນມີຢູ່�
 ErrAppInstallNameExist: 'ຊື່ການຕິດຕັ້ງແອັບ {{ .name }} ມີຢູ່ໃນລະບົບແລ້ວ'
 AppStoreIsSyncing: 'App Store ກຳລັງຊິງຄ໌ຂໍ້ມູນ; ກະລຸນາລອງໃໝ່ພາຍຫຼັງ'
 ErrGetCompose: 'ອ່ານໄຟລ໌ docker-compose.yml ລົ້ມເຫຼວ: {{ .detail }}'
+ErrComposeProjectNameParse: 'ບໍ່ສາມາດວິເຄາະຊື່ໂຄງການຈາກຜົນລັບການກຳນົດຄ່າ Docker Compose: {{ .detail }}'
+ErrComposeProjectNameEmpty: 'ບໍ່ສາມາດກຳນົດຊື່ໂຄງການຈາກການຕັ້ງຄ່າ Docker Compose ຫຼື ໂຟນເດີແມ່ຂອງໄຟລ໌ໄດ້. ກະລຸນາປ້ອນຊື່ແລ້ວລອງໃໝ່.'
+ErrComposeNameInvalid: 'ຊື່ໂຄງການ Compose ບໍ່ຖືກຕ້ອງ: ຕ້ອງເລີ່ມດ້ວຍຕົວພິມນ້ອຍ ຫຼື ຕົວເລກ, ໃຊ້ໄດ້ສະເພາະຕົວພິມນ້ອຍ, ຕົວເລກ, ຂີດກາງ ແລະ ຂີດລຸ່ມ, ຄວາມຍາວ 1-256 ຕົວອັກສອນ.'
 ErrAppVersionUnavailable: 'ເວີຊັນແອັບນີ້ຖືກລຶບອອກຈາກບໍລິການທາງໄກແລ້ວ ກະລຸນາເລືອກເວີຊັນອື່ນແລ້ວລອງໃໝ່'
+ErrVllmGB10ProOnly: 'ເວີຊັນ vLLM ນີ້ມີໃຫ້ໃຊ້ສະເພາະໃນ 1Panel Professional Edition ເທົ່ານັ້ນ.'
+ErrAIGatewayDatabaseTypeMismatch: 'AI Gateway ສາມາດອັບເກຣດໄດ້ພາຍໃນປະເພດຖານຂໍ້ມູນດຽວກັນເທົ່ານັ້ນ (SQLite ຫຼື PostgreSQL).'
+ErrAIGatewayRecoverDatabaseTypeMismatch: 'ຂໍ້ມູນສຳຮອງ AI Gateway ແລະ ແອັບເປົ້າໝາຍຕ້ອງໃຊ້ປະເພດຖານຂໍ້ມູນດຽວກັນ (SQLite ຫຼື PostgreSQL).'
+ErrHermesUpgradeVersion: 'Hermes Agent ສາມາດອັບເກຣດໄປຫາລຸ້ນໃໝ່ກວ່າທີ່ຮູ້ຈັກ ແລະ ອະນຸຍາດໂດຍການຕັ້ງຄ່າອັບເກຣດຂ້າມລຸ້ນຫຼັກເທົ່ານັ້ນ. ຖ້າຕ້ອງການກັບໄປລຸ້ນເກົ່າ ໃຫ້ກູ້ຄືນຈາກຂໍ້ມູນສຳຮອງ.'
 ErrAppWarn: 'ສະຖານະແອັບຜິດປົກກະຕິ; ກະລຸນາກວດສອບບັນທຶກ'
 ErrAppParamKey: 'ພາຣາມິເຕີຂອງແອັບບໍ່ຖືກຕ້ອງ: {{ .name }}'
 ErrAppUpgrade: 'ອັບເກຣດແອັບລົ້ມເຫຼວ: {{ .name }} {{ .err }}'
@@ -144,6 +154,11 @@ ErrAppVersionDeprecated: "ແອັບພລິເຄຊັນ {{ .name }} ບ�
 ErrDockerFailed: 'Docker ຜິດປົກກະຕິ; ກະລຸນາກວດສອບສະຖານະການບໍລິການ'
 ErrDockerComposeCmdNotFound: 'ບໍ່ພົບຄຳສັ່ງ Docker Compose ໃນເຄື່ອງ'
 UseExistImage: 'ມີຮູບພາບຢູ່ແລ້ວ; ກຳລັງໃຊ້ຮູບພາບທີ່ມີຢູ່'
+UpgradePrepare: 'ກະກຽມອັບເກຣດແອັບ'
+UpgradeStop: 'ຢຸດແອັບເດີມ'
+UpgradeWaitReady: 'ລໍຖ້າແອັບພ້ອມ'
+UpgradeBackupDisabled: 'ປິດການສຳຮອງກ່ອນອັບເກຣດ; ການປ່ຽນແປງຂໍ້ມູນຈາກສະຄຣິບບໍ່ສາມາດຍ້ອນກັບໄດ້ທັງໝົດ'
+UpgradeRollbackFailed: 'ຍ້ອນກັບລົ້ມເຫຼວ'
 ErrDatabaseNotFound: 'ບໍ່ພົບຖານຂໍ້ມູນ: {{ .name }}'
 
 #ssh
@@ -194,6 +209,9 @@ ErrDomainFormat: 'ຮູບແບບໂດເມນບໍ່ຖືກຕ້ອ�
 ErrDefaultAlias: 'ຊື່ default ຖືກສະຫງວນໄວ້; ກະລຸນາໃຊ້ຊື່ອື່ນ'
 ErrParentWebsite: 'ກະລຸນາລຶບເວັບໄຊຍ່ອຍ {{ .name }} ກ່ອນ'
 ErrBuildDirNotFound: 'ບໍ່ມີໂຟນເດີ Build ຢູ່'
+ErrBrotliDisabled: 'ໂມດູນ brotli ຍັງບໍ່ໄດ້ເປີດໃຊ້, ກະລຸນາເປີດໃຊ້ ແລະ ສ້າງກ່ອນ'
+ErrBrotliUnsupported: 'ແຜງຄວບຄຸມບໍ່ສາມາດເຊື່ອມການຕັ້ງຄ່າ brotli ເຂົ້າ nginx.conf ໂດຍອັດຕະໂນມັດໄດ້; ກວດເບິ່ງໄຟລ໌ ຫຼື ອັບເກຣດ OpenResty'
+ErrModuleBuildUnsupported: 'ລຸ້ນ OpenResty ນີ້ບໍ່ສາມາດສ້າງໂມດູນໄດ້, ກະລຸນາອັບເກຣດກ່ອນ'
 ErrImageNotExist: 'ບໍ່ພົບຮູບພາບ runtime: {{ .name }}'
 ErrProxyIsUsed: 'ຕົວຈັດການການໂຫຼດ (Load balancer) ຖືກໃຊ້ງານໂດຍ reverse proxy'
 ErrSSLValid: 'ໄຟລ໌ໃບຮັບຮອງບໍ່ຖືກຕ້ອງ'
@@ -271,10 +289,13 @@ ErrPortRules: 'ຈຳນວນພອດບໍ່ກົງກັນ'
 ErrPgImagePull: 'ດຶງຮູບພາບເກີນກຳນົດເວລາ; ກະລຸນາກຳນົດຄ່າການເລັ່ງ (Acceleration) ຫຼື ດຶງ {{ .name }} ດ້ວຍຕົນເອງ'
 PruneHelper: "ທຳຄວາມສະອາດ {{ .name }} ຄືນພື້ນທີ່ດິສກ໌ {{ .size }}"
 ImageRemoveHelper: "ລຶບຮູບພາບ {{ .name }} ແລ້ວ, ຄືນພື້ນທີ່ດິສກ໌ {{ .size }}"
-BuildCache: 'Build Cache'
+BuildCache: 'ແຄດການສ້າງ'
 Volume: 'ວໍລຸມ (Volume)'
 Network: "ເຄືອຂ່າຍ"
 PruneStart: 'ກຳລັງດຳເນີນການທຳຄວາມສະອາດ'
+NetworkCleanupConnected: "ຂ້າມເຄືອຂ່າຍ [{{ .name }}] ({{ .id }}): ມີຄອນເທນເນີເຊື່ອມຕໍ່ຢູ່ ຫຼື ເຄືອຂ່າຍກຳລັງຖືກໃຊ້ງານ; ບໍ່ໄດ້ລຶບ"
+NetworkCleanupSummary: "ການລ້າງເຄືອຂ່າຍສຳເລັດ: ລຶບແລ້ວ {{ .deleted }}, ຂ້າມ {{ .skipped }}, ລົ້ມເຫຼວ {{ .failed }}"
+NetworkCleanupPartialFailure: "ບໍ່ສາມາດລ້າງບາງເຄືອຂ່າຍໄດ້; ກະລຸນາເບິ່ງບັນທຶກວຽກ"
 ContainerBackupPrepare: 'ກຽມພື້ນທີ່ເຮັດວຽກສຳລັບສຳຮອງຂໍ້ມູນຄອນເທນເນີ'
 ContainerBackupStop: 'ຢຸດຄອນເທນເນີກ່ອນການສຳຮອງຂໍ້ມູນ'
 ContainerBackupInspect: 'ກວດສອບຄອນເທນເນີ ແລະ ເຄືອຂ່າຍສຳລັບການສຳຮອງຂໍ້ມູນ'
@@ -412,10 +433,10 @@ captcha: 'ການຢືນຢັນຕົວຕົນ (CAPTCHA)'
 fiveSeconds: 'ການຢືນຢັນ 5 ວິນາທີ'
 vulnCheck: 'ກົດລະບຽບເພີ່ມເຕີມ'
 acl: 'ກົດລະບຽບປັບແຕ່ງເອງ'
-sql: 'SQL injection'
+sql: 'ການໂຈມຕີແບບສອດແຊກ SQL'
 cc: 'ຂີດຈຳກັດຄວາມຖີ່ຂອງການເຂົ້າເຖິງ'
 defaultUrlBlack: 'ກົດລະບຽບ URL'
-sqlInject: 'SQL injection'
+sqlInject: 'ການໂຈມຕີແບບສອດແຊກ SQL'
 ErrDBNotExist: 'ຖານຂໍ້ມູນບໍ່ມີຢູ່'
 allow: 'ອະນຸຍາດ'
 deny: 'ປະຕິເສດ'
@@ -439,6 +460,11 @@ TaskCreate: 'ສ້າງ'
 TaskDelete: 'ລຶບ'
 TaskUpgrade: 'ອັບເກຣດ'
 TaskUpdate: 'ອັບເດດ'
+AgentPluginInstall: 'ຕິດຕັ້ງປລັກອິນ'
+AgentPluginEnable: 'ເປີດໃຊ້ປລັກອິນ'
+AgentPluginDisable: 'ປິດໃຊ້ປລັກອິນ'
+AgentPluginUpdate: 'ອັບເດດປລັກອິນ'
+AgentPluginUninstall: 'ຖອນການຕິດຕັ້ງປລັກອິນ'
 TaskRestart: 'ເລີ່ມໃໝ່'
 TaskProtect: "ປ້ອງກັນ"
 TaskBackup: 'ສຳຮອງຂໍ້ມູນ'
@@ -454,7 +480,7 @@ TaskImport: "ນຳເຂົ້າ"
 TaskExport: "ສົ່ງອອກ"
 Website: 'ເວັບໄຊ'
 App: 'ແອັບພລິເຄຊັນ'
-Runtime: 'Runtime'
+Runtime: 'ສະພາບແວດລ້ອມຣັນທາມ'
 Database: 'ຖານຂໍ້ມູນ'
 ConfigFTP: 'ສ້າງຜູ້ໃຊ້ FTP {{ .name }}'
 ConfigOpenresty: 'ສ້າງໄຟລ໌ການຕັ້ງຄ່າ OpenResty'
@@ -475,7 +501,7 @@ Compose: 'Compose'
 Container: 'ຄອນເທນເນີ'
 AppLink: 'ແອັບພລິເຄຊັນທີ່ເຊື່ອມໂຍງ'
 EnableSSL: 'ເປີດໃຊ້ HTTPS'
-AppStore: 'App Store'
+AppStore: 'ຮ້ານແອັບ'
 TaskSync: 'ຊິງຄ໌'
 LocalApp: 'ແອັບພລິເຄຊັນພາຍໃນເຄື່ອງ'
 SubTask: 'ວຽກຍ່ອຍ'
@@ -566,6 +592,10 @@ ContainerDisconnectOld: 'ປ່ອຍທີ່ຢູ່ເຄືອຂ່າຍ�
 ContainerCreateReplacement: 'ສ້າງຄອນເທນເນີທົດແທນ {{ .name }}'
 ContainerStartReplacement: 'ເລີ່ມຄອນເທນເນີທົດແທນ {{ .name }}'
 ContainerWaitReplacement: 'ກວດສອບຄອນເທນເນີທົດແທນ {{ .name }} ວ່າພ້ອມແລ້ວ'
+ContainerStartupDiagnostic: 'ການວິນິດໄສການເລີ່ມລົ້ມເຫຼວຂອງຄອນເທນເນີທົດແທນ {{ .name }}'
+ContainerRecentLogs: 'ບັນທຶກຄອນເທນເນີຫຼ້າສຸດ (200 ແຖວ)'
+ContainerDiagnosticLogsFailed: 'ບໍ່ສາມາດຮັບບັນທຶກຂອງຄອນເທນເນີທີ່ລົ້ມເຫຼວ {{ .name }}: {{ .err }}'
+ContainerDiagnosticLogsEmpty: 'ບໍ່ມີບັນທຶກຄອນເທນເນີ'
 ContainerRollbackRestartOld: 'ເລີ່ມຄອນເທນເນີເດີມ {{ .name }} ຄືນໃໝ່'
 ContainerRollbackRemoveReplacement: 'ລຶບຄອນເທນເນີທົດແທນ {{ .name }} ທີ່ລົ້ມເຫຼວ'
 ContainerRollbackRenameOld: 'ກູ້ຄືນຊື່ຄອນເທນເນີເດີມ {{ .name }}'
@@ -594,14 +624,15 @@ AppAttributesNotMatch: 'ປະເພດ ຫຼື ຊື່ຂອງແອັບ
 
 #alert
 ErrAlertSync: 'ຊິງຄ໌ຂໍ້ຄວາມແຈ້ງເຕືອນລົ້ມເຫຼວ'
+ErrWebhookTestFailed: 'ກະລຸນາກວດສອບການຕັ້ງຄ່າ Webhook. ເບິ່ງບັນທຶກລະບົບສຳລັບລາຍລະອຽດ.'
 
 #task - runtime
 ErrInstallExtension: 'ມີວຽກຕິດຕັ້ງສ່ວນເສີມອື່ນກຳລັງເຮັດວຽກຢູ່'
 
 # alert mail template
 PanelAlertTitle: "ການແຈ້ງເຕືອນຈາກແຜງຄວບຄຸມ"
-TestAlertTitle: "ອີເມວທົດສອບ - ກວດສອບການເຊື່ອມຕໍ່ອີເມວ"
-TestAlert: "ນີ້ແມ່ນອີເມວທົດສອບເພື່ອຢືນຢັນວ່າການຕັ້ງຄ່າການສົ່ງອີເມວຂອງທ່ານຖືກຕ້ອງ."
+TestAlertTitle: "ການແຈ້ງເຕືອນທົດສອບຈາກແຜງຄວບຄຸມ"
+TestAlertMessage: "ນີ້ແມ່ນການແຈ້ງເຕືອນທົດສອບເພື່ອກວດສອບການຕັ້ງຄ່າ ແລະ ການເຊື່ອມຕໍ່ຂອງຊ່ອງທາງແຈ້ງເຕືອນ."
 LicenseExpirationAlert: "ແຜງຄວບຄຸມ {{ .node }}{{ .ip }}: ໃບອະນຸຍາດຈະໝົດອາຍຸໃນ {{ .day }} ວັນ. ເຂົ້າສູ່ລະບົບເພື່ອເບິ່ງລາຍລະອຽດ."
 CronJobFailedAlert: "ແຜງຄວບຄຸມ {{ .node }}{{ .ip }}: ວຽກທີ່ຕັ້ງເວລາ {{ .name }} ລົ້ມເຫຼວ. ເຂົ້າສູ່ລະບົບເພື່ອເບິ່ງລາຍລະອຽດ."
 ClamAlert: "ແຜງຄວບຄຸມ {{ .node }}{{ .ip }}: ການສະແກນໄວຣັສພົບ {{ .num }} ໄຟລ໌ທີ່ຕິດເຊື້ອ. ເຂົ້າສູ່ລະບົບເພື່ອເບິ່ງລາຍລະອຽດ."
@@ -615,6 +646,7 @@ CommonAlert: "ແຜງຄວບຄຸມ {{ .node }}{{ .ip }}: {{ .msg }}. ເ�
 NodeExceptionAlert: "ແຜງຄວບຄຸມ {{ .node }}{{ .ip }}: ໂນດ {{ .num }} ແຫ່ງຜິດປົກກະຕິ. ເຂົ້າສູ່ລະບົບເພື່ອເບິ່ງລາຍລະອຽດ."
 LicenseExceptionAlert: "ແຜງຄວບຄຸມ {{ .node }}{{ .ip }}: ໃບອະນຸຍາດ {{ .num }} ສະບັບຜິດປົກກະຕິ. ເຂົ້າສູ່ລະບົບເພື່ອເບິ່ງລາຍລະອຽດ."
 SSHAndPanelLoginAlert: "ແຜງຄວບຄຸມ {{ .node }}{{ .ip }}: ມີການເຂົ້າສູ່ລະບົບ {{ .name }} ທີ່ຜິດປົກກະຕິຈາກ {{ .loginIp }}. ເຂົ້າສູ່ລະບົບເພື່ອເບິ່ງລາຍລະອຽດ."
+CronJobSuccessAlert: "ແຜງຄວບຄຸມ {{ .node }}{{ .ip }}: ວຽກທີ່ຕັ້ງເວລາ {{ .name }} ສຳເລັດແລ້ວ. ເຂົ້າສູ່ລະບົບເພື່ອເບິ່ງລາຍລະອຽດ."
 
 #disk
 DeviceNotFound: "ບໍ່ພົບອຸປະກອນ {{ .name }}"
@@ -627,6 +659,7 @@ XfsNotFound: 'ບໍ່ພົບ xfs; ກະລຸນາຕິດຕັ້ງ xf
 # terminal
 TerminalAIBlockedRiskyCommand: 'ບລັອກຄຳສັ່ງທີ່ມີຄວາມສ່ຽງ: {{ .command }}'
 TerminalAIThinking: 'AI ກຳລັງຄິດ...'
+TerminalOutputTruncated: '[ຜົນລັບຖືກຕັດ, ສະແດງສະເພາະຜົນລັບຫຼ້າສຸດ]'
 TerminalAIReadyToExecute: 'ຄິດສຳເລັດແລ້ວ, ກົດ Enter ເພື່ອປະຕິບັດ (ໃຊ້ເວລາ: {{ .duration }}, ໂທເຄັນ: {{ .tokens }})'
 TerminalAIRequestFailed: 'ຄຳຮ້ອງຂໍ AI ລົ້ມເຫຼວ: {{ .err }}'
 FileAISearchEmptyDir: 'ບໍ່ພົບໄຟລ໌ ຫຼື ໂຟນເດີພາຍໃຕ້ເສັ້ນທາງນີ້ (ຫຼື ລາຍການທັງໝົດຖືກກັ່ນກອງອອກ).'
@@ -640,3 +673,123 @@ ErrAIProxyModelMapEmpty: 'ການຈັບຄູ່ໂມເດລບໍ່ສ
 ErrAIProxyModelMapEmptyExternalModel: 'ການຈັບຄູ່ໂມເດລມີໂມເດລຄຳຮ້ອງຂໍທີ່ຫວ່າງເປົ່າ'
 ErrAIProxyModelMapEmptyUpstreamModel: 'ໂມເດລ Upstream ສຳລັບ {{ .model }} ບໍ່ສາມາດຫວ່າງເປົ່າໄດ້'
 AIProxyUserFallback: 'ຜູ້ໃຊ້ທີ່ຖືກລຶບ (ID: {{ .id }})'
+AIProviderBailian: 'Alibaba Cloud Model Studio'
+AIProviderBailianCodingPlan: 'Alibaba Cloud Model Studio Coding Plan'
+AIProviderArk: 'Volcengine Ark'
+AIProviderArkCodingPlan: 'Volcengine Ark Coding Plan'
+
+# Firewall
+ErrDockerIptablesChainUnavailable: 'ບໍ່ພົບ chain DOCKER-USER ຂອງ Docker. ກະລຸນາເລີ່ມ Docker ໃໝ່ແລ້ວລອງອີກຄັ້ງ'
+ErrDockerNftablesChainUnavailable: 'ບໍ່ພົບ chain ໄຟວໍ nftables IPv4 ຂອງ Docker. ກະລຸນາກວດສອບວ່າ Docker ລຸ້ນປັດຈຸບັນຮອງຮັບ backend ໄຟວໍ nftables, ເລີ່ມ Docker ໃໝ່ແລ້ວລອງອີກຄັ້ງ'
+ErrDockerForwardPolicyDrop: 'ເຊີບເວີນີ້ຈຳກັດການສົ່ງຕໍ່ເຄືອຂ່າຍ. ຍັງບໍ່ສາມາດເປີດໃຊ້ການປ້ອງກັນພອດຄອນເທນເນີໄດ້ໃນຕອນນີ້.'
+Firewall: 'ໄຟວອລ'
+FirewallTaskHost: 'ໄຟວໍໂຮສ'
+FirewallTaskForwarding: 'ການສົ່ງຕໍ່ພອດ'
+FirewallTaskDocker: 'ການປ້ອງກັນພອດຄອນເທນເນີ'
+FirewallRuleTaskCreate: 'ສ້າງກົດໄຟວໍ [{{ .name }}]'
+FirewallRuleTaskUpdate: 'ອັບເດດກົດໄຟວໍ [{{ .name }}]'
+FirewallRuleTaskDelete: 'ລຶບກົດໄຟວໍ [{{ .name }}]'
+FirewallRuleTaskSync: 'ຊິງຄ໌ກົດໄຟວໍ [{{ .name }}]'
+FirewallTaskInitialize: 'ເລີ່ມຕົ້ນໄຟວໍ [{{ .name }}]'
+FirewallCreateRulesStep: 'ສ້າງກົດໄຟວໍ'
+FirewallCreateRulesResult: 'ຜົນການສ້າງ: ສຳເລັດ {{ .succeeded }}, ລົ້ມເຫຼວ {{ .failed }}, ບໍ່ໄດ້ດຳເນີນການ {{ .skipped }}'
+FirewallRuleOperationResult: 'ຜົນການດຳເນີນການ: ສຳເລັດ {{ .succeeded }} ລາຍການ, ລົ້ມເຫຼວ {{ .failed }} ລາຍການ'
+FirewallCreateRuleSkipped: 'ບໍ່ໄດ້ດຳເນີນການ'
+FirewallImportRuleConversion: '[{{ .index }}/{{ .total }}] {{ .source }} → {{ .target }}: {{ .rule }}; ແປງເປັນ {{ .count }} ກົດ'
+FirewallCreateRuleExecutionFailed: 'ການສ້າງກົດລົ້ມເຫຼວ. ຄຳສັ່ງທີ່ດຳເນີນການແລ້ວບໍ່ໄດ້ຖືກຍ້ອນກັບ'
+FirewallInitializeChainsStep: 'ເລີ່ມຕົ້ນ ແລະ ຜູກ chain ພື້ນຖານ {{ .name }}'
+FirewallSyncWhitelistStep: 'ຊິງຄ໌ລາຍການພອດໄຟວໍທີ່ອະນຸຍາດ'
+FirewallEnableForwardingStep: 'ເປີດໃຊ້ ແລະ ຜູກ chain ສົ່ງຕໍ່ພອດ'
+FirewallRestoreForwardingRulesStep: 'ກູ້ຄືນກົດສົ່ງຕໍ່ພອດຈາກຖານຂໍ້ມູນ'
+FirewallInspectDockerGuardStep: 'ກວດສອບ backend firewall Docker ແລະ ນະໂຍບາຍ'
+FirewallInitializeDockerGuardStep: 'ເລີ່ມຕົ້ນ ແລະ ຜູກ chain ປ້ອງກັນພອດ {{ .name }}'
+FirewallPersistDockerGuardStep: 'ບັນທຶກສະຖານະປ້ອງກັນພອດ Docker'
+FileTaskCopy: 'ສຳເນົາໄຟລ໌ໄປທີ່ {{ .dst }}'
+FileTaskMove: 'ຍ້າຍໄຟລ໌ໄປທີ່ {{ .dst }}'
+FileTaskCompress: 'ບີບອັດໄຟລ໌ໄປທີ່ {{ .dst }}'
+FileTaskDecompress: 'ແຕກໄຟລ໌ໄປທີ່ {{ .dst }}'
+FileTaskSource: 'ເສັ້ນທາງຕົ້ນທາງ: {{ .path }}'
+FileTaskFormat: 'ຮູບແບບໄຟລ໌ບີບອັດ: {{ .format }}'
+FileTaskRename: 'ຊື່ໄຟລ໌ປາຍທາງ: {{ .name }}'
+ErrFirewallBackendCleanupRequired: "ແບັກເອນປັດຈຸບັນ {{ .current }} ຍັງມີກົດຂອງ 1Panel. ກະລຸນາລຶບອອກກ່ອນປ່ຽນໄປ {{ .target }}."
+ErrDockerIPv4ForwardingDisabled: "ການສົ່ງຕໍ່ IPv4 ຖືກປິດ. ກະລຸນາຕັ້ງ net.ipv4.ip_forward=1 ກ່ອນໃຊ້ແບັກເອນໄຟວໍຂອງ Docker."
+ErrFirewallRuleSavedApplyFailed: "ບັນທຶກການຕັ້ງຄ່າກົດໃໝ່ແລ້ວ ແຕ່ນຳໃຊ້ກັບໄຟວໍບໍ່ສຳເລັດ. ລອງອີກຄັ້ງດ້ວຍການຊິງຂໍ້ມູນ: {{ .detail }}"
+ErrFirewallRuleConflict: "ມີກົດ UFW ທີ່ມີເງື່ອນໄຂກົງກັນແຕ່ການດຳເນີນການຕ່າງກັນແລ້ວ. ກະລຸນາແກ້ໄຂກົດທີ່ມີຢູ່."
+ErrForwardInterfaceNotFound: "ບໍ່ພົບອິນເຕີເຟດເຄືອຂ່າຍ {{ .name }} ທີ່ລະບຸໃນກົດສົ່ງຕໍ່. ກະລຸນາກວດສອບຊື່ ແລ້ວລອງໃໝ່."
+ErrIPv6RARisk: "ການສົ່ງຕໍ່ IPv6 ຖືກບລັອກເພື່ອປ້ອງກັນຄວາມສ່ຽງທີ່ເຄືອຂ່າຍຈະຂາດການເຊື່ອມຕໍ່. ເບິ່ງເອກະສານ ແລະ ບັນທຶກລະບົບ."
+ErrIPv6RACheckFailed: "ການສົ່ງຕໍ່ IPv6 ຖືກບລັອກເນື່ອງຈາກບໍ່ສາມາດກວດສອບການຕັ້ງຄ່າເຄືອຂ່າຍໄດ້. ເບິ່ງລາຍລະອຽດໃນບັນທຶກລະບົບ."
+
+ErrSSHPublicKey: "ກະລຸນາປ້ອນຄີສາທາລະນະ SSH ທີ່ຖືກຕ້ອງ"
+ErrSSHPrivateKey: "ຄີສ່ວນຕົວ SSH ບໍ່ຖືກຕ້ອງ ຫຼື ລະຫັດຜ່ານຜິດ; ຄີທີ່ເຂົ້າລະຫັດຕ້ອງໃຊ້ລະຫັດຜ່ານເດີມ"
+ErrSSHKeyMismatch: "ຄີສາທາລະນະ ແລະ ຄີສ່ວນຕົວ SSH ບໍ່ກົງກັນ"
+
+# virtual machine
+ErrVMNotFound: "ບໍ່ມີເຄື່ອງສະເໝືອນ"
+ErrVMAlreadyExists: "ມີເຄື່ອງສະເໝືອນຢູ່ແລ້ວ"
+ErrVMCountLimit: "ລຸ້ນ Professional ສາມາດສ້າງເຄື່ອງສະເໝືອນໄດ້ສູງສຸດ {{ .limit }} ເຄື່ອງ. ກະລຸນາລຶບເຄື່ອງສະເໝືອນທີ່ມີຢູ່ ຫຼື ອັບເກຣດເປັນລຸ້ນ Enterprise ແລ້ວລອງອີກຄັ້ງ."
+ErrVMImageAlreadyExists: "ມີອິມເມຈເຄື່ອງສະເໝືອນຢູ່ແລ້ວ: {{ .detail }}"
+ErrVMStoragePathInUse: "ເສັ້ນທາງພູນຈັດເກັບຖືກໃຊ້ໂດຍ [{{ .name }}] ແລ້ວ"
+ErrVMHelperNotFound: "ບໍ່ພົບ 1panel-kvm"
+ErrVMBridgeManaged: "ຊື່ບຣິດຈ໌ຖືກຈັດການໂດຍ libvirt ຫຼື Docker ແລ້ວ"
+ErrVMNetworkInUse: "ເຄືອຂ່າຍກຳລັງຖືກໃຊ້ງານ ແລະ ບໍ່ສາມາດລຶບໄດ້"
+ErrVMStorageInUse: "ພູນຈັດເກັບກຳລັງຖືກໃຊ້ງານ ແລະ ບໍ່ສາມາດລຶບໄດ້"
+ErrVMStorageNameCannotChange: "ບໍ່ສາມາດປ່ຽນຊື່ພູນຈັດເກັບໄດ້"
+ErrVMStoragePathCannotChange: "ບໍ່ສາມາດປ່ຽນເສັ້ນທາງພູນຈັດເກັບໄດ້"
+ErrVMRunning: "ເຄື່ອງສະເໝືອນກຳລັງເຮັດວຽກ"
+ErrVMLibvirtConnect: "ເຊື່ອມຕໍ່ກັບ libvirt ບໍ່ສຳເລັດ: {{ .detail }}"
+ErrVMPermission: "ບໍ່ມີສິດດຳເນີນການກັບເຄື່ອງສະເໝືອນ: {{ .detail }}"
+ErrVMNetworkNotFound: "ບໍ່ມີເຄືອຂ່າຍເຄື່ອງສະເໝືອນ: {{ .detail }}"
+ErrVMInvalidPath: "ເສັ້ນທາງເຄື່ອງສະເໝືອນບໍ່ຖືກຕ້ອງ: {{ .detail }}"
+ErrVMInvalidInput: "ພາລາມິເຕີເຄື່ອງສະເໝືອນບໍ່ຖືກຕ້ອງ: {{ .detail }}"
+ErrVMCommandFailed: "ຄຳສັ່ງເຄື່ອງສະເໝືອນລົ້ມເຫຼວ: {{ .err }}"
+ErrVMDiskResizeBlocked: "ດິສກ໌ບໍ່ຕອບສະໜອງເງື່ອນໄຂການຂະຫຍາຍ ຫຼື ຖືກອ້າງອີງໂດຍອຸປະກອນອື່ນ. ກະລຸນາກວດສອບສະຖານະດິສກ໌."
+ErrVMDiskReferenced: "ດິສກ໌ເສມືອນນີ້ຖືກໃຊ້ໂດຍເຄື່ອງເສມືອນ ຫຼື ອຸປະກອນອື່ນ; ຍັງບໍ່ຮອງຮັບການຂະຫຍາຍ."
+ErrVMDiskReferenceCheck: "ບໍ່ສາມາດກວດສອບການອ້າງອີງດິສກ໌ເສມືອນໄດ້. ຍັງຂະຫຍາຍບໍ່ໄດ້; ກະລຸນາກວດສອບດິສກ໌ຂອງເຄື່ອງເສມືອນອື່ນ."
+ErrVMSnapshotMetadataSync: "ກູ້ຄືນສະແນັບຊັອດແລ້ວ ແຕ່ຊິງຂໍ້ມູນດິສກ໌ບໍ່ສຳເລັດ. ກະລຸນາໂຫຼດໃໝ່ ແລະ ກວດສອບ; ບໍ່ຈຳເປັນຕ້ອງກູ້ຄືນສະແນັບຊັອດອີກ."
+VMCreateTask: "ສ້າງເຄື່ອງສະເໝືອນ [{{ .name }}]"
+VMCreateFromTemplateTask: "ສ້າງເຄື່ອງສະເໝືອນ [{{ .name }}] ຈາກແມ່ແບບ"
+VMUpdateTask: "ອັບເດດເຄື່ອງສະເໝືອນ [{{ .name }}]"
+VMDiskResizeTask: "ຂະຫຍາຍດິສກ໌ [{{ .disk }}] ຂອງເຄື່ອງເສມືອນ [{{ .name }}]"
+VMRenameTask: "ປ່ຽນຊື່ເຄື່ອງສະເໝືອນ [{{ .name }}] ເປັນ [{{ .newName }}]"
+VMDeleteTask: "ລຶບເຄື່ອງສະເໝືອນ [{{ .name }}]"
+VMTemplateCreateTask: "ບັນທຶກເຄື່ອງສະເໝືອນ [{{ .name }}] ເປັນແມ່ແບບ [{{ .template }}]"
+VMTemplateDeleteTask: "ລຶບແມ່ແບບເຄື່ອງສະເໝືອນ [{{ .name }}]"
+VMForceDeleteMetadataOnly: "ບໍ່ພົບ 1panel-kvm, ຈະບັງຄັບລຶບສະເພາະເມຕາດາຕາຂອງເຄື່ອງສະເໝືອນ [{{ .name }}]"
+VMForceDeleteMetadataAfterLibvirtFailed: "ລຶບເຄື່ອງສະເໝືອນ [{{ .name }}] ຈາກ libvirt ບໍ່ສຳເລັດ, ຈະບັງຄັບລຶບເມຕາດາຕາ: {{ .err }}"
+VMForceDeleteDiskFailed: "ບັງຄັບລຶບໄຟລ໌ດິສກ໌ເຄື່ອງສະເໝືອນ [{{ .path }}] ບໍ່ສຳເລັດ: {{ .err }}"
+VMForceDeleteDiskSuccess: "ບັງຄັບລຶບໄຟລ໌ດິສກ໌ເຄື່ອງສະເໝືອນ [{{ .path }}] ສຳເລັດແລ້ວ"
+VMSnapshotCreateTask: "ສ້າງສະແນັບຊັອດ [{{ .snapshot }}] ໃຫ້ເຄື່ອງສະເໝືອນ [{{ .vm }}]"
+VMSnapshotCreateStep: "ສ້າງສະແນັບຊັອດເຄື່ອງສະເໝືອນ [{{ .snapshot }}]"
+VMSnapshotRecoverTask: "ກູ້ຄືນສະແນັບຊັອດ [{{ .snapshot }}] ໃຫ້ເຄື່ອງສະເໝືອນ [{{ .vm }}]"
+VMSnapshotRecoverStep: "ກູ້ຄືນສະແນັບຊັອດເຄື່ອງສະເໝືອນ [{{ .snapshot }}]"
+VMSnapshotDeleteTask: "ລຶບສະແນັບຊັອດ [{{ .snapshot }}] ຂອງເຄື່ອງສະເໝືອນ [{{ .vm }}]"
+VMSnapshotDeleteStep: "ລຶບສະແນັບຊັອດເຄື່ອງສະເໝືອນ [{{ .snapshot }}]"
+
+ErrCAUpload: "Upload a ZIP (up to 10 MB) containing a valid self-signed CA certificate ca.crt and its matching private key ca.key, with a supported RSA or EC algorithm."
+
+ErrCAImport: "Provide a valid self-signed root CA certificate and matching private key (up to 1 MB each), using a supported RSA or EC algorithm."
+
+# Built-in Feishu
+ErrFeishuConfig: "ກະລຸນາແກ້ໄຂການຕັ້ງຄ່າທີ່ບໍ່ເຂົ້າກັນກ່ອນ: {{ .detail }}"
+ErrFeishuConfigChanged: "ການຕັ້ງຄ່າປ່ຽນໃນລະຫວ່າງການສະຫຼັບ. ໂຫຼດໃໝ່ແລ້ວລອງອີກ."
+ErrFeishuImageRequired: "ໃຊ້ອິມເມຈທີ່ມີ Feishu ໃນຕົວ."
+ErrFeishuAlreadySwitched: "Feishu ໄດ້ສະຫຼັບເປັນປລັກອິນໃນຕົວແລ້ວ."
+ErrFeishuSwitchRequired: "ກະລຸນາສະຫຼັບໃນໜ້າຊ່ອງ Feishu ກ່ອນ."
+ErrFeishuManaged: "ຈັດການ Feishu ໃນໜ້າຊ່ອງ; ປລັກອິນອັບເດດພ້ອມອິມເມຈ."
+ErrFeishuRestore: "ກູ້ຄືນການຕັ້ງຄ່າ Feishu ບໍ່ສຳເລັດ: {{ .err }}"
+ErrFeishuActivation: "ປລັກອິນ Feishu ໃນຕົວ ຫຼື ເກດເວເລີ່ມບໍ່ສຳເລັດ."
+AgentFeishuSwitch: "ສະຫຼັບປລັກອິນ Feishu"
+AgentFeishuBackup: "ສຳຮອງການຕັ້ງຄ່າ: {{ .name }}"
+AgentFeishuRestored: "ກູ້ຄືນການຕັ້ງຄ່າເດີມແລ້ວ."
+AgentFeishuProbeWarning: "ກວດການເຊື່ອມຕໍ່ Feishu ບໍ່ຜ່ານ. ກວດເຄືອຂ່າຍ ແລະ ຂໍ້ມູນເຂົ້າໃຊ້; ຮັກສາຜົນການສະຫຼັບໄວ້."
+AgentFeishuVerifyMessages: "ເປີດໃຊ້ພາຍໃນສຳເລັດ. ກວດການຈັບຄູ່, ແຊັດສ່ວນຕົວ, ກຸ່ມ, ເສັ້ນທາງບອດ ແລະ ສະຕຣີມໃນ Feishu."
+
+ErrFeishuUpgradeConfirm: "ຢືນຢັນຕົວເລືອກການປ່ຽນ Feishu ໃນໜ້າອັບເກຣດ."
+
+ErrFeishuUpgradeBackup: "ການອັບເກຣດ Feishu ຕ້ອງສຳຮອງແອັບທັງໝົດ."
+
+ErrFeishuUpgradeMounts: "ຈຸດເຊື່ອມຂໍ້ມູນນີ້ບໍ່ສາມາດສຳຮອງແລະກູ້ຄືນທັງໝົດໄດ້. ໃຊ້ຈຸດເຊື່ອມມາດຕະຖານພາຍໃນໂຟນເດີແອັບ."
+
+AgentFeishuRecoveryDisabled: "ເກດເວກູ້ຄືນແລ້ວ ແຕ່ Feishu ຍັງປິດ; ສຳຮອງການຕັ້ງຄ່າເດີມຍັງຖືກເກັບໄວ້."
+
+ContainerUpgradeWaiting: "Waiting for a container upgrade execution slot"

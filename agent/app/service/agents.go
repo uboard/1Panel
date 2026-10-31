@@ -88,6 +88,7 @@ type IAgentService interface {
 
 	GetFeishuConfig(req dto.AgentFeishuConfigReq) (*dto.AgentFeishuConfig, error)
 	UpdateFeishuConfig(req dto.AgentFeishuConfigUpdateReq) error
+	SwitchFeishuPlugin(req dto.AgentFeishuSwitchReq) error
 	GetTelegramConfig(req dto.AgentTelegramConfigReq) (*dto.AgentTelegramConfig, error)
 	UpdateTelegramConfig(req dto.AgentTelegramConfigUpdateReq) error
 	GetDiscordConfig(req dto.AgentIDReq) (*dto.AgentDiscordConfig, error)
@@ -105,6 +106,10 @@ type IAgentService interface {
 	UpgradePlugin(req dto.AgentPluginUpgradeReq) error
 	UninstallPlugin(req dto.AgentPluginUninstallReq) error
 	CheckPlugin(req dto.AgentPluginCheckReq) (*dto.AgentPluginStatus, error)
+	ListPlugins(req dto.AgentPluginsReq) ([]dto.AgentPluginItem, error)
+	SearchPlugins(req dto.AgentPluginSearchReq) ([]dto.AgentPluginSearchItem, error)
+	InstallMarketPlugin(req dto.AgentPluginMarketInstallReq) error
+	OperatePlugin(req dto.AgentPluginOperateReq) error
 	ApproveChannelPairing(req dto.AgentChannelPairingApproveReq) error
 }
 
@@ -138,6 +143,9 @@ const (
 
 func (a AgentService) Create(req dto.AgentCreateReq) (*dto.AgentItem, error) {
 	agentType := req.AgentType
+	if err := validateNativeAgentCreate(req); err != nil {
+		return nil, err
+	}
 	if err := checkPortExist(req.WebUIPort); err != nil {
 		return nil, err
 	}
@@ -177,7 +185,7 @@ func (a AgentService) Create(req dto.AgentCreateReq) (*dto.AgentItem, error) {
 	var allowedOrigins []string
 	var account *model.AgentAccount
 	var installHooks *appInstallHooks
-	var hermesAuth hermesDashboardAuth
+	var dashboardAuth agentDashboardAuth
 
 	if agentType == constant.AppOpenclaw || agentType == constant.AppHermesAgent {
 		if req.AccountID == 0 {
@@ -222,15 +230,19 @@ func (a AgentService) Create(req dto.AgentCreateReq) (*dto.AgentItem, error) {
 			},
 		}
 	} else if agentType == constant.AppHermesAgent {
-		hermesAuth = normalizeHermesDashboardAuth(req.DashboardUsername, req.DashboardPassword)
+		dashboardAuth = normalizeAgentDashboardAuth(req.DashboardUsername, req.DashboardPassword)
 		installHooks = &appInstallHooks{
 			AfterCopyData: func(appInstall *model.AppInstall) error {
 				if err := prepareHermesInstallFiles(appInstall, account, storedModel); err != nil {
 					return err
 				}
-				return writeHermesDashboardAuthEnv(path.Join(appInstall.GetPath(), ".env"), hermesAuth, false)
+				return writeAgentDashboardAuthEnv(appInstall.GetEnvPath(), agentType, dashboardAuth, false)
 			},
 		}
+	} else if agentType == constant.AppCopaw {
+		dashboardAuth = normalizeAgentDashboardAuth(req.DashboardUsername, req.DashboardPassword)
+	} else if agentType == constant.AppDeepSeekHarness || agentType == constant.AppOctop {
+		dashboardAuth = agentDashboardAuth{Username: req.DashboardUsername, Password: req.DashboardPassword}
 	}
 
 	params := map[string]interface{}{
@@ -239,6 +251,12 @@ func (a AgentService) Create(req dto.AgentCreateReq) (*dto.AgentItem, error) {
 		constant.HostIP:      "",
 	}
 	setAgentWebUIParams(params, agentType, detail.Version, req.WebUIPort)
+	if agentType == constant.AppDeepSeekHarness {
+		params["HTTPS_ACCESS_HOST"] = req.AccessHost
+	}
+	if agentType == constant.AppOctop {
+		params["OCTOP_LOG_LEVEL"] = "info"
+	}
 	if agentType == constant.AppOpenclaw {
 		if allowedOrigin := firstAllowedOrigin(allowedOrigins); allowedOrigin != "" {
 			params["ALLOWED_ORIGIN"] = allowedOrigin
@@ -250,9 +268,12 @@ func (a AgentService) Create(req dto.AgentCreateReq) (*dto.AgentItem, error) {
 		params["API_KEY"] = apiKey
 		params["OPENCLAW_GATEWAY_TOKEN"] = token
 	}
-	if agentType == constant.AppHermesAgent {
-		params[hermesDashboardUsernameEnvKey] = hermesAuth.Username
-		params[hermesDashboardPasswordEnvKey] = hermesAuth.Password
+	if usernameKey, passwordKey, ok := agentDashboardAuthEnvKeys(agentType); ok {
+		params[usernameKey] = dashboardAuth.Username
+		params[passwordKey] = dashboardAuth.Password
+		if agentType == constant.AppCopaw {
+			params[qwenPawAuthEnabledEnvKey] = "true"
+		}
 	}
 
 	if req.EditCompose && strings.TrimSpace(req.DockerCompose) == "" {
@@ -729,7 +750,7 @@ func requiresAgentAccount(agentType string) bool {
 }
 
 func setAgentWebUIParams(params map[string]interface{}, agentType, appVersion string, webUIPort int) {
-	if agentType == constant.AppOpenclaw && isOpenclawHTTPSWindowVersion(appVersion) {
+	if agentType == constant.AppDeepSeekHarness || agentType == constant.AppOpenclaw && isOpenclawHTTPSWindowVersion(appVersion) {
 		params["PANEL_APP_PORT_HTTPS"] = webUIPort
 		return
 	}
@@ -927,6 +948,7 @@ func (a AgentService) GetModelConfig(req dto.AgentIDReq) (*dto.AgentModelConfig,
 		AccountID: agent.AccountID,
 		Model:     model,
 		Fallbacks: extractOpenclawFallbackModelIDs(conf, account, models, model),
+		Metadata:  extractOpenclawModelMetadata(conf, account, models),
 	}, nil
 }
 
@@ -958,7 +980,7 @@ func (a AgentService) UpdateModelConfig(req dto.AgentModelConfigUpdateReq) error
 		if agent.AgentType != constant.AppOpenclaw {
 			return fmt.Errorf("%s does not support", agent.AgentType)
 		}
-		if err := writeOpenclawConfig(confDir, account, modelName, agent.Token, nil, req.Fallbacks); err != nil {
+		if err := writeOpenclawConfig(confDir, account, modelName, agent.Token, nil, req.Fallbacks, req.Metadata); err != nil {
 			return err
 		}
 	}
@@ -984,19 +1006,28 @@ func (a AgentService) GetProviders() ([]dto.ProviderInfo, error) {
 		}
 		apiTypes := make([]dto.ProviderAPIInfo, 0, len(def.APIConfigs))
 		for _, item := range def.APIConfigs {
+			apiModels := make([]dto.ProviderModelInfo, 0, len(item.Models))
+			for _, model := range item.Models {
+				apiModels = append(apiModels, dto.ProviderModelInfo{
+					ID:   model.ID,
+					Name: model.Name,
+				})
+			}
 			apiTypes = append(apiTypes, dto.ProviderAPIInfo{
-				APIType:         item.APIType,
-				BaseURL:         item.BaseURL,
-				EditableBaseURL: item.EditableBaseURL,
-				DefaultAuthMode: item.DefaultAuthMode,
-				AuthModes:       item.AuthModes,
+				APIType:                item.APIType,
+				BaseURL:                item.BaseURL,
+				EditableBaseURL:        item.EditableBaseURL,
+				SupportsModelDiscovery: item.DiscoverModels,
+				DefaultAuthMode:        item.DefaultAuthMode,
+				AuthModes:              item.AuthModes,
+				Models:                 apiModels,
 			})
 		}
 		baseURL, _ := providercatalog.DefaultBaseURL(key)
 		providers = append(providers, dto.ProviderInfo{
 			Sort:           def.Sort,
 			Provider:       key,
-			DisplayName:    def.DisplayName,
+			DisplayName:    localizedAgentProviderName(key),
 			BaseURL:        baseURL,
 			DefaultAPIType: def.DefaultAPIType,
 			APITypes:       apiTypes,
@@ -1016,7 +1047,7 @@ func (a AgentService) CreateAccount(req dto.AgentAccountCreateReq) error {
 	if err := ensureAgentAccountNameAvailable(provider, req.Name, 0); err != nil {
 		return err
 	}
-	initialModels, err := buildInitialAgentAccountModels(&model.AgentAccount{Provider: provider}, req.Models)
+	initialModels, err := buildInitialAgentAccountModels(&model.AgentAccount{Provider: provider, APIType: req.APIType}, req.Models)
 	if err != nil {
 		return err
 	}
@@ -1024,7 +1055,8 @@ func (a AgentService) CreateAccount(req dto.AgentAccountCreateReq) error {
 	if err != nil {
 		return err
 	}
-	resolvedInput, err := resolveAgentAccountInput(provider, req.APIType, req.AuthMode, req.APIKey, req.BaseURL, verifyModel)
+	validateAvailability := req.ValidateAvailability == nil || *req.ValidateAvailability
+	resolvedInput, err := resolveAgentAccountInput(provider, req.APIType, req.AuthMode, req.APIKey, req.BaseURL, verifyModel, validateAvailability, false)
 	if err != nil {
 		return err
 	}
@@ -1062,6 +1094,9 @@ func (a AgentService) UpdateAccount(req dto.AgentAccountUpdateReq) error {
 	if err != nil {
 		return err
 	}
+	if req.APIType != account.APIType {
+		return buserr.WithDetail("ErrInvalidParams", "API type cannot be changed", nil)
+	}
 	provider := account.Provider
 	if err := ensureAgentAccountNameAvailable(provider, req.Name, account.ID); err != nil {
 		return err
@@ -1074,11 +1109,15 @@ func (a AgentService) UpdateAccount(req dto.AgentAccountUpdateReq) error {
 	if strings.TrimSpace(requestedVerifyModel) == "" {
 		requestedVerifyModel = account.VerifyModel
 	}
-	verifyModel, err := resolveAgentAccountVerifyModel(provider, requestedVerifyModel, models)
-	if err != nil {
-		return err
+	verifyModel := ""
+	if account.AppInstallID == 0 || len(models) > 0 {
+		verifyModel, err = resolveAgentAccountVerifyModel(provider, requestedVerifyModel, models)
+		if err != nil {
+			return err
+		}
 	}
-	resolvedInput, err := resolveAgentAccountInput(provider, req.APIType, req.AuthMode, req.APIKey, req.BaseURL, verifyModel)
+	validateAvailability := req.ValidateAvailability == nil || *req.ValidateAvailability
+	resolvedInput, err := resolveAgentAccountInput(provider, req.APIType, req.AuthMode, req.APIKey, req.BaseURL, verifyModel, validateAvailability, account.AppInstallID != 0 && len(models) == 0)
 	if err != nil {
 		return err
 	}
@@ -1092,7 +1131,7 @@ func (a AgentService) UpdateAccount(req dto.AgentAccountUpdateReq) error {
 	account.Remark = req.Remark
 	account.Verified = true
 
-	if err := global.DB.Save(account).Error; err != nil {
+	if err := agentAccountRepo.Save(account); err != nil {
 		return err
 	}
 	terminalai.InvalidateTerminalRuntimeCache()
@@ -1110,6 +1149,12 @@ func (a AgentService) PageAccounts(req dto.AgentAccountSearch) (int64, []dto.Age
 	if strings.TrimSpace(req.Provider) != "" {
 		opts = append(opts, repo.WithByProvider(req.Provider))
 	}
+	if apiType := strings.TrimSpace(req.APIType); apiType != "" {
+		opts = append(opts, repo.WithByAPIType(apiType))
+	}
+	if req.TextOnly {
+		opts = append(opts, repo.WithTextAPIType())
+	}
 	if strings.TrimSpace(req.Name) != "" {
 		opts = append(opts, repo.WithByLikeName(req.Name))
 	}
@@ -1117,17 +1162,38 @@ func (a AgentService) PageAccounts(req dto.AgentAccountSearch) (int64, []dto.Age
 	if err != nil {
 		return 0, nil, err
 	}
+	installIDs := make([]uint, 0, len(list))
+	for _, account := range list {
+		if account.AppInstallID != 0 {
+			installIDs = append(installIDs, account.AppInstallID)
+		}
+	}
+	localInstalls := make(map[uint]bool, len(installIDs))
+	if len(installIDs) > 0 {
+		installs, err := appInstallRepo.ListBy(context.Background(), repo.WithByIDs(installIDs))
+		if err != nil {
+			return 0, nil, err
+		}
+		for _, install := range installs {
+			localInstalls[install.ID] = true
+		}
+	}
 	items := make([]dto.AgentAccountInfo, 0, len(list))
 	for _, item := range list {
 		apiKey := ""
 		if item.RememberAPIKey {
 			apiKey = item.APIKey
 		}
+		appInstallID := uint(0)
+		if localInstalls[item.AppInstallID] {
+			appInstallID = item.AppInstallID
+		}
 		items = append(items, dto.AgentAccountInfo{
+			AppInstallID:    appInstallID,
 			ID:              item.ID,
 			MasterAccountID: item.MasterAccountID,
 			Provider:        item.Provider,
-			ProviderName:    providercatalog.DisplayName(item.Provider),
+			ProviderName:    localizedAgentProviderName(item.Provider),
 			Name:            item.Name,
 			APIKey:          apiKey,
 			RememberAPIKey:  item.RememberAPIKey,
@@ -1166,7 +1232,7 @@ func (a AgentService) PageAccounts(req dto.AgentAccountSearch) (int64, []dto.Age
 }
 
 func (a AgentService) CountAccountsByProviders(req dto.AgentAccountProviderCountReq) (map[string]int64, error) {
-	return agentAccountRepo.CountByProviders(req.Providers)
+	return agentAccountRepo.CountTextByProviders(req.Providers)
 }
 
 func (a AgentService) GetAccountModels(req dto.AgentAccountModelReq) ([]dto.AgentAccountModel, error) {
@@ -1178,7 +1244,8 @@ func (a AgentService) GetAccountModels(req dto.AgentAccountModelReq) ([]dto.Agen
 }
 
 func (a AgentService) DiscoverAccountModels(req dto.AgentAccountModelDiscoverReq) ([]dto.AgentAccountModel, error) {
-	if req.APIType != "openai-completions" && req.APIType != "openai-responses" {
+	config, ok := providercatalog.FindAPIConfig(req.Provider, req.APIType)
+	if !ok || !config.DiscoverModels {
 		return nil, buserr.New("ErrAgentAccountModelsRequired")
 	}
 	baseURL, err := providercatalog.ResolveBaseURL(req.Provider, req.APIType, req.BaseURL)
@@ -1320,13 +1387,18 @@ func (a AgentService) SyncAgentsByAccount(account *model.AgentAccount) error {
 }
 
 func (a AgentService) VerifyAccount(req dto.AgentAccountVerifyReq) error {
-	_, err := resolveAgentAccountInput(req.Provider, req.APIType, req.AuthMode, req.APIKey, req.BaseURL, req.Model)
+	_, err := resolveAgentAccountInput(req.Provider, req.APIType, req.AuthMode, req.APIKey, req.BaseURL, req.Model, true, false)
 	return err
 }
 
 func (a AgentService) DeleteAccount(req dto.AgentAccountDeleteReq) error {
 	agentAccountMutationMu.Lock()
 	defer agentAccountMutationMu.Unlock()
+	_, err := agentAccountRepo.GetFirst(repo.WithByID(req.ID))
+	if err != nil {
+		return err
+	}
+
 	if err := global.DB.Transaction(func(tx *gorm.DB) error {
 		var agentCount int64
 		if err := tx.Model(&model.Agent{}).Where("account_id = ?", req.ID).Count(&agentCount).Error; err != nil {
@@ -1410,11 +1482,18 @@ func (a AgentService) GetOtherConfig(req dto.AgentIDReq) (*dto.AgentOtherConfig,
 		if err != nil {
 			return nil, err
 		}
-		auth := readHermesDashboardAuthFromInstall(install)
+		auth := readAgentDashboardAuthFromInstall(install, agent.AgentType)
 		return &dto.AgentOtherConfig{
 			UserTimezone:      cfg.Timezone,
 			BrowserEnabled:    true,
 			NPMRegistry:       "https://registry.npmjs.org/",
+			DashboardUsername: auth.Username,
+			DashboardPassword: auth.Password,
+		}, nil
+	}
+	if agent.AgentType == constant.AppCopaw {
+		auth := readAgentDashboardAuthFromInstall(install, agent.AgentType)
+		return &dto.AgentOtherConfig{
 			DashboardUsername: auth.Username,
 			DashboardPassword: auth.Password,
 		}, nil
@@ -1437,16 +1516,19 @@ func (a AgentService) UpdateOtherConfig(req dto.AgentOtherConfigUpdateReq) error
 		return err
 	}
 	if agent.AgentType == constant.AppHermesAgent {
+		if strings.TrimSpace(req.UserTimezone) == "" {
+			return buserr.New("ErrInvalidParams")
+		}
 		account, err := agentAccountRepo.GetFirst(repo.WithByID(agent.AccountID))
 		if err != nil {
 			return err
 		}
-		previousAuth := readHermesDashboardAuthFromInstall(install)
-		nextAuth := normalizeHermesDashboardAuth(req.DashboardUsername, req.DashboardPassword)
+		previousAuth := readAgentDashboardAuthFromInstall(install, agent.AgentType)
+		nextAuth := normalizeAgentDashboardAuth(req.DashboardUsername, req.DashboardPassword)
 		if err := writeHermesConfig(path.Dir(agent.ConfigPath), account, agent.Model, strings.TrimSpace(req.UserTimezone)); err != nil {
 			return err
 		}
-		if err := writeHermesDashboardAuthEnv(path.Join(install.GetPath(), ".env"), nextAuth, true); err != nil {
+		if err := writeAgentDashboardAuthEnv(install.GetEnvPath(), agent.AgentType, nextAuth, true); err != nil {
 			return err
 		}
 		operate := constant.Restart
@@ -1457,6 +1539,12 @@ func (a AgentService) UpdateOtherConfig(req dto.AgentOtherConfigUpdateReq) error
 			InstallId: install.ID,
 			Operate:   operate,
 		})
+	}
+	if agent.AgentType == constant.AppCopaw {
+		return updateQwenPawDashboardAuth(install, normalizeAgentDashboardAuth(req.DashboardUsername, req.DashboardPassword))
+	}
+	if strings.TrimSpace(req.UserTimezone) == "" || strings.TrimSpace(req.NPMRegistry) == "" {
+		return buserr.New("ErrInvalidParams")
 	}
 	if err := ensureContainerRunning(install.ContainerName); err != nil {
 		return err
@@ -1495,6 +1583,10 @@ func (a AgentService) UpdateConfigFile(req dto.AgentConfigFileUpdateReq) error {
 	if err != nil {
 		return err
 	}
+	if _, busy := feishuSwitches.LoadOrStore(agent.ConfigPath, true); busy {
+		return buserr.New("TaskIsExecuting")
+	}
+	defer feishuSwitches.Delete(agent.ConfigPath)
 	if err := validateAgentConfigFileContent(agent.AgentType, req.Content); err != nil {
 		return err
 	}
@@ -1638,7 +1730,7 @@ func (a AgentService) syncAgentsByAccount(account *model.AgentAccount) error {
 				return err
 			}
 			fallbacks := extractOpenclawFallbackModelIDs(conf, account, accountModels, selectedAccountModel.ID)
-			if err := writeOpenclawConfig(confDir, account, modelName, agent.Token, nil, fallbacks); err != nil {
+			if err := writeOpenclawConfig(confDir, account, modelName, agent.Token, nil, fallbacks, nil); err != nil {
 				return err
 			}
 		case constant.AppHermesAgent:

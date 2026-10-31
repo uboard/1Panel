@@ -3,6 +3,7 @@ package helper
 import (
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/1Panel-dev/1Panel/agent/global"
+	"github.com/1Panel-dev/1Panel/agent/utils/mcpapi"
 	"gorm.io/gorm"
 
 	"github.com/1Panel-dev/1Panel/agent/app/dto"
@@ -21,9 +23,32 @@ import (
 )
 
 func ErrorWithDetail(ctx *gin.Context, code int, msgKey string, err error) {
+	mcpapi.SetBusinessErrorHeader(ctx.Request, ctx.Writer.Header(), err)
 	res := dto.Response{
 		Code:    code,
 		Message: "",
+	}
+	res.Message = i18n.GetMsgWithDetail(msgKey, err.Error())
+	ctx.JSON(http.StatusOK, res)
+	ctx.Abort()
+}
+
+func ErrorWithBusinessCode(ctx *gin.Context, code int, businessCode, msgKey string, err error) {
+	mcpapi.SetBusinessErrorHeader(ctx.Request, ctx.Writer.Header(), err)
+	res := dto.Response{
+		Code:      code,
+		ErrorCode: businessCode,
+		Message:   i18n.GetMsgWithDetail(msgKey, err.Error()),
+	}
+	ctx.JSON(http.StatusOK, res)
+	ctx.Abort()
+}
+
+func ErrorWithDetailAndData(ctx *gin.Context, code int, msgKey string, err error, data interface{}) {
+	mcpapi.SetBusinessErrorHeader(ctx.Request, ctx.Writer.Header(), err)
+	res := dto.Response{
+		Code: code,
+		Data: data,
 	}
 	res.Message = i18n.GetMsgWithDetail(msgKey, err.Error())
 	ctx.JSON(http.StatusOK, res)
@@ -163,4 +188,24 @@ func GetParamInt32(paramName string, c *gin.Context) (int32, error) {
 	}
 	intNum, _ := strconv.Atoi(idParam)
 	return int32(intNum), nil
+}
+
+// SetOperationLogValues supplies server-resolved values to Core's operation log.
+// Call before writing the response. Only pass public audit fields, never credentials.
+func SetOperationLogValues(c *gin.Context, values map[string]string) {
+	const header = "X-Op-Resolved"
+	resolved := make(map[string]string)
+	if data, err := base64.RawURLEncoding.DecodeString(c.Writer.Header().Get(header)); err == nil {
+		_ = json.Unmarshal(data, &resolved)
+	}
+	if resolved == nil {
+		resolved = make(map[string]string)
+	}
+	for key, value := range values {
+		resolved[key] = value
+	}
+	data, err := json.Marshal(resolved)
+	if err == nil {
+		c.Header(header, base64.RawURLEncoding.EncodeToString(data))
+	}
 }

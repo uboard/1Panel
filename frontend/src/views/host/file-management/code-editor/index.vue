@@ -1,25 +1,24 @@
 <template>
     <DialogPro
         v-model="open"
-        size="w-70"
+        :size="isMobile ? 'full' : 'w-70'"
         class="code-dialog !p-0"
         @opened="onOpen"
         :show-close="false"
-        :fullscreen="isFullscreen"
+        :fullscreen="isMobile || isFullscreen"
     >
         <template #header>
             <div ref="dialogHeader" class="flex items-center justify-between code-header px-4 rounded-t">
                 <div class="code-title">
-                    <span class="truncate-text">{{ $t('home.dir') + ' - ' + currentEditorPath }}</span>
+                    <span class="dialog-object-name">{{ $t('home.dir') + ' - ' + currentEditorPath }}</span>
                     <el-tooltip v-if="currentEditorPath" :content="$t('file.copyDir')" placement="top">
                         <CopyButton class="code-title-copy" :content="currentEditorPath" />
                     </el-tooltip>
                 </div>
                 <el-space alignment="center" :size="1" class="dialog-header-icon">
-                    <el-tooltip :content="loadTooltip()" placement="top">
+                    <el-tooltip v-if="!isMobile" :content="loadTooltip()" placement="top">
                         <el-button
                             @click="toggleFullscreen"
-                            v-if="!isMobile"
                             class="!border-none !bg-transparent !text-base !font-semibold !py-2 !px-1 mr-2.5"
                             icon="FullScreen"
                         ></el-button>
@@ -35,11 +34,45 @@
         <template #content>
             <div ref="dialogForm" class="px-4 py-2 code-action">
                 <div class="flex justify-start items-center gap-x-4 card-action">
-                    <el-text class="cursor-pointer" @click="handleReset">{{ $t('commons.button.reset') }}</el-text>
-                    <el-divider direction="vertical" class="!mx-0" />
-                    <el-text v-permission v-node-admin class="cursor-pointer ml-0" @click="saveContent()">
-                        {{ $t('commons.button.save') }}
-                    </el-text>
+                    <template v-if="isMobile">
+                        <el-button
+                            link
+                            icon="FolderOpened"
+                            class="mobile-action-button"
+                            :title="$t('home.dir')"
+                            :aria-label="$t('home.dir')"
+                            @click="toggleMobileTree"
+                        />
+                        <el-divider direction="vertical" class="!mx-0" />
+                        <el-button
+                            link
+                            icon="RefreshLeft"
+                            class="mobile-action-button"
+                            :title="$t('commons.button.reset')"
+                            :aria-label="$t('commons.button.reset')"
+                            @click="handleReset"
+                        />
+                        <el-divider direction="vertical" class="!mx-0" />
+                        <el-button
+                            v-permission
+                            v-node-admin
+                            link
+                            icon="Check"
+                            class="mobile-action-button"
+                            :title="$t('commons.button.save')"
+                            :aria-label="$t('commons.button.save')"
+                            @click="saveContent()"
+                        />
+                    </template>
+                    <template v-else>
+                        <el-text class="cursor-pointer" @click="handleReset">
+                            {{ $t('commons.button.reset') }}
+                        </el-text>
+                        <el-divider direction="vertical" class="!mx-0" />
+                        <el-text v-permission v-node-admin class="cursor-pointer ml-0" @click="saveContent()">
+                            {{ $t('commons.button.save') }}
+                        </el-text>
+                    </template>
                     <el-divider direction="vertical" class="!mx-0" />
                     <el-dropdown trigger="click" max-height="300" placement="bottom-start" @command="changeTheme">
                         <span class="el-dropdown-link cursor-pointer">{{ $t('file.theme') }}</span>
@@ -83,7 +116,7 @@
                         </template>
                     </el-dropdown>
                     <el-divider direction="vertical" class="!mx-0" />
-                    <el-dropdown trigger="click" max-height="300" placement="bottom-start">
+                    <el-dropdown v-if="!isMobile" trigger="click" max-height="300" placement="bottom-start">
                         <span class="el-dropdown-link cursor-pointer">{{ $t('file.setting') }}</span>
                         <template #dropdown>
                             <el-dropdown-menu>
@@ -102,21 +135,26 @@
                             </el-dropdown-menu>
                         </template>
                     </el-dropdown>
+                    <template v-if="isMobile">
+                        <el-text class="cursor-pointer" @click="openHistoryDrawer">
+                            {{ $t('file.history') }} ({{ historyVersionCount }})
+                        </el-text>
+                    </template>
                 </div>
             </div>
             <div v-loading="loading">
                 <el-splitter
                     class="code-splitter"
                     :style="{ height: splitterHeight }"
-                    layout="horizontal"
+                    :layout="isMobile ? 'vertical' : 'horizontal'"
                     lazy
                     @collapse="handleSplitterCollapse"
                     @resize-end="handleSplitterResizeEnd"
                 >
                     <el-splitter-panel
                         v-model:size="treePanelSize"
-                        :min="isShow ? minTreePanelSize : 0"
-                        :max="maxTreePanelSize"
+                        :min="isShow ? (isMobile ? mobileMinTreePanelSize : minTreePanelSize) : 0"
+                        :max="isMobile ? mobileMaxTreePanelSize : maxTreePanelSize"
                         :resizable="isShow"
                         collapsible
                         class="code-tree-panel"
@@ -138,9 +176,9 @@
                                     </el-icon>
                                     <span class="sm:inline hidden pl-1">{{ $t('commons.button.refresh') }}</span>
                                 </el-text>
-                                <el-divider direction="vertical" v-if="!isMobile" class="!mx-0" />
-                                <el-dropdown @command="handleCreate" v-if="!isMobile" trigger="click">
-                                    <el-text size="small">
+                                <el-divider direction="vertical" class="!mx-0" />
+                                <el-dropdown @command="handleCreate" trigger="click">
+                                    <el-text size="small" class="cursor-pointer">
                                         {{ $t('commons.button.create') }}
                                         <el-icon><arrow-down /></el-icon>
                                     </el-text>
@@ -170,8 +208,8 @@
                                 class="monaco-editor-tree monaco-editor-background pt-2"
                                 :default-expanded-keys="expandedNodeKeys"
                                 :height="treeHeight"
-                                :indent="6"
-                                :item-size="26"
+                                :indent="isMobile ? 12 : 6"
+                                :item-size="isMobile ? 34 : 26"
                                 highlight-current
                             >
                                 <template #default="{ node, data }">
@@ -243,6 +281,69 @@
                                             <small :title="node.label" class="tree-node-label">{{ node.label }}</small>
                                         </template>
                                     </span>
+                                    <span
+                                        v-if="isMobile && data.id !== 'new-dir' && data.id !== 'new-file'"
+                                        class="tree-node-mobile-actions"
+                                        @click.stop
+                                    >
+                                        <el-dropdown
+                                            trigger="click"
+                                            @command="(command) => handleMobileTreeCommand(command, data, node)"
+                                        >
+                                            <el-button
+                                                class="mobile-tree-node-action"
+                                                link
+                                                :aria-label="$t('tabs.more')"
+                                            >
+                                                <el-icon><MoreFilled /></el-icon>
+                                            </el-button>
+                                            <template #dropdown>
+                                                <el-dropdown-menu>
+                                                    <fu-dropdown-item
+                                                        v-if="data.isDir"
+                                                        v-permission
+                                                        v-node-admin
+                                                        command="dir"
+                                                    >
+                                                        <svg-icon
+                                                            class="tree-context-menu__icon"
+                                                            iconName="p-file-folder"
+                                                        ></svg-icon>
+                                                        {{ $t('file.dir') }}
+                                                    </fu-dropdown-item>
+                                                    <fu-dropdown-item
+                                                        v-if="data.isDir"
+                                                        v-permission
+                                                        v-node-admin
+                                                        command="file"
+                                                    >
+                                                        <svg-icon
+                                                            class="tree-context-menu__icon"
+                                                            iconName="p-file-normal"
+                                                        ></svg-icon>
+                                                        {{ $t('menu.files') }}
+                                                    </fu-dropdown-item>
+                                                    <el-dropdown-item command="copy">
+                                                        <el-icon><CopyDocument /></el-icon>
+                                                        {{ $t('file.copyDir') }}
+                                                    </el-dropdown-item>
+                                                    <fu-dropdown-item v-permission v-node-admin command="rename">
+                                                        <el-icon><Edit /></el-icon>
+                                                        {{ $t('file.rename') }}
+                                                    </fu-dropdown-item>
+                                                    <fu-dropdown-item
+                                                        v-permission
+                                                        v-node-admin
+                                                        command="delete"
+                                                        divided
+                                                    >
+                                                        <el-icon><Delete /></el-icon>
+                                                        {{ $t('commons.button.delete') }}
+                                                    </fu-dropdown-item>
+                                                </el-dropdown-menu>
+                                            </template>
+                                        </el-dropdown>
+                                    </span>
                                 </template>
                             </el-tree-v2>
                             <div
@@ -297,7 +398,7 @@
                             </div>
                         </div>
                     </el-splitter-panel>
-                    <el-splitter-panel min="240" class="code-editor-panel">
+                    <el-splitter-panel :min="isMobile ? 180 : 240" class="code-editor-panel">
                         <div class="code-editor-panel__inner relative">
                             <CodeTabs
                                 class="monaco-editor monaco-editor-background"
@@ -466,7 +567,7 @@ import { copyText } from '@/utils/clipboard';
 import { getIcon } from '@/utils/file';
 import { newUUID } from '@/utils/id';
 import { TreeNodeData } from 'element-plus/es/components/tree-v2/src/types';
-import { CopyDocument, Delete, Edit, Refresh, Top } from '@element-plus/icons-vue';
+import { CopyDocument, Delete, Edit, MoreFilled, Refresh, Top } from '@element-plus/icons-vue';
 import { loadBaseDir } from '@/api/modules/setting';
 import CodeTabs from './tabs/index.vue';
 import FileHistoryDrawer from './history/index.vue';
@@ -481,11 +582,13 @@ import {
 
 const { isDarkTheme, isMobile } = useGlobalStore();
 
-type MonacoEditorApi = typeof import('monaco-editor/esm/vs/editor/editor.api');
+type MonacoEditorApi = typeof import('monaco-editor/editor');
 
 let monacoApi: MonacoEditorApi | null = null;
 let monacoThemeInitialized = false;
 let editor: ReturnType<MonacoEditorApi['editor']['create']> | undefined;
+let editorLayoutFrame: number | null = null;
+let heightUpdateFrame: number | null = null;
 
 const eolLf = ref(0);
 const eolCrlf = ref(1);
@@ -496,10 +599,7 @@ const ensureMonaco = async () => {
     }
 
     setupMonacoEnvironment();
-    const [monacoModule] = await Promise.all([
-        import('monaco-editor/esm/vs/editor/editor.api'),
-        loadMonacoLanguageSupport(),
-    ]);
+    const [monacoModule] = await Promise.all([import('monaco-editor/editor'), loadMonacoLanguageSupport()]);
     monacoApi = monacoModule;
     eolLf.value = monacoApi.editor.EndOfLineSequence.LF;
     eolCrlf.value = monacoApi.editor.EndOfLineSequence.CRLF;
@@ -611,6 +711,8 @@ const isShow = ref(true);
 const defaultTreePanelSize = 220;
 const minTreePanelSize = 160;
 const maxTreePanelSize = 420;
+const mobileMinTreePanelSize = 120;
+const mobileMaxTreePanelSize = 320;
 const treePanelSize = ref(defaultTreePanelSize);
 const lastTreePanelSize = ref(defaultTreePanelSize);
 const isEdit = ref(false);
@@ -641,7 +743,11 @@ const resetExpandedNodes = () => {
 };
 
 const refreshEditorLayout = () => {
-    nextTick(() => {
+    if (editorLayoutFrame !== null) {
+        return;
+    }
+    editorLayoutFrame = window.requestAnimationFrame(() => {
+        editorLayoutFrame = null;
         editor?.layout();
     });
 };
@@ -650,6 +756,9 @@ const syncTreePanelState = (size: number) => {
     const nextSize = Math.max(size, 0);
     treePanelSize.value = nextSize;
     isShow.value = nextSize > 0;
+    if (isMobile.value) {
+        treeHeight.value = Math.max(nextSize - 31, 0);
+    }
     if (nextSize > 0) {
         lastTreePanelSize.value = nextSize;
     }
@@ -667,6 +776,17 @@ const handleTreePanelSizeChange = (size: string | number) => {
 
 const handleSplitterResizeEnd = () => {
     refreshEditorLayout();
+};
+
+const getViewportHeight = () => window.visualViewport?.height || window.innerHeight;
+
+const toggleMobileTree = () => {
+    if (!isMobile.value) {
+        return;
+    }
+    const nextSize = isShow.value ? 0 : Math.min(240, Math.max(mobileMinTreePanelSize, getViewportHeight() * 0.3));
+    syncTreePanelState(nextSize);
+    scheduleHeightUpdate();
 };
 
 const handleSplitterCollapse = (index: number, type: 'start' | 'end', sizes: number[]) => {
@@ -946,21 +1066,27 @@ const loadTooltip = () => {
 onMounted(() => {
     isCreate.value = 'none';
     loadPath();
-    updateHeights();
-    window.addEventListener('resize', updateHeights);
+    scheduleHeightUpdate();
+    window.addEventListener('resize', scheduleHeightUpdate);
+    window.visualViewport?.addEventListener('resize', scheduleHeightUpdate);
     document.addEventListener('click', closeTreeContextMenu);
     window.addEventListener('scroll', closeTreeContextMenu, true);
 });
 
 const updateHeights = () => {
-    const vh = window.innerHeight / 100;
-    if (isFullscreen.value) {
-        let paddingHeight = 30;
-        const headerHeight = dialogHeader.value.offsetHeight;
-        const formHeight = dialogForm.value.offsetHeight;
-        const footerHeight = dialogFooter.value.offsetHeight;
-        const contentHeight = window.innerHeight - headerHeight - formHeight - footerHeight - paddingHeight;
-        treeHeight.value = contentHeight - 31;
+    const viewportHeight = getViewportHeight();
+    const vh = viewportHeight / 100;
+    if (isFullscreen.value || isMobile.value) {
+        const paddingHeight = isMobile.value ? 0 : 30;
+        const headerHeight = dialogHeader.value?.offsetHeight || 0;
+        const formHeight = dialogForm.value?.offsetHeight || 0;
+        const footerHeight = dialogFooter.value?.offsetHeight || 0;
+        const minContentHeight = isMobile.value ? 120 : 240;
+        const contentHeight = Math.max(
+            viewportHeight - headerHeight - formHeight - footerHeight - paddingHeight,
+            minContentHeight,
+        );
+        treeHeight.value = isMobile.value ? Math.max(treePanelSize.value - 31, 0) : contentHeight - 31;
         splitterHeight.value = `${contentHeight}px`;
     } else {
         splitterHeight.value = `${defaultHeight.value}vh`;
@@ -969,9 +1095,27 @@ const updateHeights = () => {
     refreshEditorLayout();
 };
 
+const scheduleHeightUpdate = () => {
+    if (heightUpdateFrame !== null) {
+        return;
+    }
+    heightUpdateFrame = window.requestAnimationFrame(() => {
+        heightUpdateFrame = null;
+        updateHeights();
+    });
+};
+
+const flushHeightUpdate = () => {
+    if (heightUpdateFrame !== null) {
+        window.cancelAnimationFrame(heightUpdateFrame);
+        heightUpdateFrame = null;
+    }
+    updateHeights();
+};
+
 const toggleFullscreen = () => {
     isFullscreen.value = !isFullscreen.value;
-    updateHeights();
+    scheduleHeightUpdate();
 };
 
 const changeLanguage = (command: string) => {
@@ -1038,7 +1182,7 @@ const changeWarp = (command: string) => {
     config.wordWrap = command === 'on' ? 'off' : 'on';
     localStorage.setItem(warpKey, config.wordWrap);
     editor.updateOptions({
-        wordWrap: config.wordWrap,
+        wordWrap: isMobile.value ? 'on' : config.wordWrap,
     });
 };
 
@@ -1047,10 +1191,35 @@ const changeMinimap = (command: boolean) => {
     localStorage.setItem(minimapKey, JSON.stringify(config.minimap));
     editor.updateOptions({
         minimap: {
-            enabled: config.minimap,
+            enabled: !isMobile.value && config.minimap,
         },
     });
 };
+
+const applyResponsiveEditorOptions = () => {
+    editor?.updateOptions({
+        folding: !isMobile.value,
+        lineDecorationsWidth: isMobile.value ? 6 : 10,
+        lineNumbersMinChars: isMobile.value ? 3 : 6,
+        minimap: {
+            enabled: !isMobile.value && config.minimap,
+        },
+        overviewRulerLanes: isMobile.value ? 0 : 3,
+        scrollBeyondLastLine: false,
+        wordWrap: isMobile.value ? 'on' : config.wordWrap,
+    });
+    refreshEditorLayout();
+};
+
+watch(isMobile, (mobile) => {
+    if (mobile) {
+        syncTreePanelState(0);
+    } else if (!isShow.value) {
+        syncTreePanelState(lastTreePanelSize.value || defaultTreePanelSize);
+    }
+    applyResponsiveEditorOptions();
+    scheduleHeightUpdate();
+});
 
 const initEditor = async () => {
     const monaco = await ensureMonaco();
@@ -1064,14 +1233,17 @@ const initEditor = async () => {
         readOnly: false,
         automaticLayout: true,
         language: config.language,
-        folding: true,
+        folding: !isMobile.value,
         roundedSelection: false,
         overviewRulerBorder: false,
-        wordWrap: config.wordWrap,
+        wordWrap: isMobile.value ? 'on' : config.wordWrap,
         minimap: {
-            enabled: config.minimap,
+            enabled: !isMobile.value && config.minimap,
         },
-        lineNumbersMinChars: 6,
+        lineDecorationsWidth: isMobile.value ? 6 : 10,
+        lineNumbersMinChars: isMobile.value ? 3 : 6,
+        overviewRulerLanes: isMobile.value ? 0 : 3,
+        scrollBeyondLastLine: false,
     });
     if (editor.getModel()?.getValue() === '') {
         editor.getModel()?.setValue('');
@@ -1249,6 +1421,11 @@ const getDirectoryPath = (filePath: string) => {
 };
 
 const onOpen = async () => {
+    if (isMobile.value) {
+        syncTreePanelState(0);
+    }
+    await nextTick();
+    flushHeightUpdate();
     await initEditor();
     applyCodeEditorTheme(config.theme);
     search(directoryPath.value).then((res) => {
@@ -1287,6 +1464,10 @@ const getRefresh = (path: string) => {
 
 const getContent = (path: string, forceReload = false) => {
     if (!forceReload && (form.value.path === path || isCreate.value == 'file')) {
+        if (isMobile.value && isShow.value) {
+            syncTreePanelState(0);
+            scheduleHeightUpdate();
+        }
         return;
     }
     const existsInTabs = fileTabs.value.some((tab) => tab.path === path);
@@ -1319,6 +1500,10 @@ const getContent = (path: string, forceReload = false) => {
                 saveTabsToStorage();
                 selectTab.value = res.data.path;
                 loadHistoryVersionCount(res.data.path);
+                if (isMobile.value && isShow.value) {
+                    syncTreePanelState(0);
+                    scheduleHeightUpdate();
+                }
             })
             .catch(() => {});
     };
@@ -1719,6 +1904,23 @@ const deleteFromContextMenu = async () => {
     }
 };
 
+const handleMobileTreeCommand = (command: string, data: any, node: any) => {
+    treeContextMenu.data = data;
+    treeContextMenu.node = node;
+    if (command === 'dir' || command === 'file') {
+        return createFromContextMenu(command);
+    }
+    if (command === 'copy') {
+        return copyPathFromContextMenu();
+    }
+    if (command === 'rename') {
+        return renameFromContextMenu();
+    }
+    if (command === 'delete') {
+        return deleteFromContextMenu();
+    }
+};
+
 const currentEditingNode = ref<any>(null);
 
 const createNewNode = (command: string) => {
@@ -1846,7 +2048,14 @@ onBeforeUnmount(() => {
     isCreate.value = 'none';
     currentPath.value = '';
     selectedParentNode.value = null;
-    window.removeEventListener('resize', updateHeights);
+    window.removeEventListener('resize', scheduleHeightUpdate);
+    window.visualViewport?.removeEventListener('resize', scheduleHeightUpdate);
+    if (heightUpdateFrame !== null) {
+        window.cancelAnimationFrame(heightUpdateFrame);
+    }
+    if (editorLayoutFrame !== null) {
+        window.cancelAnimationFrame(editorLayoutFrame);
+    }
     document.removeEventListener('click', closeTreeContextMenu);
     window.removeEventListener('scroll', closeTreeContextMenu, true);
 });
@@ -1966,13 +2175,6 @@ defineExpose({ acceptParams });
     flex-shrink: 0;
 }
 
-.truncate-text {
-    display: block;
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
 .code-title {
     display: inline-flex;
     align-items: center;
@@ -1990,12 +2192,22 @@ defineExpose({ acceptParams });
     background-color: var(--panel-code-header-footer-color);
 }
 .card-action {
+    min-width: 0;
+
     .el-button + .el-button {
         margin-left: 0 !important;
     }
     .el-button.is-link {
         padding: 0;
     }
+}
+
+.mobile-action-button {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    margin: 0 !important;
+    padding: 0 !important;
 }
 .code-dialog {
     .el-dialog__footer {
@@ -2018,7 +2230,8 @@ defineExpose({ acceptParams });
 .tree-node-content {
     display: inline-flex;
     align-items: center;
-    width: 100%;
+    flex: 1 1 auto;
+    width: auto;
     min-width: 0;
 }
 
@@ -2032,10 +2245,24 @@ defineExpose({ acceptParams });
 }
 
 .tree-node-label {
+    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.tree-node-mobile-actions {
+    flex: 0 0 32px;
+    margin-left: auto;
+}
+
+.mobile-tree-node-action {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    margin: 0;
+    padding: 0;
 }
 
 :deep(.el-tabs) {
@@ -2090,5 +2317,82 @@ defineExpose({ acceptParams });
 
 :deep(.monaco-editor .ai-search-target-line-gutter) {
     border-left: 3px solid var(--el-color-primary);
+}
+
+@media (max-width: 767px) {
+    .code-header {
+        min-height: 44px;
+        padding-right: 12px !important;
+        padding-left: 12px !important;
+        border-radius: 0;
+    }
+
+    .code-action {
+        padding: 4px 8px !important;
+        overflow: hidden;
+    }
+
+    .card-action {
+        flex-wrap: nowrap;
+        gap: 8px !important;
+        overflow-x: auto;
+        overflow-y: hidden;
+        overscroll-behavior-x: contain;
+        scrollbar-width: none;
+
+        &::-webkit-scrollbar {
+            display: none;
+        }
+
+        > * {
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+    }
+
+    :deep(.code-dialog.el-dialog.is-fullscreen) {
+        height: 100dvh;
+        overflow: hidden;
+        border-radius: 0;
+    }
+
+    :deep(.code-dialog .el-dialog__header) {
+        margin-right: 0;
+        padding: 0;
+    }
+
+    :deep(.code-dialog .el-dialog__body) {
+        padding: 0;
+        overflow: hidden;
+    }
+
+    :deep(.code-splitter .el-splitter-bar) {
+        width: 100%;
+        height: 1px;
+    }
+
+    :deep(.code-splitter .el-splitter-bar__dragger-vertical::before) {
+        height: 1px;
+        background-color: var(--el-border-color-light);
+    }
+
+    :deep(.el-tabs) {
+        --el-tabs-header-height: 36px;
+
+        .el-tabs__header,
+        .el-tabs__nav-wrap,
+        .el-tabs__nav,
+        .el-tabs__nav-next,
+        .el-tabs__nav-prev {
+            height: 36px;
+            line-height: 36px;
+        }
+
+        .el-tabs__item {
+            max-width: 160px;
+            height: 36px;
+            padding: 0 12px;
+        }
+    }
 }
 </style>

@@ -7,6 +7,8 @@
                         <el-option label="OpenClaw" value="openclaw" />
                         <el-option label="Hermes Agent" value="hermes-agent" />
                         <el-option label="QwenPaw" value="copaw" />
+                        <el-option label="DeepSeek Harness" value="deepseek-harness" />
+                        <el-option label="Octop" value="octop" />
                     </el-select>
                 </el-form-item>
                 <el-form-item :label="$t('commons.table.name')" prop="name">
@@ -19,11 +21,20 @@
                     <el-select v-model="form.appVersion" filterable>
                         <el-option v-for="item in versions" :key="item" :label="item" :value="item" />
                     </el-select>
+                    <span v-if="versions.length === 0" class="input-help">{{ $t('commons.msg.noneData') }}</span>
                 </el-form-item>
                 <el-form-item :label="$t('aiTools.agents.webuiPort')" prop="webUIPort">
                     <el-input-number v-model="form.webUIPort" :min="1" :max="65535" />
                 </el-form-item>
-                <template v-if="form.agentType === 'hermes-agent'">
+                <el-form-item
+                    v-if="form.agentType === 'deepseek-harness'"
+                    :label="$t('setting.systemIP')"
+                    prop="accessHost"
+                >
+                    <el-input v-model="form.accessHost" />
+                    <span class="input-help">{{ $t('aiTools.agents.deepSeekAccessHostHelper') }}</span>
+                </el-form-item>
+                <template v-if="supportsAgentDashboardAuth(form.agentType)">
                     <el-form-item :label="$t('commons.login.username')" prop="dashboardUsername">
                         <el-input v-model="form.dashboardUsername" />
                     </el-form-item>
@@ -35,6 +46,12 @@
                                 {{ $t('commons.button.random') }}
                             </el-button>
                         </div>
+                        <span class="input-help" v-if="form.agentType === 'deepseek-harness'">
+                            {{ $t('aiTools.agents.deepSeekAuthHelper') }}
+                        </span>
+                        <span class="input-help" v-if="form.agentType === 'octop'">
+                            {{ $t('aiTools.agents.octopAuthHelper') }}
+                        </span>
                     </el-form-item>
                 </template>
                 <el-form-item
@@ -130,13 +147,18 @@ import { getRandomStr, newUUID } from '@/utils/id';
 import {
     buildDefaultAllowedOrigin,
     getAgentProviderDisplayName,
+    isAgentType,
+    isDeepSeekAccessHost,
+    isOctopPassword,
     parseAllowedOriginsInput,
+    supportsAgentDashboardAuth,
     validateAllowedOriginsInput,
 } from '@/utils/agent';
 import { App } from '@/api/interface/app';
 import AdvancedSetting from '@/components/advanced-setting/index.vue';
-import AccountAddDialog from '@/views/ai/agents/model/add/index.vue';
+import AccountAddDialog from '@/views/ai/model/components/account-form/index.vue';
 import { useGlobalStore } from '@/composables/useGlobalStore';
+import i18n from '@/lang';
 
 const emit = defineEmits(['search', 'task']);
 
@@ -160,6 +182,7 @@ const form = reactive({
     agentType: 'openclaw' as AI.AgentType,
     appVersion: '',
     webUIPort: 18789,
+    accessHost: '',
     allowedOrigins: '',
     provider: '',
     accountId: undefined as unknown as number,
@@ -184,11 +207,14 @@ const form = reactive({
 const showModelConfig = computed(() => form.agentType === 'openclaw' || form.agentType === 'hermes-agent');
 
 const generateDashboardPassword = () => {
-    form.dashboardPassword = getRandomStr(8);
+    form.dashboardPassword =
+        form.agentType === 'deepseek-harness' || form.agentType === 'octop'
+            ? `Aa2${Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')}`
+            : getRandomStr(8);
 };
 
-const ensureHermesDashboardAuth = () => {
-    if (form.agentType !== 'hermes-agent') {
+const ensureDashboardAuth = () => {
+    if (!supportsAgentDashboardAuth(form.agentType)) {
         return;
     }
     if (!form.dashboardUsername) {
@@ -200,12 +226,16 @@ const ensureHermesDashboardAuth = () => {
 };
 
 const setDefaultWebUIPort = () => {
-    if (form.agentType === 'copaw') {
+    if (form.agentType === 'copaw' || form.agentType === 'octop') {
         form.webUIPort = 8088;
         return;
     }
     if (form.agentType === 'hermes-agent') {
         form.webUIPort = 9119;
+        return;
+    }
+    if (form.agentType === 'deepseek-harness') {
+        form.webUIPort = 10443;
         return;
     }
     form.webUIPort = 18789;
@@ -216,6 +246,19 @@ const rules = reactive({
     agentType: [Rules.requiredSelect],
     appVersion: [Rules.requiredSelect],
     webUIPort: [Rules.requiredInput],
+    accessHost: [
+        Rules.requiredInput,
+        {
+            validator: (_rule: any, value: string, callback: (error?: Error) => void) => {
+                callback(
+                    isDeepSeekAccessHost(value)
+                        ? undefined
+                        : new Error(i18n.global.t('aiTools.agents.deepSeekAccessHostHelper')),
+                );
+            },
+            trigger: 'blur',
+        },
+    ],
     allowedOrigins: [
         Rules.requiredInput,
         {
@@ -233,8 +276,35 @@ const rules = reactive({
     provider: [Rules.requiredSelect],
     accountId: [Rules.requiredSelect],
     model: [Rules.requiredInput],
-    dashboardUsername: [Rules.requiredInput],
-    dashboardPassword: [Rules.requiredInput],
+    dashboardUsername: [
+        Rules.requiredInput,
+        {
+            validator: (_rule: any, value: string, callback: (error?: Error) => void) => {
+                callback(
+                    form.agentType === 'deepseek-harness' && !/^[A-Za-z0-9._-]+$/.test(value)
+                        ? new Error(i18n.global.t('aiTools.agents.deepSeekAuthHelper'))
+                        : undefined,
+                );
+            },
+            trigger: 'blur',
+        },
+    ],
+    dashboardPassword: [
+        Rules.requiredInput,
+        {
+            validator: (_rule: any, value: string, callback: (error?: Error) => void) => {
+                const invalidCharacters = value !== value.trim() || /[\r\n\0]/.test(value);
+                if (form.agentType === 'deepseek-harness' && (invalidCharacters || [...value].length < 12)) {
+                    callback(new Error(i18n.global.t('aiTools.agents.deepSeekAuthHelper')));
+                } else if (form.agentType === 'octop' && !isOctopPassword(value)) {
+                    callback(new Error(i18n.global.t('aiTools.agents.octopAuthHelper')));
+                } else {
+                    callback();
+                }
+            },
+            trigger: 'blur',
+        },
+    ],
     containerName: [Rules.containerName],
     restartPolicy: [Rules.requiredSelect],
     cpuQuota: [checkNumberRange(0, 99999)],
@@ -272,7 +342,13 @@ const loadSystemIP = async () => {
 };
 
 const loadVersions = async (appKey: AI.AgentType) => {
+    versions.value = [];
+    appInfo.value = undefined;
+    form.dockerCompose = '';
     const res = await getAppByKey(appKey);
+    if (form.agentType !== appKey) {
+        return;
+    }
     appInfo.value = res.data;
     versions.value = res.data.versions || [];
     if (!form.appVersion && versions.value.length > 0) {
@@ -286,6 +362,10 @@ const getDefaultAgentName = (agentType: AI.AgentType) => {
             return 'QwenPaw';
         case 'hermes-agent':
             return 'Hermes-Agent';
+        case 'deepseek-harness':
+            return 'DeepSeek-Harness';
+        case 'octop':
+            return 'Octop';
         default:
             return 'OpenClaw';
     }
@@ -370,6 +450,7 @@ const loadAccounts = async () => {
         page: 1,
         pageSize: 200,
         provider: form.provider,
+        textOnly: true,
         name: '',
     };
     const res = await pageAgentAccounts(req);
@@ -400,7 +481,9 @@ const handleAgentTypeChange = async () => {
         form.name === 'OpenClaw' ||
         form.name === 'CoPaw' ||
         form.name === 'QwenPaw' ||
-        form.name === 'Hermes-Agent'
+        form.name === 'Hermes-Agent' ||
+        form.name === 'DeepSeek-Harness' ||
+        form.name === 'Octop'
     ) {
         form.name = getDefaultAgentName(form.agentType);
     }
@@ -410,7 +493,11 @@ const handleAgentTypeChange = async () => {
     form.provider = '';
     form.accountId = undefined as unknown as number;
     form.baseURL = '';
-    ensureHermesDashboardAuth();
+    ensureDashboardAuth();
+    if (form.agentType === 'deepseek-harness' && !form.accessHost) {
+        await loadSystemIP();
+        form.accessHost = isDeepSeekAccessHost(systemIP.value) ? systemIP.value : '';
+    }
     if (form.agentType === 'openclaw') {
         await loadSystemIP();
         allowedOriginsAutoFilled.value = true;
@@ -483,11 +570,12 @@ const submit = async () => {
             webUIPort: form.webUIPort,
             allowedOrigins: form.agentType === 'openclaw' ? parseAllowedOriginsInput(form.allowedOrigins) : undefined,
             agentType: form.agentType,
+            accessHost: form.agentType === 'deepseek-harness' ? form.accessHost : undefined,
             model: showModelConfig.value ? form.model : undefined,
             accountId: showModelConfig.value ? form.accountId : undefined,
             token: form.agentType === 'openclaw' ? form.token : undefined,
-            dashboardUsername: form.agentType === 'hermes-agent' ? form.dashboardUsername : undefined,
-            dashboardPassword: form.agentType === 'hermes-agent' ? form.dashboardPassword : undefined,
+            dashboardUsername: supportsAgentDashboardAuth(form.agentType) ? form.dashboardUsername : undefined,
+            dashboardPassword: supportsAgentDashboardAuth(form.agentType) ? form.dashboardPassword : undefined,
             taskID: taskID,
             advanced: form.advanced,
             containerName: form.containerName,
@@ -522,45 +610,19 @@ const handleClose = () => {
     form.dashboardPassword = '';
     form.remark = '';
     form.allowedOrigins = '';
+    form.accessHost = '';
     form.dockerCompose = '';
     lastAutoAllowedOrigins.value = '';
     allowedOriginsAutoFilled.value = true;
 };
 
 const openDrawer = async (agentType?: AI.AgentType) => {
-    const targetType =
-        agentType === 'copaw' || agentType === 'hermes-agent' || agentType === 'openclaw' ? agentType : 'openclaw';
+    const targetType = isAgentType(agentType) ? agentType : 'openclaw';
     form.name = getDefaultAgentName(targetType);
     open.value = true;
     form.agentType = targetType;
-    setDefaultWebUIPort();
     form.token = getRandomStr(32).toLowerCase();
-    ensureHermesDashboardAuth();
-    if (form.agentType === 'copaw') {
-        form.allowedOrigins = '';
-        lastAutoAllowedOrigins.value = '';
-        allowedOriginsAutoFilled.value = true;
-        await loadVersions('copaw');
-        providerOptions.value = [];
-        providerModels.value = {};
-        accountOptions.value = [];
-        return;
-    }
-    if (form.agentType === 'hermes-agent') {
-        form.allowedOrigins = '';
-        lastAutoAllowedOrigins.value = '';
-        allowedOriginsAutoFilled.value = true;
-        await loadVersions('hermes-agent');
-        await loadProviders();
-        await loadAccounts();
-        return;
-    }
-    await loadSystemIP();
-    allowedOriginsAutoFilled.value = true;
-    syncAllowedOriginsWithDefault(true);
-    await loadVersions('openclaw');
-    await loadProviders();
-    await loadAccounts();
+    await handleAgentTypeChange();
 };
 
 const openAccountCreate = () => {

@@ -87,6 +87,7 @@ const (
 	TaskScopeCronjob          = "Cronjob"
 	TaskScopeClam             = "Clam"
 	TaskScopeSystem           = "System"
+	TaskScopeFirewall         = "Firewall"
 	TaskScopeAppStore         = "AppStore"
 	TaskScopeSnapshot         = "Snapshot"
 	TaskScopeContainer        = "Container"
@@ -98,6 +99,7 @@ const (
 	TaskScopeTamper           = "Tamper"
 	TaskScopeFileConvert      = "Convert"
 	TaskScopeTask             = "Task"
+	TaskScopeVm               = "VirtualMachine"
 )
 
 func GetTaskName(resourceName, operate, scope string) string {
@@ -153,7 +155,7 @@ func NewTask(name, operate, taskScope, taskID string, resourceID uint) (*Task, e
 	logPath := path.Join(global.Dir.TaskDir, taskScope, taskID+".log")
 	logger := logrus.New()
 	logger.SetFormatter(&SimpleFormatter{})
-	logFile, err := os.OpenFile(logPath, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, constant.FilePerm)
+	logFile, err := os.OpenFile(logPath, os.O_TRUNC|os.O_CREATE|os.O_WRONLY|os.O_APPEND, constant.FilePerm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open log file: %w", err)
 	}
@@ -256,7 +258,15 @@ func (s *SubTask) Execute() error {
 		case <-ctx.Done():
 			s.RootTask.Log(i18n.GetWithName("TaskTimeout", subTaskName))
 			err = errors.New("timeout!")
+			if s.RootTask.Task.Type == TaskScopeVm {
+				<-done
+			}
 		case err = <-done:
+			if s.RootTask.Task.Type == TaskScopeVm && ctx.Err() != nil {
+				s.RootTask.Log(i18n.GetWithName("TaskTimeout", subTaskName))
+				err = errors.New("timeout!")
+				break
+			}
 			if err != nil {
 				s.RootTask.Log(i18n.GetWithNameAndErr("SubTaskFailed", subTaskName, err))
 				if err.Error() == i18n.GetMsgByKey("ErrShutDown") {
@@ -282,10 +292,38 @@ func (t *Task) updateTask(task *model.Task) {
 	_ = t.taskRepo.Update(context.Background(), task)
 }
 
-func (t *Task) Execute() error {
+// ExecuteQueued registers the task before returning and limits concurrent execution.
+// Subtasks must use Timeout = 0 and manage their own operation and recovery deadlines
+// so that a slot is held until the action and its cleanup have actually returned.
+func (t *Task) ExecuteQueued(slots chan struct{}, waitingStep string, onFinish func()) error {
+	t.Task.CurrentStep = waitingStep
 	if err := t.taskRepo.Save(context.Background(), t.Task); err != nil {
+		_ = t.logFile.Close()
+		global.RemoveTaskCancel(t.TaskID)
 		return err
 	}
+	t.Log(i18n.GetMsgByKey(waitingStep))
+	go func() {
+		slots <- struct{}{}
+		defer func() { <-slots }()
+		defer onFinish()
+		if err := t.executeRegistered(); err != nil {
+			global.LOG.Error(err.Error())
+		}
+	}()
+	return nil
+}
+
+func (t *Task) Execute() error {
+	if err := t.taskRepo.Save(context.Background(), t.Task); err != nil {
+		_ = t.logFile.Close()
+		global.RemoveTaskCancel(t.TaskID)
+		return err
+	}
+	return t.executeRegistered()
+}
+
+func (t *Task) executeRegistered() error {
 	var err error
 	t.Log(i18n.GetWithName("TaskStart", t.Name))
 	for i := 0; i < len(t.SubTasks); i++ {

@@ -1,15 +1,19 @@
 package service
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/big"
 	"net"
@@ -18,25 +22,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/1Panel-dev/1Panel/agent/app/repo"
-	"github.com/1Panel-dev/1Panel/agent/utils/common"
-
 	"github.com/1Panel-dev/1Panel/agent/app/dto/request"
 	"github.com/1Panel-dev/1Panel/agent/app/dto/response"
 	"github.com/1Panel-dev/1Panel/agent/app/model"
+	"github.com/1Panel-dev/1Panel/agent/app/repo"
 	"github.com/1Panel-dev/1Panel/agent/buserr"
 	"github.com/1Panel-dev/1Panel/agent/constant"
 	"github.com/1Panel-dev/1Panel/agent/global"
 	"github.com/1Panel-dev/1Panel/agent/i18n"
+	"github.com/1Panel-dev/1Panel/agent/utils/common"
 	"github.com/1Panel-dev/1Panel/agent/utils/files"
 	"github.com/1Panel-dev/1Panel/agent/utils/ssl"
 	"github.com/go-acme/lego/v5/certcrypto"
+	"gorm.io/gorm"
 )
 
 type WebsiteCAService struct {
 }
 
 type IWebsiteCAService interface {
+	Import(req request.WebsiteCAImport) error
+	Upload(name string, archive []byte) error
 	Page(search request.WebsiteCASearch) (int64, []response.WebsiteCADTO, error)
 	Create(create request.WebsiteCACreate) (*request.WebsiteCACreate, error)
 	GetCA(id uint) (*response.WebsiteCADTO, error)
@@ -212,10 +218,17 @@ func (w WebsiteCAService) ObtainSSL(req request.WebsiteCAObtain) (*model.Website
 			websiteSSL.Shell = req.Shell
 		}
 		if req.PushDir {
-			if !files.NewFileOp().Stat(req.Dir) {
+			dirs := certificateDirectories(req.Dir)
+			if len(dirs) == 0 {
 				return nil, buserr.New("ErrLinkPathNotFound")
 			}
-			websiteSSL.Dir = req.Dir
+			for _, dir := range dirs {
+				info, err := os.Stat(dir)
+				if err != nil || !info.IsDir() {
+					return nil, buserr.New("ErrLinkPathNotFound")
+				}
+			}
+			websiteSSL.Dir = strings.Join(dirs, "\n")
 		}
 		if req.Domains != "" {
 			domainArray := strings.Split(req.Domains, "\n")
@@ -277,38 +290,11 @@ func (w WebsiteCAService) ObtainSSL(req request.WebsiteCAObtain) (*model.Website
 			return nil, err
 		}
 	}
-	interPrivateKey, interPublicKey, _, err := createPrivateKey(websiteSSL.KeyType)
-	if err != nil {
-		return nil, err
-	}
 	notAfter := time.Now()
 	if req.Unit == "year" {
 		notAfter = notAfter.AddDate(req.Time, 0, 0)
 	} else {
 		notAfter = notAfter.AddDate(0, 0, req.Time)
-	}
-	interCsr := &x509.Certificate{
-		SerialNumber:          big.NewInt(time.Now().Unix() + 2),
-		Subject:               rootCsr.Subject,
-		NotBefore:             time.Now(),
-		NotAfter:              notAfter,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		MaxPathLen:            0,
-		MaxPathLenZero:        true,
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
-	}
-	interDer, err := x509.CreateCertificate(rand.Reader, interCsr, rootCsr, interPublicKey, rootPrivateKey)
-	if err != nil {
-		return nil, err
-	}
-	interCert, err := x509.ParseCertificate(interDer)
-	if err != nil {
-		return nil, err
-	}
-	interCertBlock := &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: interCert.Raw,
 	}
 	_, publicKey, privateKeyBytes, err := createPrivateKey(websiteSSL.KeyType)
 	if err != nil {
@@ -330,13 +316,13 @@ func (w WebsiteCAService) ObtainSSL(req request.WebsiteCAObtain) (*model.Website
 		NotAfter:              notAfter,
 		BasicConstraintsValid: true,
 		IsCA:                  false,
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		KeyUsage:              leafKeyUsage(websiteSSL.KeyType),
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		DNSNames:              domains,
 		IPAddresses:           ips,
 	}
 
-	der, err := x509.CreateCertificate(rand.Reader, csr, interCert, publicKey, interPrivateKey)
+	der, err := x509.CreateCertificate(rand.Reader, csr, rootCsr, publicKey, rootPrivateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -349,12 +335,12 @@ func (w WebsiteCAService) ObtainSSL(req request.WebsiteCAObtain) (*model.Website
 		Type:  "CERTIFICATE",
 		Bytes: cert.Raw,
 	}
-	websiteSSL.Pem = string(pem.EncodeToMemory(certBlock)) + string(pem.EncodeToMemory(rootCertBlock)) + string(pem.EncodeToMemory(interCertBlock))
+	websiteSSL.Pem = string(pem.EncodeToMemory(certBlock))
 	websiteSSL.PrivateKey = string(privateKeyBytes)
 	websiteSSL.ExpireDate = cert.NotAfter
 	websiteSSL.StartDate = cert.NotBefore
 	websiteSSL.Type = cert.Issuer.CommonName
-	websiteSSL.Organization = rootCsr.Subject.Organization[0]
+	websiteSSL.Organization = strings.Join(rootCsr.Subject.Organization, ",")
 	websiteSSL.Status = constant.SSLReady
 
 	if req.Renew {
@@ -375,7 +361,9 @@ func (w WebsiteCAService) ObtainSSL(req request.WebsiteCAObtain) (*model.Website
 	if websiteSSL.ExecShell {
 		workDir := global.Dir.DataDir
 		if websiteSSL.PushDir {
-			workDir = websiteSSL.Dir
+			if dirs := certificateDirectories(websiteSSL.Dir); len(dirs) > 0 {
+				workDir = dirs[0]
+			}
 		}
 		logger.Println(i18n.GetMsgByKey("ExecShellStart"))
 		if err = runShellScriptFile(workDir, websiteSSL.Shell, logger); err != nil {
@@ -391,6 +379,14 @@ func (w WebsiteCAService) ObtainSSL(req request.WebsiteCAObtain) (*model.Website
 		}
 	}
 	return websiteSSL, nil
+}
+
+func leafKeyUsage(keyType string) x509.KeyUsage {
+	usage := x509.KeyUsageDigitalSignature
+	if ssl.KeyType(keyType) != certcrypto.EC256 && ssl.KeyType(keyType) != certcrypto.EC384 {
+		usage |= x509.KeyUsageKeyEncipherment
+	}
+	return usage
 }
 
 func createPrivateKey(keyType string) (privateKey any, publicKey any, privateKeyBytes []byte, err error) {
@@ -451,4 +447,151 @@ func (w WebsiteCAService) DownloadFile(id uint) (*os.File, error) {
 		return nil, err
 	}
 	return os.Open(path.Join(dir, fileName))
+}
+
+func (w WebsiteCAService) Upload(name string, archive []byte) error {
+	ca, err := parseCAArchive(archive)
+	if err != nil {
+		return err
+	}
+	return saveImportedCA(name, ca)
+}
+
+func saveImportedCA(name string, ca *model.WebsiteCA) error {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 128 || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") {
+		return buserr.WithDetail("ErrInvalidParams", "name", nil)
+	}
+	exist, err := websiteCARepo.GetFirst(repo.WithByName(name))
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if exist.ID > 0 {
+		return buserr.New("ErrNameIsExist")
+	}
+	ca.Name = name
+	return websiteCARepo.Create(context.Background(), ca)
+}
+
+// Read only the certificate and key in memory; never extract user-supplied paths.
+func parseCAArchive(archive []byte) (*model.WebsiteCA, error) {
+	invalid := func() (*model.WebsiteCA, error) { return nil, buserr.New("ErrCAUpload") }
+	if len(archive) > 10<<20 {
+		return invalid()
+	}
+	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	if err != nil || len(reader.File) > 16 {
+		return invalid()
+	}
+	contents := make(map[string][]byte)
+	for _, file := range reader.File {
+		if file.FileInfo().IsDir() {
+			continue
+		}
+		name := path.Base(file.Name)
+		if (name != "ca.crt" && name != "ca.key") || contents[name] != nil || file.UncompressedSize64 > 1<<20 {
+			return invalid()
+		}
+		stream, err := file.Open()
+		if err != nil {
+			return invalid()
+		}
+		data, err := io.ReadAll(io.LimitReader(stream, (1<<20)+1))
+		stream.Close()
+		if err != nil || len(data) > 1<<20 {
+			return invalid()
+		}
+		contents[name] = data
+	}
+	return parseAndValidateRootCA(contents["ca.crt"], contents["ca.key"])
+}
+
+func parseAndValidateRootCA(certificate, privateKey []byte) (*model.WebsiteCA, error) {
+	invalid := func() (*model.WebsiteCA, error) { return nil, buserr.New("ErrCAImport") }
+	if len(certificate) > 1<<20 || len(privateKey) > 1<<20 {
+		return invalid()
+	}
+	pair, err := tls.X509KeyPair(certificate, privateKey)
+	if err != nil || len(pair.Certificate) != 1 {
+		return invalid()
+	}
+	cert := pair.Leaf
+	now := time.Now()
+	if cert == nil || !cert.IsCA || !cert.BasicConstraintsValid || cert.KeyUsage&x509.KeyUsageCertSign == 0 ||
+		!bytes.Equal(cert.RawIssuer, cert.RawSubject) || cert.CheckSignatureFrom(cert) != nil ||
+		now.Before(cert.NotBefore) || !now.Before(cert.NotAfter) {
+		return invalid()
+	}
+	ca := &model.WebsiteCA{CSR: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}))}
+	// Normalize keys to the formats used by ObtainSSL, including PKCS#8 uploads.
+	switch key := pair.PrivateKey.(type) {
+	case *ecdsa.PrivateKey:
+		bits := key.Curve.Params().BitSize
+		if bits != 256 && bits != 384 {
+			return invalid()
+		}
+		der, err := x509.MarshalECPrivateKey(key)
+		if err != nil {
+			return invalid()
+		}
+		ca.KeyType = fmt.Sprintf("EC%d", bits)
+		ca.PrivateKey = string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}))
+	case *rsa.PrivateKey:
+		bits := key.N.BitLen()
+		if bits != 2048 && bits != 3072 && bits != 4096 && bits != 8192 {
+			return invalid()
+		}
+		ca.KeyType = fmt.Sprintf("RSA%d", bits)
+		ca.PrivateKey = string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
+	default:
+		return invalid()
+	}
+	return ca, nil
+}
+
+func (w WebsiteCAService) Import(req request.WebsiteCAImport) error {
+	certificate, privateKey := []byte(req.Certificate), []byte(req.PrivateKey)
+	switch req.Type {
+	case "local":
+		var err error
+		certificate, err = readCAImportFile(req.CertificatePath)
+		if err != nil {
+			return err
+		}
+		privateKey, err = readCAImportFile(req.PrivateKeyPath)
+		if err != nil {
+			return err
+		}
+	case "paste":
+	default:
+		return buserr.New("ErrCAImport")
+	}
+	ca, err := parseAndValidateRootCA(certificate, privateKey)
+	if err != nil {
+		return err
+	}
+	return saveImportedCA(req.Name, ca)
+}
+
+func readCAImportFile(name string) ([]byte, error) {
+	info, err := os.Stat(name)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > 1<<20 {
+		return nil, buserr.New("ErrCAImport")
+	}
+	file, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(content) > 1<<20 {
+		return nil, buserr.New("ErrCAImport")
+	}
+	return content, nil
 }

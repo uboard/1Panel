@@ -5,6 +5,7 @@ import (
 	"github.com/1Panel-dev/1Panel/agent/init/migration/migrations"
 
 	"github.com/go-gormigrate/gormigrate/v2"
+	"gorm.io/gorm"
 )
 
 func Init() {
@@ -15,7 +16,15 @@ func Init() {
 }
 
 func InitAgentDB() {
-	m := gormigrate.New(global.DB, gormigrate.DefaultOptions, []*gormigrate.Migration{
+	m := gormigrate.New(global.DB, gormigrate.DefaultOptions, agentDBMigrations())
+	if err := m.Migrate(); err != nil {
+		global.LOG.Error(err)
+		panic(err)
+	}
+}
+
+func agentDBMigrations() []*gormigrate.Migration {
+	return []*gormigrate.Migration{
 		migrations.AddTable,
 		migrations.AddMonitorTable,
 		migrations.InitSetting,
@@ -54,7 +63,6 @@ func InitAgentDB() {
 		migrations.AddMonitorProcess,
 		migrations.UpdateCronJob,
 		migrations.UpdateTensorrtLLM,
-		migrations.AddIptablesFilterRuleTable,
 		migrations.AddCommonDescription,
 		migrations.UpdateDatabase,
 		migrations.AddGPUMonitor,
@@ -93,10 +101,24 @@ func InitAgentDB() {
 		migrations.AddMcpServerGatewayArgs,
 		migrations.InitFirewallPortWhiteList,
 		migrations.AddDatabaseUserTable,
-	})
-	if err := m.Migrate(); err != nil {
-		global.LOG.Error(err)
-		panic(err)
+		migrations.AddBackupRecordArgs,
+		migrations.AddFtpIdentity,
+		migrations.AddWebsiteTemplateTable,
+		migrations.AddComposePinned,
+		migrations.AddFirewallRuleTable,
+		migrations.InitDockerPortGuardStatus,
+		migrations.NormalizeFirewallBackendSelections,
+		migrations.MigrateFirewallDescriptions,
+		migrations.MigrateFirewallPortWhitelistSources,
+		migrations.AddAcceleratorMetrics,
+		migrations.AddVLLMMonitor,
+		migrations.AddMonitorSettings,
+		migrations.AddVLLMRequestMetrics,
+		migrations.AddVLLMSampleInterval,
+		migrations.AddNativeAgentInstalls,
+		migrations.AddQuickDirectory,
+		migrations.AddLocalModelAccountLink,
+		migrations.AddOllamaModelAccountSync,
 	}
 }
 
@@ -111,13 +133,21 @@ func InitTaskDB() {
 }
 
 func InitAlertDB() {
-	m := gormigrate.New(global.AlertDB, gormigrate.DefaultOptions, []*gormigrate.Migration{
-		migrations.MigrateAlertMethodConfigIDs,
-		migrations.MigrateAlertLogTaskMethodConfigIDs,
-		migrations.AddAlertAuditUser,
-	})
-	if err := m.Migrate(); err != nil {
+	if err := migrateAlertDB(global.AlertDB); err != nil {
 		global.LOG.Error(err)
 		panic(err)
 	}
+}
+
+func migrateAlertDB(db *gorm.DB) error {
+	options := *gormigrate.DefaultOptions
+	options.UseTransaction = true
+	m := gormigrate.New(db, &options, []*gormigrate.Migration{
+		migrations.AddAlertConfigUIDAndSecret,
+		migrations.MigrateAlertMethodConfigIDs,
+		migrations.MigrateAlertLogTaskMethodConfigIDs,
+		migrations.AddAlertAuditUser,
+		migrations.AddAlertTaskDeliveryLogID,
+	})
+	return m.Migrate()
 }

@@ -547,13 +547,20 @@
                                         </div>
                                         <div class="file-name">
                                             <el-input
-                                                v-if="fileRename.oldName === row.name && isEdit"
+                                                v-if="
+                                                    isEdit &&
+                                                    fileRename.oldPath === row.path &&
+                                                    fileRename.tabId === item.id
+                                                "
                                                 v-model.trim="fileRename.newName"
                                                 :ref="(el) => setRenameRef(item.id, el)"
                                                 :autofocus="isEdit"
+                                                :readonly="renameSubmitting"
                                                 class="table-link table-input"
                                                 placeholder="file name"
-                                                @keydown.enter="handleRename(row)"
+                                                @compositionstart="renameComposing = true"
+                                                @compositionend="onRenameCompositionEnd($event, row)"
+                                                @keydown.enter="onRenameEnter($event, row)"
                                                 @blur="onRenameBlur($event, row)"
                                             />
                                             <span v-else class="table-link" @click="open(row)" type="primary">
@@ -643,10 +650,13 @@
                                 :label="$t('file.updateTime')"
                                 prop="modTime"
                                 width="180"
-                                :formatter="dateFormat"
                                 show-overflow-tooltip
                                 :sortable="'custom'"
-                            ></el-table-column>
+                            >
+                                <template #default="{ row }">
+                                    {{ row.modTime ? dateFormatSimpleWithSecond(row.modTime) : '-' }}
+                                </template>
+                            </el-table-column>
                             <el-table-column :label="$t('file.remark')" prop="remark" width="180" show-overflow-tooltip>
                                 <template #default="{ row }">
                                     <span>{{ row.remark ? row.remark : '-' }}</span>
@@ -729,7 +739,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { useSearchState } from '@/utils/search-reset';
+import { toRef, computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import {
     addFavorite,
     batchGetFileRemarks,
@@ -748,7 +759,7 @@ import {
 } from '@/api/modules/files';
 import { computeSize } from '@/utils/size';
 import { copyText } from '@/utils/clipboard';
-import { dateFormat } from '@/utils/date';
+import { dateFormatSimpleWithSecond } from '@/utils/date';
 import { downloadFile, getFileType, getIcon, isConvertible } from '@/utils/file';
 import { getRandomStr } from '@/utils/id';
 import { File } from '@/api/interface/file';
@@ -864,7 +875,10 @@ const fileEdit = reactive<{
 const filePreview = reactive({ path: '', name: '', extension: '', fileType: '', imageFiles: [], currentNode: '' });
 const codeReq = reactive({ path: '', expand: false, page: 1, pageSize: 100, isDetail: false });
 const fileUpload = reactive({ path: '', isAppendOnly: false });
-const fileRename = reactive({ path: '', oldName: '', newName: '' });
+const fileRename = reactive({ path: '', oldPath: '', oldName: '', newName: '', tabId: '' });
+const renameSubmitting = ref(false);
+const renameComposing = ref(false);
+let renameBlurPending = false;
 const fileWget = reactive({ path: '', isAppendOnly: false });
 const fileMove = reactive({ oldPaths: [''], allNames: [''], type: '', path: '', name: '', count: 0, isDir: false });
 const fileConvert = reactive<{
@@ -966,11 +980,19 @@ const getCurrentPath = () => pathRefs.value[editableTabsKey.value];
 const { searchableStatus, searchablePath, setSearchableInputRef, searchableInputBlur } = useMultipleSearchable(paths);
 
 const paginationConfig = reactive({
-    cacheSizeKey: 'file-page-size',
     currentPage: 1,
-    pageSize: Number(localStorage.getItem('file-page-size')) || 100,
+    pageSize: 100,
     total: 0,
 });
+useSearchState(
+    'host/file-management/index',
+    {
+        search: toRef(req, 'search'),
+        page: toRef(paginationConfig, 'currentPage'),
+        pageSize: toRef(paginationConfig, 'pageSize'),
+    },
+    { onRevisit: () => search() },
+);
 
 const btnWrapperRefs = ref<Record<string, any>>({});
 
@@ -1725,21 +1747,47 @@ const getWgetProcess = async () => {
 };
 
 const openRename = (item: File.File, source: string) => {
-    fileRename.path = req.path;
-    fileRename.oldName = item.name;
+    if (renameSubmitting.value) return;
+    fileRename.path = item.path.substring(0, item.path.lastIndexOf('/')) || '/';
+    fileRename.oldPath = item.path;
+    fileRename.oldName = item.path.substring(item.path.lastIndexOf('/') + 1);
+    fileRename.newName = fileRename.oldName;
+    fileRename.tabId = editableTabsKey.value;
+    renameComposing.value = false;
+    renameBlurPending = false;
     if (source === 'right') {
-        fileRename.newName = item.name;
         isEdit.value = true;
         nextTick(() => {
-            getCurrentRename().focus();
+            getCurrentRename()?.focus();
         });
         hideRightMenu();
     } else {
+        isEdit.value = false;
         renameRef.value.acceptParams(fileRename);
     }
 };
 
-const onRenameBlur = (e: FocusEvent, row: File.File) => {
+const isCurrentRename = (row: File.File) =>
+    isEdit.value && fileRename.oldPath === row.path && fileRename.tabId === editableTabsKey.value;
+
+const onRenameEnter = (event: KeyboardEvent, row: File.File) => {
+    if (event.isComposing || event.keyCode === 229 || renameComposing.value || event.repeat) return;
+    event.preventDefault();
+    return handleRename(row);
+};
+
+const onRenameCompositionEnd = (event: CompositionEvent, row: File.File) => {
+    if (!isCurrentRename(row)) return;
+    fileRename.newName = (event.target as HTMLInputElement).value.trim();
+    renameComposing.value = false;
+    if (renameBlurPending) {
+        renameBlurPending = false;
+        return handleRename(row);
+    }
+};
+
+const onRenameBlur = async (e: FocusEvent, row: File.File) => {
+    if (!isCurrentRename(row) || renameSubmitting.value) return;
     const related = e.relatedTarget as HTMLElement | null;
     if (
         related &&
@@ -1750,36 +1798,54 @@ const onRenameBlur = (e: FocusEvent, row: File.File) => {
         }, 0);
         return;
     }
-    handleRename(row);
+    if (renameComposing.value) {
+        renameBlurPending = true;
+        return;
+    }
+    await nextTick();
+    return handleRename(row);
 };
 
 const handleRename = async (row: File.File): Promise<void> => {
-    if (fileRename.newName === fileRename.oldName) {
+    if (!isCurrentRename(row) || renameSubmitting.value || renameComposing.value) return;
+    const newName = fileRename.newName.trim();
+    if (!newName) {
+        MsgWarning(i18n.global.t('commons.rule.requiredInput'));
+        getCurrentRename()?.focus();
+        return;
+    }
+    if (newName === fileRename.oldName) {
         isEdit.value = false;
         fileRename.oldName = '';
         return;
     }
     const addItem: File.FileRename = {
-        oldName: getPath(fileRename.path, fileRename.oldName),
-        newName: getPath(fileRename.path, fileRename.newName),
+        oldName: fileRename.oldPath,
+        newName: getPath(fileRename.path, newName),
     };
+    const namePrefix = row.name.substring(0, row.name.lastIndexOf('/') + 1);
+    renameSubmitting.value = true;
     loading.value = true;
     try {
         await renameRile(addItem);
         MsgSuccess(i18n.global.t('commons.msg.updateSuccess'));
-        row.name = fileRename.newName;
-        row.path = getPath(req.path, fileRename.newName);
-    } catch (error) {
-        console.error(error);
-    } finally {
-        loading.value = false;
         isEdit.value = false;
         fileRename.oldName = '';
+        row.name = namePrefix + newName;
+        row.path = addItem.newName;
+    } catch (error) {
+        console.error(error);
+        nextTick(() => {
+            if (isCurrentRename(row)) getCurrentRename()?.focus();
+        });
+    } finally {
+        loading.value = false;
+        renameSubmitting.value = false;
     }
 };
 
 const getPath = (path: string, name: string) => {
-    return path + '/' + name;
+    return path === '/' ? path + name : path + '/' + name;
 };
 
 const openMove = (type: string) => {
@@ -2790,6 +2856,36 @@ onBeforeUnmount(() => {
 }
 :deep(.file-tabs .el-tabs__nav .el-tabs__item:last-child) {
     border-bottom: 1px solid var(--el-border-color-light) !important;
+}
+
+/* Keep the closable tab width stable so switching tabs does not reflow the tab bar */
+:deep(.file-tabs .el-tabs__header .el-tabs__item.is-closable) {
+    padding: 0 20px;
+
+    .is-icon-close {
+        width: 14px;
+        margin-left: 5px;
+        right: 0;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity var(--el-transition-duration);
+    }
+
+    &.is-active,
+    &:hover,
+    &:focus-within {
+        .is-icon-close {
+            opacity: 1;
+            pointer-events: auto;
+        }
+    }
+
+    @media (hover: none), (pointer: coarse) {
+        .is-icon-close {
+            opacity: 1;
+            pointer-events: auto;
+        }
+    }
 }
 
 :deep(.file-tabs .el-tabs--card > .el-tabs__header .el-tabs__item.is-active) {

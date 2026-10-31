@@ -27,6 +27,7 @@ type CommandHelper struct {
 	outputFile   string
 	scriptPath   string
 	stdin        io.Reader
+	stderr       io.Writer
 	env          []string
 	timeout      time.Duration
 	taskItem     *task.Task
@@ -250,6 +251,10 @@ func (c *CommandHelper) buildPipeCommands(ctx context.Context, commands []PipeCo
 		cmdItem.SysProcAttr = &syscall.SysProcAttr{
 			Setpgid: true,
 		}
+		cmdItem.Cancel = func() error {
+			_ = syscall.Kill(-cmdItem.Process.Pid, syscall.SIGKILL)
+			return cmdItem.Process.Kill()
+		}
 		cmds = append(cmds, cmdItem)
 	}
 	return cmds
@@ -334,6 +339,12 @@ func (c *CommandHelper) run(name string, arg ...string) (string, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
 	}
+	if newContext != nil {
+		cmd.Cancel = func() error {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			return cmd.Process.Kill()
+		}
+	}
 
 	customWriter := &CustomWriter{taskItem: c.taskItem}
 	var stdout, stderr bytes.Buffer
@@ -359,6 +370,9 @@ func (c *CommandHelper) run(name string, arg ...string) (string, error) {
 	} else {
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
+	}
+	if c.stderr != nil {
+		cmd.Stderr = io.MultiWriter(cmd.Stderr, c.stderr)
 	}
 	env := os.Environ()
 	env = append(env, c.env...)
@@ -394,6 +408,9 @@ func (c *CommandHelper) run(name string, arg ...string) (string, error) {
 	}()
 	select {
 	case err := <-done:
+		if newContext != nil && newContext.Err() != nil {
+			return "", c.pipeResultErr(newContext, err)
+		}
 		if err != nil {
 			return handleErr(&stdout, &stderr, c.IgnoreExist1, err)
 		}
@@ -479,6 +496,11 @@ func WithScriptPath(scriptPath string) Option {
 func WithStdin(stdin io.Reader) Option {
 	return func(s *CommandHelper) {
 		s.stdin = stdin
+	}
+}
+func WithStderr(stderr io.Writer) Option {
+	return func(s *CommandHelper) {
+		s.stderr = stderr
 	}
 }
 func WithEnv(env ...string) Option {

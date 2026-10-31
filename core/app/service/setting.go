@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -19,8 +20,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/1Panel-dev/1Panel/core/app/auth"
 	"github.com/1Panel-dev/1Panel/core/app/dto"
 	"github.com/1Panel-dev/1Panel/core/app/model"
 	"github.com/1Panel-dev/1Panel/core/app/repo"
@@ -31,17 +34,23 @@ import (
 	"github.com/1Panel-dev/1Panel/core/utils/common"
 	"github.com/1Panel-dev/1Panel/core/utils/controller"
 	"github.com/1Panel-dev/1Panel/core/utils/encrypt"
-	"github.com/1Panel-dev/1Panel/core/utils/firewall"
+	"github.com/1Panel-dev/1Panel/core/utils/menutree"
 	"github.com/1Panel-dev/1Panel/core/utils/passkey"
 	"github.com/1Panel-dev/1Panel/core/utils/req_helper/proxy_local"
 	"github.com/1Panel-dev/1Panel/core/utils/xpack"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/net/proxy"
+	"gorm.io/gorm"
 )
 
 type SettingService struct{}
 
+var panelPortChangeMu sync.Mutex
+var fileDownloadPreferenceMu sync.Mutex
+
 type ISettingService interface {
+	GetFileDownloadPreference(userID string) (dto.FileDownloadPreference, error)
+	UpdateFileDownloadPreference(userID string, req dto.FileDownloadPreference) error
 	GetSettingInfo() (*dto.SettingInfo, error)
 	GetSettingBaseInfo() (*dto.SettingBaseInfo, error)
 	LoadInterfaceAddr() ([]string, error)
@@ -54,7 +63,7 @@ type ISettingService interface {
 	UpdateProxy(req dto.ProxyUpdate) error
 
 	GetTerminalInfo() (*dto.TerminalInfo, error)
-	UpdateTerminal(req dto.TerminalInfo) error
+	UpdateTerminal(req dto.TerminalUpdate) error
 
 	UpdateSystemSSL() error
 	GenerateRSAKey() error
@@ -71,6 +80,37 @@ func NewISettingService() ISettingService {
 	return &SettingService{}
 }
 
+func (u *SettingService) GetFileDownloadPreference(userID string) (dto.FileDownloadPreference, error) {
+	var preference dto.FileDownloadPreference
+	if userID == "" {
+		return preference, buserr.New("ErrNotLogin")
+	}
+	fileDownloadPreferenceMu.Lock()
+	defer fileDownloadPreferenceMu.Unlock()
+	value, err := settingRepo.GetValueByKey("FileDownloadPreference:" + userID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return preference, nil
+	}
+	if err != nil {
+		return preference, err
+	}
+	err = json.Unmarshal([]byte(value), &preference)
+	return preference, err
+}
+
+func (u *SettingService) UpdateFileDownloadPreference(userID string, req dto.FileDownloadPreference) error {
+	if userID == "" {
+		return buserr.New("ErrNotLogin")
+	}
+	value, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	fileDownloadPreferenceMu.Lock()
+	defer fileDownloadPreferenceMu.Unlock()
+	return settingRepo.UpdateOrCreate("FileDownloadPreference:"+userID, string(value))
+}
+
 func (u *SettingService) GetSettingInfo() (*dto.SettingInfo, error) {
 	setting, err := settingRepo.List()
 	if err != nil {
@@ -80,15 +120,10 @@ func (u *SettingService) GetSettingInfo() (*dto.SettingInfo, error) {
 	for _, set := range setting {
 		settingMap[set.Key] = set.Value
 	}
-	if hideMenu, ok := settingMap["HideMenu"]; ok && len(hideMenu) > 0 {
-		var menus []dto.ShowMenu
-		if err := json.Unmarshal([]byte(hideMenu), &menus); err == nil {
-			sortShowMenus(menus)
-			if sortedBytes, err := json.Marshal(menus); err == nil {
-				settingMap["HideMenu"] = string(sortedBytes)
-			}
-		}
+	if settingMap["PanelCache"] == "" {
+		settingMap["PanelCache"] = dto.DefaultPanelCache
 	}
+	repairAndSortHideMenu(settingMap)
 	var info dto.SettingInfo
 	arr, err := json.Marshal(settingMap)
 	if err != nil {
@@ -123,15 +158,10 @@ func (u *SettingService) GetSettingBaseInfo() (*dto.SettingBaseInfo, error) {
 	for _, set := range setting {
 		settingMap[set.Key] = set.Value
 	}
-	if hideMenu, ok := settingMap["HideMenu"]; ok && len(hideMenu) > 0 {
-		var menus []dto.ShowMenu
-		if err := json.Unmarshal([]byte(hideMenu), &menus); err == nil {
-			sortShowMenus(menus)
-			if sortedBytes, err := json.Marshal(menus); err == nil {
-				settingMap["HideMenu"] = string(sortedBytes)
-			}
-		}
+	if settingMap["PanelCache"] == "" {
+		settingMap["PanelCache"] = dto.DefaultPanelCache
 	}
+	repairAndSortHideMenu(settingMap)
 	var info dto.SettingBaseInfo
 	arr, err := json.Marshal(settingMap)
 	if err != nil {
@@ -152,6 +182,36 @@ func (u *SettingService) GetSettingBaseInfo() (*dto.SettingBaseInfo, error) {
 	return &info, err
 }
 
+func repairAndSortHideMenu(settingMap map[string]string) {
+	hideMenu, ok := settingMap["HideMenu"]
+	if !ok || strings.TrimSpace(hideMenu) == "" {
+		return
+	}
+	var menus []dto.ShowMenu
+	if err := json.Unmarshal([]byte(hideMenu), &menus); err != nil || len(menus) == 0 {
+		return
+	}
+
+	menus, changed := menutree.ReconcileHideMenuIntegrity(menus, nil)
+	if changed {
+		repairedBytes, err := json.Marshal(menus)
+		if err != nil {
+			global.LOG.Warnf("marshal repaired HideMenu failed, err: %v", err)
+		} else {
+			updated, err := settingRepo.UpdateIfMatch("HideMenu", hideMenu, string(repairedBytes))
+			if err != nil {
+				global.LOG.Warnf("persist repaired HideMenu failed, err: %v", err)
+			} else if !updated {
+				global.LOG.Debug("skip persisting repaired HideMenu because the setting changed concurrently")
+			}
+		}
+	}
+	sortShowMenus(menus)
+	if sortedBytes, err := json.Marshal(menus); err == nil {
+		settingMap["HideMenu"] = string(sortedBytes)
+	}
+}
+
 func sortShowMenus(menus []dto.ShowMenu) {
 	for i := range menus {
 		if len(menus[i].Children) > 0 {
@@ -167,11 +227,35 @@ func sortShowMenus(menus []dto.ShowMenu) {
 }
 
 func (u *SettingService) Update(c *gin.Context, key, value string) error {
+	if auth.IsAPICredentialSetting(key) {
+		return buserr.New("ErrInvalidParams")
+	}
+	if key == "PanelCache" {
+		var config dto.PanelCache
+		decoder := json.NewDecoder(strings.NewReader(value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&config); err != nil {
+			return buserr.New("ErrInvalidParams")
+		}
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			return buserr.New("ErrInvalidParams")
+		}
+		if config.Tabs == nil || config.Pagination == nil || config.Refresh == nil || config.Search == nil {
+			return buserr.New("ErrInvalidParams")
+		}
+		switch config.Duration {
+		case "24h", "week", "month", "forever":
+		default:
+			return buserr.New("ErrInvalidParams")
+		}
+		data, _ := json.Marshal(config)
+		return settingRepo.UpdateOrCreate(key, string(data))
+	}
 	oldVal, err := settingRepo.Get(repo.WithByKey(key))
 	if err != nil {
 		return err
 	}
-	if oldVal.Value == value {
+	if oldVal.Value == value && key != "HideMenu" {
 		return nil
 	}
 	sessionLifeTime := 0
@@ -192,6 +276,13 @@ func (u *SettingService) Update(c *gin.Context, key, value string) error {
 		if err := json.Unmarshal([]byte(value), &menus); err != nil {
 			return err
 		}
+		var previousMenus []dto.ShowMenu
+		_ = json.Unmarshal([]byte(oldVal.Value), &previousMenus)
+		menus, _ = menutree.PreserveMissingMenus(menus, previousMenus)
+		if len(menus) == 0 {
+			return fmt.Errorf("hide menu cannot be empty")
+		}
+		menus, _ = menutree.ReconcileHideMenuIntegrity(menus, previousMenus)
 		for i := 0; i < len(menus); i++ {
 			if menus[i].Label == "Home-Menu" || menus[i].Label == "App-Menu" || menus[i].Label == "Setting-Menu" {
 				menus[i].IsShow = true
@@ -202,6 +293,9 @@ func (u *SettingService) Update(c *gin.Context, key, value string) error {
 			return err
 		}
 		value = string(menuItem)
+	}
+	if oldVal.Value == value {
+		return nil
 	}
 
 	if err := settingRepo.Update(key, value); err != nil {
@@ -220,6 +314,7 @@ func (u *SettingService) Update(c *gin.Context, key, value string) error {
 	case "BindDomain":
 		if len(value) != 0 {
 			_ = global.SESSION.Clean()
+			CloseTerminalSessions("all", "", "")
 		}
 		if err := u.clearPasskeySettings(); err != nil {
 			return err
@@ -320,9 +415,9 @@ func (u *SettingService) UpdateProxy(req dto.ProxyUpdate) error {
 }
 
 func (u *SettingService) UpdatePort(port uint) error {
-	if common.ScanPort(int(port)) {
-		return buserr.WithDetail("ErrPortInUsed", port, nil)
-	}
+	panelPortChangeMu.Lock()
+	defer panelPortChangeMu.Unlock()
+
 	oldPort, err := settingRepo.Get(repo.WithByKey("ServerPort"))
 	if err != nil {
 		return err
@@ -330,7 +425,10 @@ func (u *SettingService) UpdatePort(port uint) error {
 	if oldPort.Value == fmt.Sprintf("%v", port) {
 		return nil
 	}
-	if err := firewall.UpdatePort(oldPort.Value, fmt.Sprintf("%v", port)); err != nil {
+	if common.ScanPort(int(port)) {
+		return buserr.WithDetail("ErrPortInUsed", port, nil)
+	}
+	if err := proxy_local.UpdatePanelPort(oldPort.Value, port); err != nil {
 		return err
 	}
 
@@ -528,7 +626,7 @@ func (u *SettingService) GetTerminalInfo() (*dto.TerminalInfo, error) {
 	for _, set := range setting {
 		settingMap[set.Key] = set.Value
 	}
-	var info dto.TerminalInfo
+	info := dto.TerminalInfo{ShowTerminalButton: "Enable"}
 	arr, err := json.Marshal(settingMap)
 	if err != nil {
 		return nil, err
@@ -538,39 +636,30 @@ func (u *SettingService) GetTerminalInfo() (*dto.TerminalInfo, error) {
 	}
 	return &info, err
 }
-func (u *SettingService) UpdateTerminal(req dto.TerminalInfo) error {
-	if err := settingRepo.UpdateOrCreate("LineHeight", req.LineHeight); err != nil {
-		return err
+func (u *SettingService) UpdateTerminal(req dto.TerminalUpdate) error {
+	settings := []struct {
+		key   string
+		value *string
+	}{
+		{"ShowTerminalButton", req.ShowTerminalButton},
+		{"LineHeight", req.LineHeight},
+		{"LetterSpacing", req.LetterSpacing},
+		{"FontSize", req.FontSize},
+		{"FontFamily", req.FontFamily},
+		{"CursorBlink", req.CursorBlink},
+		{"BackgroundColor", req.BackgroundColor},
+		{"ForegroundColor", req.ForegroundColor},
+		{"CursorStyle", req.CursorStyle},
+		{"Scrollback", req.Scrollback},
+		{"ScrollSensitivity", req.ScrollSensitivity},
 	}
-	if err := settingRepo.UpdateOrCreate("LetterSpacing", req.LetterSpacing); err != nil {
-		return err
-	}
-	if err := settingRepo.UpdateOrCreate("FontSize", req.FontSize); err != nil {
-		return err
-	}
-	if err := settingRepo.UpdateOrCreate("FontFamily", req.FontFamily); err != nil {
-		return err
-	}
-	if err := settingRepo.UpdateOrCreate("CursorBlink", req.CursorBlink); err != nil {
-		return err
-	}
-	if err := settingRepo.UpdateOrCreate("BackgroundColor", req.BackgroundColor); err != nil {
-		return err
-	}
-	if err := settingRepo.UpdateOrCreate("ForegroundColor", req.ForegroundColor); err != nil {
-		return err
-	}
-	if err := settingRepo.UpdateOrCreate("CursorBlink", req.CursorBlink); err != nil {
-		return err
-	}
-	if err := settingRepo.UpdateOrCreate("CursorStyle", req.CursorStyle); err != nil {
-		return err
-	}
-	if err := settingRepo.UpdateOrCreate("Scrollback", req.Scrollback); err != nil {
-		return err
-	}
-	if err := settingRepo.UpdateOrCreate("ScrollSensitivity", req.ScrollSensitivity); err != nil {
-		return err
+	for _, setting := range settings {
+		if setting.value == nil {
+			continue
+		}
+		if err := settingRepo.UpdateOrCreate(setting.key, *setting.value); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -584,6 +673,7 @@ func (u *SettingService) deleteCurrentSession(c *gin.Context) {
 		return
 	}
 	_ = global.SESSION.DeleteByID(sessionUser.ID)
+	CloseTerminalSessions("user", sessionUser.ID, "")
 }
 
 func (u *SettingService) clearPasskeySettings() error {

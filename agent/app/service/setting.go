@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -44,6 +45,7 @@ type ISettingService interface {
 	GetLocalConnForSSH() (dto.SSHConnData, error)
 
 	SaveDescription(req dto.CommonDescription) error
+	CleanupDescriptions(context.Context) (int64, error)
 }
 
 func NewISettingService() ISettingService {
@@ -124,22 +126,7 @@ func (u *SettingService) GetWebsiteDir() string {
 }
 
 func (u *SettingService) Update(key, value string) error {
-	oldValue := constant.FirewallPortWhiteListValue
-	if key == constant.FirewallPortWhiteList {
-		if _, err := parseFirewallPortWhiteList(value); err != nil {
-			return err
-		}
-		if val, err := settingRepo.GetValueByKey(key); err == nil {
-			oldValue = val
-		}
-	}
-	if err := settingRepo.UpdateOrCreate(key, value); err != nil {
-		return err
-	}
-	if key == constant.FirewallPortWhiteList {
-		return syncFirewallPortWhiteListAfterUpdate(oldValue)
-	}
-	return nil
+	return settingRepo.UpdateOrCreate(key, value)
 }
 
 func (u *SettingService) UpdateTerminalAI(req dto.TerminalAIInfo) error {

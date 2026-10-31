@@ -171,7 +171,8 @@ type ContainerItemStats struct {
 	BuildCacheReclaimable int64 `json:"buildCacheReclaimable"`
 }
 type ContainerListStats struct {
-	ContainerID string `json:"containerID"`
+	ContainerID   string `json:"containerID"`
+	ContainerName string `json:"containerName"`
 
 	CPUTotalUsage uint64  `json:"cpuTotalUsage"`
 	SystemUsage   uint64  `json:"systemUsage"`
@@ -300,6 +301,7 @@ type ComposeInfo struct {
 	ConfigFile        string             `json:"configFile"`
 	Workdir           string             `json:"workdir"`
 	ComposeFileExists bool               `json:"composeFileExists"`
+	IsPinned          bool               `json:"isPinned"`
 	Path              string             `json:"path"`
 	Containers        []ComposeContainer `json:"containers"`
 	Env               string             `json:"env"`
@@ -314,6 +316,7 @@ type ComposeContainer struct {
 type ComposeCreate struct {
 	TaskID    string `json:"taskID"`
 	Name      string `json:"name"`
+	DirName   string `json:"dirName"`
 	From      string `json:"from" validate:"required,oneof=edit path template"`
 	File      string `json:"file"`
 	Path      string `json:"path"`
@@ -336,6 +339,10 @@ type ComposeUpdate struct {
 	Content    string `json:"content" validate:"required"`
 	Env        string `json:"env"`
 	ForcePull  bool   `json:"forcePull"`
+}
+type ComposePin struct {
+	Name     string `json:"name" validate:"required"`
+	IsPinned bool   `json:"isPinned"`
 }
 type ComposeLogClean struct {
 	Name       string `json:"name" validate:"required"`

@@ -93,6 +93,9 @@ ErrAgentWebsiteBound: 'Ejen ini sudah dipautkan ke laman web'
 ErrAgentWebsiteTypeUnsupported: 'Hanya laman web proxy atau statik boleh dipautkan'
 ErrAgentWebsiteInUse: 'Laman web ini sudah dipautkan ke ejen lain'
 ErrAgentWebsiteUnbindUnsupported: 'Laman web one-click deployment tidak menyokong nyahikat manual'
+ErrQwenPawAuthRequest: 'Gagal mengemas kini kelayakan QwenPaw: {{ .err }}'
+ErrQwenPawAuthOutOfSync: 'Kelayakan QwenPaw semasa tidak sepadan dengan rekod 1Panel. Tetapkan semula kata laluan QwenPaw atau pulihkan kelayakan dalam fail .env aplikasi'
+ErrQwenPawAuthDisabled: 'Pengesahan log masuk belum didayakan dalam QwenPaw'
 ErrHermesPairingCodeUnavailable: 'Kod pasangan buat sementara waktu tidak wujud dalam Hermes, mungkin disebabkan masalah rangkaian. Sila cuba lagi sebentar nanti.'
 ErrHermesFeishuGroupAllowlistRequiresAllowlist: 'Apabila dasar kumpulan Feishu ialah senarai benarkan, dasar DM tidak boleh menggunakan kod pasangan.'
 
@@ -132,7 +135,14 @@ ErrAppNameExist: 'Nama aplikasi sudah wujud'
 ErrAppInstallNameExist: 'Nama pemasangan aplikasi {{ .name }} sudah wujud'
 AppStoreIsSyncing: 'App Store sedang menyegerak, sila cuba sebentar lagi'
 ErrGetCompose: 'Gagal mendapatkan fail docker-compose.yml {{ .detail }}'
+ErrComposeProjectNameParse: 'Gagal menghurai nama projek daripada output konfigurasi Docker Compose: {{ .detail }}'
+ErrComposeProjectNameEmpty: 'Nama projek tidak dapat diperoleh daripada konfigurasi Docker Compose atau direktori induk fail. Masukkan nama dan cuba lagi.'
+ErrComposeNameInvalid: 'Nama projek Compose tidak sah: mesti bermula dengan huruf kecil atau nombor, hanya mengandungi huruf kecil, nombor, tanda sempang dan garis bawah, serta sepanjang 1-256 aksara.'
 ErrAppVersionUnavailable: 'Versi aplikasi ini telah dialih keluar daripada perkhidmatan jauh. Sila pilih versi lain dan cuba lagi.'
+ErrVllmGB10ProOnly: 'Versi vLLM ini hanya tersedia dalam 1Panel Edisi Profesional.'
+ErrAIGatewayDatabaseTypeMismatch: 'AI Gateway hanya boleh dinaik taraf dalam jenis pangkalan data yang sama (SQLite atau PostgreSQL).'
+ErrAIGatewayRecoverDatabaseTypeMismatch: 'Sandaran AI Gateway dan aplikasi sasaran mesti menggunakan jenis pangkalan data yang sama (SQLite atau PostgreSQL).'
+ErrHermesUpgradeVersion: 'Hermes Agent hanya boleh dinaik taraf kepada keluaran lebih baharu yang dikenal pasti dan dibenarkan oleh tetapan naik taraf antara versi utama. Untuk kembali kepada versi lama, pulihkan sandaran.'
 ErrAppWarn: 'Status tidak normal, sila semak log'
 ErrAppParamKey: 'Parameter {{ .name }} medan tidak normal'
 ErrAppUpgrade: 'Peningkatan {{ .name }} aplikasi gagal {{ .err }}'
@@ -154,12 +164,17 @@ ErrAppVersionDeprecated: 'Aplikasi {{ .name }} tidak sesuai dengan versi 1Panel 
 ErrDockerFailed: 'Keadaan Docker tidak normal, sila periksa status perkhidmatan'
 ErrDockerComposeCmdNotFound: 'Perintah Docker Compose tidak wujud, sila pasang perintah ini di mesin tuan terlebih dahulu'
 UseExistImage: 'Imej sudah wujud, menggunakan imej sedia ada'
+UpgradePrepare: 'Sediakan naik taraf aplikasi'
+UpgradeStop: 'Hentikan aplikasi asal'
+UpgradeWaitReady: 'Tunggu aplikasi sedia'
+UpgradeBackupDisabled: 'Sandaran naik taraf dilumpuhkan; perubahan data oleh skrip naik taraf tidak dapat diundur sepenuhnya'
+UpgradeRollbackFailed: 'Undur gagal'
 ErrDatabaseNotFound: 'Pangkalan data {{ .name }} tidak wujud'
 
 # SSH
 ExportIP: 'IP Log Masuk'
 ExportArea: 'Lokasi'
-ExportPort: 'Port'
+ExportPort: 'Nombor port'
 ExportAuthMode: 'Kaedah Log Masuk'
 ExportUser: 'Pengguna'
 ExportStatus: 'Status Log Masuk'
@@ -204,6 +219,9 @@ ErrDomainFormat: 'Format nama domain {{ .name }} tidak betul'
 ErrDefaultAlias: 'lalai ialah kod simpanan, sila gunakan kod lain'
 ErrParentWebsite: 'Anda perlu memadamkan subtapak {{ .name }} dahulu'
 ErrBuildDirNotFound: 'Direktori binaan tidak wujud'
+ErrBrotliDisabled: 'Modul brotli tidak diaktifkan, aktifkan dan bina dahulu'
+ErrBrotliUnsupported: 'Panel tidak dapat menyambungkan tetapan brotli ke nginx.conf secara automatik; semak fail atau naik taraf OpenResty'
+ErrModuleBuildUnsupported: 'Versi OpenResty ini tidak boleh membina modul, naik taraf dahulu'
 ErrImageNotExist: 'Imej persekitaran operasi {{ .name }} tidak wujud, sila edit semula persekitaran pengendalian'
 ErrProxyIsUsed: 'Pengimbang beban telah digunakan oleh pengganti terbalik, tidak boleh dipadamkan'
 ErrSSLValid: 'Fail sijil bermasalah, sila periksa status sijil'
@@ -211,7 +229,7 @@ ErrWebsiteDir: 'Sila pilih direktori dalam direktori laman web.'
 ErrComposerFileNotFound: 'Fail composer.json tidak wujud'
 ErrRuntimeNoPort: 'Persekitaran runtime tidak diset dengan port, sila edit persekitaran runtime terlebih dahulu.'
 ErrRuntimeProjectDirContainsCodeDir: 'Direktori runtime mengandungi direktori projek yang dipilih. Sila pilih direktori projek lain dan cipta semula.'
-Status: 'Status'
+Status: 'Keadaan'
 start: 'Mulakan'
 stop: 'Berhenti'
 restart: 'Mulakan Semula'
@@ -236,7 +254,7 @@ ErrSSLCertificateFormat: 'Format fail sijil tidak betul, sila gunakan format pem
 ErrEabKidOrEabHmacKeyCannotBlank: 'EabKid atau EabHmacKey tidak boleh kosong'
 ErrOpenrestyNotFound: 'Mod HTTP memerlukan OpenResty dipasang terlebih dahulu'
 ApplySSLStart: 'Mula memohon sijil, nama domain [{{ .domain }}] kaedah permohonan [{{ .type }}]'
-dnsAccount: 'DNS Auto'
+dnsAccount: 'DNS automatik'
 dnsManual: 'Manual DNS'
 http: 'HTTP'
 ApplySSLFailed: 'Permohonan untuk sijil [{{ .domain }}] gagal, {{ .detail }}'
@@ -285,6 +303,9 @@ BuildCache: 'Cache binaan'
 Volume: 'Jilid storan'
 Network: 'Rangkaian'
 PruneStart: 'Pembersihan sedang dijalankan, sila tunggu...'
+NetworkCleanupConnected: "Rangkaian [{{ .name }}] ({{ .id }}) dilangkau: terdapat kontena yang disambungkan atau rangkaian sedang digunakan; tidak dipadamkan"
+NetworkCleanupSummary: "Pembersihan rangkaian selesai: dipadamkan {{ .deleted }}, dilangkau {{ .skipped }}, gagal {{ .failed }}"
+NetworkCleanupPartialFailure: "Sesetengah rangkaian tidak dapat dibersihkan; semak log tugas"
 ContainerBackupPrepare: 'Sediakan ruang kerja sandaran kontena'
 ContainerBackupStop: 'Hentikan kontena sebelum sandaran'
 ContainerBackupInspect: 'Sandarkan inspect dan rangkaian kontena'
@@ -395,7 +416,7 @@ urlHelper: 'URL Terlarang'
 dirFilter: 'Penapis direktori'
 xss: 'XSS'
 phpExec: 'Pelaksanaan skrip PHP'
-oneWordTrojan: 'One Word Trojan'
+oneWordTrojan: 'Trojan satu baris'
 appFilter: 'Gunakan penapisan direktori berbahaya'
 webShell: 'Webshell'
 args: 'Peraturan parameter'
@@ -449,18 +470,23 @@ TaskCreate: 'Buat'
 TaskDelete: 'Padam'
 TaskUpgrade: 'Naik taraf'
 TaskUpdate: 'Kemas kini'
+AgentPluginInstall: 'Pasang pemalam'
+AgentPluginEnable: 'Aktifkan pemalam'
+AgentPluginDisable: 'Nyahaktifkan pemalam'
+AgentPluginUpdate: 'Kemas kini pemalam'
+AgentPluginUninstall: 'Nyahpasang pemalam'
 TaskRestart: 'Mulakan semula'
 TaskProtect: 'Lindungi'
 TaskBackup: 'Sandaran'
 TaskRecover: 'Pulihkan'
-TaskRollback: 'Rollback'
+TaskRollback: 'Pulangkan semula'
 TaskPull: 'Tarik'
 TaskCommit: 'Komit'
 TaskBuild: 'Bina'
 TaskPush: 'Hantar'
 TaskClean: 'Pembersihan'
 TaskHandle: 'Laksanakan'
-TaskImport: 'Import'
+TaskImport: 'Import data'
 TaskExport: 'Eksport'
 Website: 'Laman web'
 App: 'Aplikasi'
@@ -485,7 +511,7 @@ Compose: 'Orkestrasi'
 Container: 'Bekas'
 AppLink: 'Aplikasi Terpaut'
 EnableSSL: 'Dayakan HTTPS'
-AppStore: 'App Store'
+AppStore: 'Kedai aplikasi'
 TaskSync: 'Segerakkan'
 LocalApp: 'Aplikasi Tempatan'
 SubTask: 'Subtugas'
@@ -506,7 +532,7 @@ OllamaModelSize: 'Dapatkan saiz model Ollama {{ .name }}'
 AIBenchmarkRun: "Jalankan penanda aras AI"
 
 # tugas - syot kilat
-Snapshot: 'Snapshot'
+Snapshot: 'Syot kilat'
 SnapDBInfo: 'Tulis maklumat pangkalan data 1Panel'
 SnapCopy: 'Salin fail & direktori {{ .name }}'
 SnapNewDB: 'Mulakan sambungan {{ .name }} pangkalan data'
@@ -547,7 +573,7 @@ RecoverWebsite: 'Pulihkan direktori tapak web'
 RecoverAppImage: 'Pulihkan sandaran imej syot kilat'
 RecoverCompose: 'Pulihkan kandungan komposer lain'
 RecoverComposeList: 'Dapatkan semua komposer untuk dipulihkan'
-RecoverComposeItem: 'Recover compose {{ .name }}'
+RecoverComposeItem: 'Pulihkan orkestrasi {{ .name }}'
 RecoverAppEmpty: 'Tiada sandaran imej aplikasi ditemui dalam fail syot kilat'
 RecoverBaseData: 'Pulihkan data asas dan fail'
 RecoverDaemonJsonEmpty: 'Kedua-dua fail syot kilat dan mesin semasa tidak mempunyai fail daemon.json konfigurasi bekas'
@@ -575,6 +601,10 @@ ContainerDisconnectOld: 'Lepaskan alamat rangkaian bekas asal {{ .name }}'
 ContainerCreateReplacement: 'Cipta bekas ganti {{ .name }}'
 ContainerStartReplacement: 'Mulakan bekas ganti {{ .name }}'
 ContainerWaitReplacement: 'Periksa kesediaan bekas ganti {{ .name }}'
+ContainerStartupDiagnostic: 'Diagnostik kegagalan permulaan bekas ganti {{ .name }}'
+ContainerRecentLogs: 'Log bekas terkini (200 baris terakhir)'
+ContainerDiagnosticLogsFailed: 'Gagal mendapatkan log bekas yang gagal {{ .name }}: {{ .err }}'
+ContainerDiagnosticLogsEmpty: 'Tiada log bekas tersedia'
 ContainerRollbackRestartOld: 'Mulakan semula bekas asal {{ .name }}'
 ContainerRollbackRemoveReplacement: 'Alih keluar bekas ganti yang gagal {{ .name }}'
 ContainerRollbackRenameOld: 'Pulihkan nama bekas asal {{ .name }}'
@@ -604,14 +634,15 @@ AppAttributesNotMatch: 'Jenis atau nama aplikasi tidak sepadan'
 # amaran
 ErrAlertMethodNotSupported: 'Versi ini tidak menyokong kaedah amaran ini'
 ErrAlertSync: 'Ralat penyegerakan maklumat penggera, sila semak dan cuba lagi'
+ErrWebhookTestFailed: 'Sila semak konfigurasi Webhook. Lihat log sistem untuk butiran lanjut.'
 
 # tugas - runtime
 ErrInstallExtension: 'Tugas pemasangan sudah sedang berjalan, silakan tunggu tugas selesai'
 
 # templat mel amaran
 PanelAlertTitle: 'Notifikasi Amaran Panel'
-TestAlertTitle: 'E-mel Ujian - Sahkan Sambungan E-mel'
-TestAlert: 'Ini adalah e-mel ujian untuk mengesahkan konfigurasi penghantaran e-mel anda betul.'
+TestAlertTitle: 'Notifikasi Ujian Panel'
+TestAlertMessage: 'Ini ialah notifikasi ujian untuk mengesahkan konfigurasi dan kesambungan saluran notifikasi.'
 LicenseExpirationAlert: 'Panel {{ .node }}{{ .ip }} Anda, lesen akan tamat tempoh dalam {{ .day }} hari. Sila log masuk ke panel untuk butiran lanjut.'
 CronJobFailedAlert: 'Panel {{ .node }}{{ .ip }} Anda, tugas jadual {{ .name }} gagal dilaksanakan. Sila log masuk ke panel untuk butiran lanjut.'
 ClamAlert: 'Panel {{ .node }}{{ .ip }} Anda, tugas imbasan virus mengesan {{ .num }} fail yang dijangkiti. Sila log masuk ke panel untuk butiran lanjut.'
@@ -625,6 +656,7 @@ CommonAlert: 'Panel {{ .node }}{{ .ip }} Anda, {{ .msg }}. Sila log masuk ke pan
 NodeExceptionAlert: 'Panel {{ .node }}{{ .ip }} Anda, {{ .num }} nod tidak normal. Sila log masuk ke panel untuk butiran lanjut.'
 LicenseExceptionAlert: 'Panel {{ .node }}{{ .ip }} Anda, {{ .num }} lesen tidak normal. Sila log masuk ke panel untuk butiran lanjut.'
 SSHAndPanelLoginAlert: 'Panel {{ .node }}{{ .ip }} Anda, log masuk {{ .name }} dari {{ .loginIp }} tidak normal. Sila log masuk ke panel untuk butiran lanjut.'
+CronJobSuccessAlert: 'Panel {{ .node }}{{ .ip }}: tugas berjadual {{ .name }} berjaya diselesaikan. Log masuk untuk melihat butiran.'
 
 # cakera
 DeviceNotFound: 'Peranti {{ .name }} tidak ditemui'
@@ -637,6 +669,7 @@ XfsNotFound: 'Sistem fail xfs tidak dikesan, sila pasang xfsprogs terlebih dahul
 # terminal
 TerminalAIBlockedRiskyCommand: 'Perintah berisiko telah disekat: {{ .command }}'
 TerminalAIThinking: 'AI sedang berfikir...'
+TerminalOutputTruncated: '[output dipotong, hanya output terkini dipaparkan]'
 TerminalAIReadyToExecute: 'Pemikiran selesai, tekan Enter untuk jalankan (tempoh: {{ .duration }}, token: {{ .tokens }})'
 TerminalAIRequestFailed: 'Permintaan AI gagal: {{ .err }}'
 
@@ -649,3 +682,123 @@ ErrAIProxyModelMapEmpty: 'Pemetaan model tidak boleh kosong'
 ErrAIProxyModelMapEmptyExternalModel: 'Pemetaan model mengandungi model permintaan kosong'
 ErrAIProxyModelMapEmptyUpstreamModel: 'Model upstream untuk {{ .model }} tidak boleh kosong'
 AIProxyUserFallback: 'Pengguna dipadam (ID: {{ .id }})'
+AIProviderBailian: 'Alibaba Cloud Model Studio'
+AIProviderBailianCodingPlan: 'Alibaba Cloud Model Studio Coding Plan'
+AIProviderArk: 'Volcengine Ark'
+AIProviderArkCodingPlan: 'Volcengine Ark Coding Plan'
+
+# Firewall
+ErrDockerIptablesChainUnavailable: 'Rantaian DOCKER-USER Docker tidak ditemui. Mulakan semula Docker dan cuba lagi'
+ErrDockerNftablesChainUnavailable: 'Rantaian firewall IPv4 nftables Docker tidak ditemui. Pastikan versi Docker semasa menyokong bahagian belakang firewall nftables, mulakan semula Docker dan cuba lagi'
+ErrDockerForwardPolicyDrop: 'Pelayan ini mengehadkan pemajuan rangkaian. Perlindungan port kontena tidak dapat diaktifkan buat masa ini.'
+Firewall: 'Firewall'
+FirewallTaskHost: 'Tembok api hos'
+FirewallTaskForwarding: 'Pemajuan port'
+FirewallTaskDocker: 'Perlindungan port kontena'
+FirewallRuleTaskCreate: 'Cipta peraturan tembok api [{{ .name }}]'
+FirewallRuleTaskUpdate: 'Kemas kini peraturan tembok api [{{ .name }}]'
+FirewallRuleTaskDelete: 'Padam peraturan tembok api [{{ .name }}]'
+FirewallRuleTaskSync: 'Segerakkan peraturan tembok api [{{ .name }}]'
+FirewallTaskInitialize: 'Mulakan tembok api [{{ .name }}]'
+FirewallCreateRulesStep: 'Cipta peraturan tembok api'
+FirewallCreateRulesResult: 'Hasil penciptaan: {{ .succeeded }} berjaya, {{ .failed }} gagal, {{ .skipped }} tidak dilaksanakan'
+FirewallRuleOperationResult: 'Hasil operasi: {{ .succeeded }} berjaya, {{ .failed }} gagal'
+FirewallCreateRuleSkipped: 'Tidak dilaksanakan'
+FirewallImportRuleConversion: '[{{ .index }}/{{ .total }}] {{ .source }} → {{ .target }}: {{ .rule }}; ditukar kepada {{ .count }} peraturan'
+FirewallCreateRuleExecutionFailed: 'Penciptaan peraturan gagal. Arahan yang dilaksanakan tidak dibatalkan'
+FirewallInitializeChainsStep: 'Mulakan dan ikat rantai asas {{ .name }}'
+FirewallSyncWhitelistStep: 'Segerakkan senarai putih port firewall'
+FirewallEnableForwardingStep: 'Aktifkan dan ikat rantai pemajuan port'
+FirewallRestoreForwardingRulesStep: 'Pulihkan peraturan pemajuan port pangkalan data'
+FirewallInspectDockerGuardStep: 'Periksa backend firewall Docker dan polisi'
+FirewallInitializeDockerGuardStep: 'Mulakan dan ikat rantai perlindungan port {{ .name }}'
+FirewallPersistDockerGuardStep: 'Simpan status perlindungan port Docker'
+FileTaskCopy: 'Salin fail ke {{ .dst }}'
+FileTaskMove: 'Pindahkan fail ke {{ .dst }}'
+FileTaskCompress: 'Mampatkan fail ke {{ .dst }}'
+FileTaskDecompress: 'Ekstrak fail ke {{ .dst }}'
+FileTaskSource: 'Laluan sumber: {{ .path }}'
+FileTaskFormat: 'Format arkib: {{ .format }}'
+FileTaskRename: 'Nama fail sasaran: {{ .name }}'
+ErrFirewallBackendCleanupRequired: "Bahagian belakang semasa {{ .current }} masih mengandungi peraturan 1Panel. Buangkannya sebelum beralih kepada {{ .target }}."
+ErrDockerIPv4ForwardingDisabled: "Pemajuan IPv4 dilumpuhkan. Tetapkan net.ipv4.ip_forward=1 sebelum menggunakan bahagian belakang tembok api Docker."
+ErrFirewallRuleSavedApplyFailed: "Konfigurasi peraturan baharu telah disimpan, tetapi gagal digunakan pada tembok api. Cuba lagi melalui penyegerakan: {{ .detail }}"
+ErrFirewallRuleConflict: "Peraturan UFW dengan syarat padanan yang sama tetapi tindakan berbeza sudah wujud. Sila edit peraturan sedia ada."
+ErrForwardInterfaceNotFound: "Antara muka rangkaian {{ .name }} yang dinyatakan dalam peraturan pemajuan tidak wujud. Semak namanya dan cuba lagi."
+ErrIPv6RARisk: "Pemajuan IPv6 disekat bagi mengelakkan risiko kehilangan sambungan rangkaian. Rujuk dokumentasi dan log sistem."
+ErrIPv6RACheckFailed: "Pemajuan IPv6 disekat kerana konfigurasi rangkaian tidak dapat diperiksa. Lihat log sistem untuk butiran."
+
+ErrSSHPublicKey: "Masukkan kunci awam SSH yang sah"
+ErrSSHPrivateKey: "Kunci peribadi SSH tidak sah atau frasa laluan salah; kunci yang disulitkan memerlukan frasa laluan asal"
+ErrSSHKeyMismatch: "Kunci awam dan peribadi SSH tidak sepadan"
+
+# mesin maya
+ErrVMNotFound: "Mesin maya tidak wujud"
+ErrVMAlreadyExists: "Mesin maya sudah wujud"
+ErrVMCountLimit: "Edisi Professional membenarkan penciptaan sehingga {{ .limit }} mesin maya. Padamkan mesin maya sedia ada atau naik taraf kepada Enterprise dan cuba lagi."
+ErrVMImageAlreadyExists: "Fail imej mesin maya sudah wujud: {{ .detail }}"
+ErrVMStoragePathInUse: "Laluan kolam storan sudah digunakan oleh [{{ .name }}]"
+ErrVMHelperNotFound: "1panel-kvm tidak ditemui"
+ErrVMBridgeManaged: "Nama bridge telah diurus oleh libvirt atau Docker"
+ErrVMNetworkInUse: "Rangkaian sedang digunakan dan tidak boleh dipadamkan"
+ErrVMStorageInUse: "Kumpulan storan sedang digunakan dan tidak boleh dipadamkan"
+ErrVMStorageNameCannotChange: "Nama kumpulan storan tidak boleh diubah"
+ErrVMStoragePathCannotChange: "Laluan kumpulan storan tidak boleh diubah"
+ErrVMRunning: "Mesin maya sedang berjalan"
+ErrVMLibvirtConnect: "Gagal menyambung ke libvirt: {{ .detail }}"
+ErrVMPermission: "Tiada kebenaran untuk mengendalikan mesin maya: {{ .detail }}"
+ErrVMNetworkNotFound: "Rangkaian mesin maya tidak wujud: {{ .detail }}"
+ErrVMInvalidPath: "Laluan mesin maya tidak sah: {{ .detail }}"
+ErrVMInvalidInput: "Parameter mesin maya tidak sah: {{ .detail }}"
+ErrVMCommandFailed: "Arahan mesin maya gagal: {{ .err }}"
+ErrVMDiskResizeBlocked: "Cakera tidak memenuhi syarat pembesaran atau dirujuk oleh peranti lain. Semak status cakera."
+ErrVMDiskReferenced: "Cakera maya ini digunakan oleh mesin maya atau peranti lain; pembesaran belum disokong."
+ErrVMDiskReferenceCheck: "Rujukan cakera maya tidak dapat disahkan. Pembesaran tidak tersedia; semak cakera mesin maya lain."
+ErrVMSnapshotMetadataSync: "Syot kilat telah dipulihkan, tetapi maklumat cakera gagal disegerakkan. Muat semula dan semak; tidak perlu memulihkan syot kilat sekali lagi."
+VMCreateTask: "Cipta mesin maya [{{ .name }}]"
+VMCreateFromTemplateTask: "Cipta mesin maya [{{ .name }}] daripada templat"
+VMUpdateTask: "Kemas kini mesin maya [{{ .name }}]"
+VMDiskResizeTask: "Besarkan cakera [{{ .disk }}] mesin maya [{{ .name }}]"
+VMRenameTask: "Namakan semula mesin maya [{{ .name }}] kepada [{{ .newName }}]"
+VMDeleteTask: "Padam mesin maya [{{ .name }}]"
+VMTemplateCreateTask: "Simpan mesin maya [{{ .name }}] sebagai templat [{{ .template }}]"
+VMTemplateDeleteTask: "Padam templat mesin maya [{{ .name }}]"
+VMForceDeleteMetadataOnly: "1panel-kvm tidak ditemui, memadam metadata mesin maya [{{ .name }}] sahaja secara paksa"
+VMForceDeleteMetadataAfterLibvirtFailed: "Gagal memadam mesin maya [{{ .name }}] daripada libvirt, memadam metadata secara paksa: {{ .err }}"
+VMForceDeleteDiskFailed: "Gagal memadam fail cakera mesin maya [{{ .path }}] secara paksa: {{ .err }}"
+VMForceDeleteDiskSuccess: "Fail cakera mesin maya [{{ .path }}] telah dipadam secara paksa"
+VMSnapshotCreateTask: "Cipta syot kilat [{{ .snapshot }}] untuk mesin maya [{{ .vm }}]"
+VMSnapshotCreateStep: "Cipta syot kilat mesin maya [{{ .snapshot }}]"
+VMSnapshotRecoverTask: "Pulihkan syot kilat [{{ .snapshot }}] untuk mesin maya [{{ .vm }}]"
+VMSnapshotRecoverStep: "Pulihkan syot kilat mesin maya [{{ .snapshot }}]"
+VMSnapshotDeleteTask: "Padam syot kilat [{{ .snapshot }}] untuk mesin maya [{{ .vm }}]"
+VMSnapshotDeleteStep: "Padam syot kilat mesin maya [{{ .snapshot }}]"
+
+ErrCAUpload: "Upload a ZIP (up to 10 MB) containing a valid self-signed CA certificate ca.crt and its matching private key ca.key, with a supported RSA or EC algorithm."
+
+ErrCAImport: "Provide a valid self-signed root CA certificate and matching private key (up to 1 MB each), using a supported RSA or EC algorithm."
+
+# Built-in Feishu
+ErrFeishuConfig: "Betulkan konfigurasi tidak serasi sebelum meneruskan: {{ .detail }}"
+ErrFeishuConfigChanged: "Konfigurasi berubah semasa pertukaran. Muat semula dan cuba lagi."
+ErrFeishuImageRequired: "Gunakan imej yang mengandungi Feishu terbina dalam."
+ErrFeishuAlreadySwitched: "Feishu sudah menggunakan pemalam terbina dalam."
+ErrFeishuSwitchRequired: "Tukar dahulu kepada pemalam terbina dalam pada halaman saluran Feishu."
+ErrFeishuManaged: "Urus Feishu pada halaman salurannya; pemalam dikemas kini bersama imej."
+ErrFeishuRestore: "Gagal memulihkan konfigurasi Feishu: {{ .err }}"
+ErrFeishuActivation: "Pemalam Feishu terbina dalam atau gerbang gagal dimulakan."
+AgentFeishuSwitch: "Tukar pemalam Feishu"
+AgentFeishuBackup: "Sandaran konfigurasi: {{ .name }}"
+AgentFeishuRestored: "Konfigurasi sebelumnya dipulihkan."
+AgentFeishuProbeWarning: "Semakan sambungan Feishu gagal. Semak rangkaian dan kelayakan; pertukaran dikekalkan."
+AgentFeishuVerifyMessages: "Pengaktifan setempat selesai. Sahkan pasangan, mesej peribadi, kumpulan, penghalaan bot dan penstriman dalam Feishu."
+
+ErrFeishuUpgradeConfirm: "Sahkan pilihan peralihan Feishu pada halaman naik taraf."
+
+ErrFeishuUpgradeBackup: "Naik taraf keserasian Feishu memerlukan sandaran aplikasi penuh."
+
+ErrFeishuUpgradeMounts: "Lekapan ini tidak boleh disandar dan dipulihkan sepenuhnya. Gunakan lekapan data standard dalam direktori aplikasi."
+
+AgentFeishuRecoveryDisabled: "Gerbang dipulihkan dengan Feishu dinyahaktifkan; sandaran konfigurasi asal dikekalkan."
+
+ContainerUpgradeWaiting: "Waiting for a container upgrade execution slot"

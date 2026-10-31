@@ -32,20 +32,23 @@ var (
 	scriptRepo  = repo.NewIScriptRepo()
 	cronjobRepo = repo.NewICronjobRepo()
 
-	hostRepo    = repo.NewIHostRepo()
-	ftpRepo     = repo.NewIFtpRepo()
-	clamRepo    = repo.NewIClamRepo()
-	monitorRepo = repo.NewIMonitorRepo()
+	hostRepo        = repo.NewIHostRepo()
+	ftpRepo         = repo.NewIFtpRepo()
+	clamRepo        = repo.NewIClamRepo()
+	monitorRepo     = repo.NewIMonitorRepo()
+	vllmMonitorRepo = &repo.VLLMMonitorRepo{}
 
 	settingRepo = repo.NewISettingRepo()
 	backupRepo  = repo.NewIBackupRepo()
 
-	websiteRepo       = repo.NewIWebsiteRepo()
-	websiteDomainRepo = repo.NewIWebsiteDomainRepo()
-	websiteDnsRepo    = repo.NewIWebsiteDnsAccountRepo()
-	websiteSSLRepo    = repo.NewISSLRepo()
-	websiteAcmeRepo   = repo.NewIAcmeAccountRepo()
-	websiteCARepo     = repo.NewIWebsiteCARepo()
+	websiteRepo               = repo.NewIWebsiteRepo()
+	websiteDomainRepo         = repo.NewIWebsiteDomainRepo()
+	websiteDnsRepo            = repo.NewIWebsiteDnsAccountRepo()
+	websiteSSLRepo            = repo.NewISSLRepo()
+	websiteAcmeRepo           = repo.NewIAcmeAccountRepo()
+	websiteCARepo             = repo.NewIWebsiteCARepo()
+	websiteTemplateRepo       = repo.NewIWebsiteTemplateRepo()
+	websiteTemplateOutputRepo = repo.NewIWebsiteTemplateOutputRepo()
 
 	snapshotRepo = repo.NewISnapshotRepo()
 

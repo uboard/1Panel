@@ -1,15 +1,22 @@
 package files
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bufio"
 	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,7 +27,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/1Panel-dev/1Panel/agent/buserr"
 
@@ -35,11 +45,13 @@ import (
 	"github.com/mholt/archiver/v4"
 	"github.com/spf13/afero"
 	"golang.org/x/sync/singleflight"
+	"golang.org/x/sys/unix"
 )
 
 const (
-	cmdDefaultTimeout   = 10 * time.Second
-	cmdRecursiveTimeout = 5 * time.Minute
+	cmdDefaultTimeout           = 10 * time.Second
+	cmdRecursiveTimeout         = 5 * time.Minute
+	maxArchiveSymlinkTargetSize = 4 * 1024
 )
 
 var protectedPaths = []string{
@@ -343,9 +355,12 @@ func (f FileOp) Rename(oldName string, newName string) error {
 }
 
 type downloadTask struct {
-	resp *http.Response
-	file *os.File
-	dst  string
+	mu         sync.Mutex
+	cancel     context.CancelFunc
+	done       chan struct{}
+	dst        string
+	finished   bool
+	cleanupErr error
 }
 
 var (
@@ -353,18 +368,15 @@ var (
 	downloadTasks = make(map[string]*downloadTask)
 )
 
-type WriteCounter struct {
-	Total   uint64
-	Written uint64
-	Key     string
-	Name    string
-}
-
 type Process struct {
+	Key     string  `json:"key,omitempty"`
 	Total   uint64  `json:"total"`
 	Written uint64  `json:"written"`
 	Percent float64 `json:"percent"`
 	Name    string  `json:"name"`
+	Status  string  `json:"status,omitempty"`
+	Attempt int     `json:"attempt,omitempty"`
+	Error   string  `json:"error,omitempty"`
 }
 
 type DownloadProxyConfig struct {
@@ -377,34 +389,21 @@ type DownloadProxyConfig struct {
 
 type DownloadOptions struct {
 	IgnoreCertificate bool
+	UseServerFilename bool
 	Proxy             *DownloadProxyConfig
 }
 
-func (w *WriteCounter) Write(p []byte) (n int, err error) {
-	n = len(p)
-	w.Written += uint64(n)
-	w.SaveProcess()
-	return n, nil
-}
-
-func (w *WriteCounter) SaveProcess() {
-	percentValue := 0.0
-	if w.Total > 0 {
-		percent := float64(w.Written) / float64(w.Total) * 100
-		percentValue, _ = strconv.ParseFloat(fmt.Sprintf("%.2f", percent), 64)
+func downloadResponseFilename(header string) string {
+	_, params, err := mime.ParseMediaType(header)
+	if err != nil {
+		return ""
 	}
-	process := Process{
-		Total:   w.Total,
-		Written: w.Written,
-		Percent: percentValue,
-		Name:    w.Name,
+	name := strings.TrimSpace(params["filename"])
+	if name == "" || name == "." || name == ".." || len(name) > 255 || !utf8.ValidString(name) ||
+		strings.ContainsAny(name, "/\\:") || strings.IndexFunc(name, unicode.IsControl) >= 0 {
+		return ""
 	}
-	by, _ := json.Marshal(process)
-	if percentValue < 100 {
-		global.CACHE.Set(w.Key, string(by))
-	} else {
-		global.CACHE.SetWithTTL(w.Key, string(by), time.Second*time.Duration(10))
-	}
+	return name
 }
 
 func buildDownloadProxyURL(proxy DownloadProxyConfig) (*url.URL, error) {
@@ -442,10 +441,11 @@ func buildDownloadProxyURL(proxy DownloadProxyConfig) (*url.URL, error) {
 }
 
 func newDownloadHTTPClient(options DownloadOptions) (*http.Client, error) {
-	if !options.IgnoreCertificate && options.Proxy == nil {
-		return &http.Client{}, nil
-	}
-	transport := &http.Transport{}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+	transport.TLSHandshakeTimeout = 15 * time.Second
+	transport.ResponseHeaderTimeout = 30 * time.Second
+	transport.DisableCompression = true
 	if options.IgnoreCertificate {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
@@ -459,115 +459,681 @@ func newDownloadHTTPClient(options DownloadOptions) (*http.Client, error) {
 	return &http.Client{Transport: transport}, nil
 }
 
-func (f FileOp) DownloadFileWithProcess(url, dst, key string, options DownloadOptions) error {
+type downloadState struct {
+	written  int64
+	total    int64
+	etag     string
+	finalURL string
+}
+
+type downloadPolicy struct {
+	retries     int
+	retryDelay  time.Duration
+	idleTimeout time.Duration
+}
+
+var remoteDownloadPolicy = downloadPolicy{retries: 3, retryDelay: 5 * time.Second, idleTimeout: 90 * time.Second}
+
+func saveDownloadProcess(process Process) {
+	if process.Total > 0 {
+		process.Percent = math.Min(99.99, float64(process.Written)/float64(process.Total)*100)
+	}
+	ttl := time.Duration(-1)
+	switch process.Status {
+	case "Success":
+		process.Percent = 100
+		ttl = 10 * time.Minute
+	case "Failed", "Canceled":
+		ttl = 10 * time.Minute
+	}
+	by, _ := json.Marshal(process)
+	global.CACHE.SetWithTTL(process.Key, string(by), ttl)
+}
+
+func (f FileOp) DownloadFileWithProcess(rawURL, dst, key string, options DownloadOptions) error {
+	request, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil || request.URL.Host == "" || (request.URL.Scheme != "http" && request.URL.Scheme != "https") {
+		return buserr.New("ErrWgetRemoteFailed")
+	}
 	client, err := newDownloadHTTPClient(options)
 	if err != nil {
 		return err
 	}
-	defer client.CloseIdleConnections()
-
-	request, err := http.NewRequest("GET", url, nil)
+	parent, err := filepath.EvalSymlinks(filepath.Dir(dst))
 	if err != nil {
-		return buserr.WithDetail("ErrWgetRemoteFailed", err.Error(), err)
-	}
-	request.Header.Set("Accept-Encoding", "identity")
-
-	resp, err := client.Do(request)
-	if err != nil {
-		global.LOG.Errorf("get download file [%s] error, err %s", dst, err.Error())
-		return buserr.WithDetail("ErrWgetRemoteFailed", err.Error(), err)
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
-		_ = resp.Body.Close()
-		global.LOG.Errorf("wget remote returned non-success status %s for url %s", resp.Status, url)
-		return buserr.WithDetail("ErrWgetRemoteFailed", resp.StatusCode, nil)
-	}
-
-	ct := strings.ToLower(resp.Header.Get("Content-Type"))
-	dstExt := strings.ToLower(filepath.Ext(dst))
-	if (strings.Contains(ct, "text/html") || strings.Contains(ct, "text/xml")) &&
-		dstExt != ".html" && dstExt != ".htm" && dstExt != ".xml" && dstExt != ".svg" {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
-		_ = resp.Body.Close()
-		detail := fmt.Sprintf("Content-Type: %s", ct)
-		global.LOG.Errorf("wget got html/xml response for non-html file %s, url %s, %s", dst, url, detail)
-		return buserr.WithDetail("ErrWgetInvalidContentType", detail, nil)
-	}
-
-	out, err := os.Create(dst)
-	if err != nil {
-		global.LOG.Errorf("create download file [%s] error, err %s", dst, err.Error())
-		resp.Body.Close()
+		client.CloseIdleConnections()
 		return err
 	}
-
-	downloadMu.Lock()
-	downloadTasks[key] = &downloadTask{
-		resp: resp,
-		file: out,
-		dst:  dst,
+	dst, err = filepath.Abs(filepath.Join(parent, filepath.Base(dst)))
+	if err != nil {
+		client.CloseIdleConnections()
+		return err
 	}
+	parent = filepath.Dir(dst)
+	var original os.FileInfo
+	if !options.UseServerFilename {
+		original, err = os.Lstat(dst)
+		if err != nil && !os.IsNotExist(err) {
+			client.CloseIdleConnections()
+			return err
+		}
+		if original != nil && !original.Mode().IsRegular() {
+			client.CloseIdleConnections()
+			return fmt.Errorf("download target must be a regular file")
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	task := &downloadTask{cancel: cancel, done: make(chan struct{}), dst: dst}
+	if options.UseServerFilename {
+		task.dst = ""
+	}
+	downloadMu.Lock()
+	for _, active := range downloadTasks {
+		if task.dst != "" && active.dst == task.dst {
+			downloadMu.Unlock()
+			cancel()
+			client.CloseIdleConnections()
+			return buserr.New("TaskIsExecuting")
+		}
+	}
+	if _, exists := downloadTasks[key]; exists {
+		downloadMu.Unlock()
+		cancel()
+		client.CloseIdleConnections()
+		return buserr.New("TaskIsExecuting")
+	}
+	downloadTasks[key] = task
 	downloadMu.Unlock()
+	saveDownloadProcess(Process{Key: key, Name: filepath.Base(dst), Status: "Downloading"})
 
 	go func() {
+		defer client.CloseIdleConnections()
+		defer cancel()
 		defer func() {
-			out.Close()
-			resp.Body.Close()
-
 			downloadMu.Lock()
 			delete(downloadTasks, key)
 			downloadMu.Unlock()
+			close(task.done)
 		}()
-
-		counter := &WriteCounter{}
-		counter.Key = key
-		if resp.ContentLength > 0 {
-			counter.Total = uint64(resp.ContentLength)
+		process := Process{Key: key, Name: filepath.Base(dst), Status: "Downloading"}
+		nameResolved := !options.UseServerFilename
+		resolveName := func(resp *http.Response) (string, error) {
+			if nameResolved {
+				return dst, nil
+			}
+			name := downloadResponseFilename(resp.Header.Get("Content-Disposition"))
+			if name == "" {
+				name = filepath.Base(dst)
+			}
+			resolved := filepath.Join(parent, name)
+			process.Name = name
+			downloadMu.Lock()
+			defer downloadMu.Unlock()
+			for otherKey, active := range downloadTasks {
+				if otherKey != key && active.dst == resolved {
+					return "", buserr.New("TaskIsExecuting")
+				}
+			}
+			if _, statErr := os.Lstat(resolved); statErr == nil {
+				return "", fmt.Errorf("download target already exists: %s", name)
+			} else if !os.IsNotExist(statErr) {
+				return "", statErr
+			}
+			task.dst = resolved
+			dst = resolved
+			nameResolved = true
+			return dst, nil
 		}
-		counter.Name = filepath.Base(dst)
-
-		if _, err := io.Copy(out, io.TeeReader(resp.Body, counter)); err != nil {
-			global.LOG.Errorf("save download file [%s] error, err %s", dst, err.Error())
-			global.CACHE.Del(counter.Key)
-			return
+		update := func(state downloadState, status string, attempt int) {
+			process.Written = uint64(state.written)
+			process.Total = uint64(max(0, state.total))
+			process.Status = status
+			process.Attempt = attempt
+			saveDownloadProcess(process)
 		}
-
-		value := global.CACHE.Get(counter.Key)
-		if value == "" {
-			return
+		part := filepath.Join(filepath.Dir(dst), ".1panel-download-"+rand.Text()+".part")
+		out, runErr := os.OpenFile(part, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+		var record string
+		var partInfo os.FileInfo
+		if runErr == nil {
+			partInfo, runErr = out.Stat()
 		}
-		process := &Process{}
-		if err := json.Unmarshal([]byte(value), process); err != nil {
-			return
+		if runErr == nil {
+			runErr = out.Chmod(0600)
 		}
-		process.Percent = 100
-		process.Name = counter.Name
-		process.Total = process.Written
-		by, _ := json.Marshal(process)
-		global.CACHE.Set(counter.Key, string(by))
+		if runErr == nil {
+			record, runErr = recordDownloadPart(out.Name(), partInfo)
+		}
+		if runErr == nil {
+			runErr = runRemoteDownload(ctx, client, rawURL, dst, out, remoteDownloadPolicy, update, resolveName)
+		}
+		task.mu.Lock()
+		if ctx.Err() != nil {
+			runErr = ctx.Err()
+		}
+		if runErr == nil {
+			runErr = publishDownload(out, dst, original, partInfo.Mode())
+		}
+		task.finished = true
+		task.mu.Unlock()
+		if out != nil {
+			closeErr := out.Close()
+			if runErr == nil && closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
+				runErr = closeErr
+			}
+			if cleanupErr := removeDownloadPart(out.Name(), partInfo); cleanupErr != nil {
+				task.cleanupErr = cleanupErr
+				runErr = errors.Join(runErr, cleanupErr)
+			} else if record != "" {
+				if cleanupErr := os.Remove(record); cleanupErr != nil && !os.IsNotExist(cleanupErr) {
+					task.cleanupErr = cleanupErr
+					runErr = errors.Join(runErr, cleanupErr)
+				}
+			}
+		}
+		if runErr != nil {
+			process.Status = "Failed"
+			if errors.Is(runErr, context.Canceled) && task.cleanupErr == nil {
+				process.Status = "Canceled"
+			} else {
+				process.Error = downloadErrorDetail(runErr)
+				global.LOG.Errorf("remote download [%s] failed: %s", key, process.Error)
+			}
+		} else {
+			process.Status = "Success"
+			process.Total = process.Written
+		}
+		saveDownloadProcess(process)
 	}()
 	return nil
 }
 
-func CancelDownload(key string) {
+func CancelDownload(key string) error {
 	downloadMu.Lock()
-	task, ok := downloadTasks[key]
-	if !ok {
-		downloadMu.Unlock()
+	task := downloadTasks[key]
+	downloadMu.Unlock()
+	if task == nil {
+		return nil
+	}
+	task.mu.Lock()
+	if !task.finished {
+		task.cancel()
+	}
+	task.mu.Unlock()
+	<-task.done
+	return task.cleanupErr
+}
+
+func RemoveDownloadRecords(keys []string) ([]string, error) {
+	if len(keys) == 0 || len(keys) > 1000 {
+		return nil, errors.New("between 1 and 1000 download keys are required")
+	}
+	for _, key := range keys {
+		if !strings.HasPrefix(key, "file-wget-") || len(key) <= len("file-wget-") || len(key) > 128 {
+			return nil, errors.New("invalid download key")
+		}
+	}
+	downloadMu.Lock()
+	defer downloadMu.Unlock()
+	removed := make([]string, 0, len(keys))
+	seen := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if _, active := downloadTasks[key]; active {
+			continue
+		}
+		value := global.CACHE.Get(key)
+		if value == "" {
+			removed = append(removed, key)
+			continue
+		}
+		var process Process
+		if err := json.Unmarshal([]byte(value), &process); err != nil {
+			continue
+		}
+		terminal := process.Status == "Success" || process.Status == "Failed" || process.Status == "Canceled"
+		legacySuccess := process.Status == "" && process.Percent == 100
+		if !terminal && !legacySuccess {
+			continue
+		}
+		global.CACHE.Del(key)
+		removed = append(removed, key)
+	}
+	return removed, nil
+}
+
+func downloadErrorDetail(err error) string {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return urlErr.Err.Error()
+	}
+	return err.Error()
+}
+
+func retryDownloadError(err error) bool {
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	var certificateErr *tls.CertificateVerificationError
+	var unknownAuthority x509.UnknownAuthorityError
+	var hostnameErr x509.HostnameError
+	var invalidCert x509.CertificateInvalidError
+	if errors.As(err, &certificateErr) || errors.As(err, &unknownAuthority) ||
+		errors.As(err, &hostnameErr) || errors.As(err, &invalidCert) {
+		return false
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) && !dnsErr.IsTimeout && !dnsErr.IsTemporary {
+		return false
+	}
+	var netErr net.Error
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, context.DeadlineExceeded) || errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.EPIPE) ||
+		(errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()))
+}
+
+func runRemoteDownload(ctx context.Context, client *http.Client, rawURL, dst string, out *os.File,
+	policy downloadPolicy, update func(downloadState, string, int), resolveName ...func(*http.Response) (string, error)) error {
+	state := downloadState{total: -1}
+	for attempt := 0; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		update(state, "Downloading", attempt)
+		retry, retryAfter, err := downloadAttempt(ctx, client, rawURL, dst, out, &state, policy.idleTimeout,
+			func() { update(state, "Downloading", attempt) }, resolveName...)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !retry || attempt >= policy.retries {
+			return err
+		}
+		update(state, "Retrying", attempt+1)
+		delay := max(policy.retryDelay*time.Duration(1<<attempt), retryAfter)
+		if delay > 30*time.Second {
+			delay = 30 * time.Second
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func downloadAttempt(ctx context.Context, client *http.Client, rawURL, dst string, out *os.File,
+	state *downloadState, idleTimeout time.Duration, progress func(), resolveName ...func(*http.Response) (string, error)) (bool, time.Duration, error) {
+	attemptCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	request, err := http.NewRequestWithContext(attemptCtx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return false, 0, err
+	}
+	request.Header.Set("Accept-Encoding", "identity")
+	offset := int64(0)
+	if state.written > 0 && state.etag != "" {
+		offset = state.written
+		request.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+		request.Header.Set("If-Range", state.etag)
+	}
+	resp, err := client.Do(request)
+	if err != nil {
+		return retryDownloadError(err), 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable && offset > 0 {
+		state.etag = ""
+		return true, 0, fmt.Errorf("remote range is no longer available (HTTP 416)")
+	}
+	switch resp.StatusCode {
+	case 408, 429, 500, 502, 503, 504:
+		delay := time.Duration(0)
+		if seconds, err := strconv.ParseInt(resp.Header.Get("Retry-After"), 10, 32); err == nil && seconds > 0 {
+			delay = time.Duration(seconds) * time.Second
+		} else if date, err := http.ParseTime(resp.Header.Get("Retry-After")); err == nil {
+			delay = max(0, time.Until(date))
+		}
+		return true, delay, fmt.Errorf("remote download returned HTTP %d", resp.StatusCode)
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return false, 0, fmt.Errorf("remote download returned HTTP %d", resp.StatusCode)
+	}
+	if encoding := resp.Header.Get("Content-Encoding"); encoding != "" && !strings.EqualFold(encoding, "identity") {
+		return false, 0, fmt.Errorf("unexpected download Content-Encoding: %s", encoding)
+	}
+	responseURL := resp.Request.URL.String()
+	etag := strings.TrimSpace(resp.Header.Get("ETag"))
+	expected := resp.ContentLength
+	if resp.StatusCode == http.StatusPartialContent {
+		start, end, total, valid := parseDownloadRange(resp.Header.Get("Content-Range"))
+		if offset == 0 || !valid || start != offset || end != total-1 ||
+			(state.total >= 0 && state.total != total) || (etag != "" && etag != state.etag) ||
+			responseURL != state.finalURL || (expected >= 0 && expected != end-start+1) {
+			state.etag = ""
+			return true, 0, fmt.Errorf("invalid or changed remote download range")
+		}
+		expected = end - start + 1
+		state.total = total
+	} else {
+		// A full response must replace the partial content, never append to it.
+		if err := out.Truncate(0); err != nil {
+			return false, 0, err
+		}
+		if _, err := out.Seek(0, io.SeekStart); err != nil {
+			return false, 0, err
+		}
+		state.written = 0
+		state.total = expected
+		state.finalURL = responseURL
+		state.etag = ""
+		if len(etag) >= 2 && strings.HasPrefix(etag, "\"") && strings.HasSuffix(etag, "\"") {
+			state.etag = etag
+		}
+	}
+	if len(resolveName) > 0 {
+		if _, err := resolveName[0](resp); err != nil {
+			return false, 0, err
+		}
+	}
+	progress()
+	timer := time.AfterFunc(idleTimeout, cancel)
+	defer timer.Stop()
+	buf := make([]byte, 128*1024)
+	readBytes := int64(0)
+	lastProgress := time.Now()
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if attemptCtx.Err() != nil {
+			if ctx.Err() != nil {
+				return false, 0, ctx.Err()
+			}
+			return true, 0, fmt.Errorf("download read idle timeout")
+		}
+		if n > 0 {
+			timer.Reset(idleTimeout)
+			if expected >= 0 && readBytes+int64(n) > expected {
+				return false, 0, fmt.Errorf("remote body exceeds declared length")
+			}
+			written, writeErr := out.Write(buf[:n])
+			state.written += int64(written)
+			readBytes += int64(written)
+			if writeErr != nil {
+				return false, 0, writeErr
+			}
+			if written != n {
+				return false, 0, io.ErrShortWrite
+			}
+			if time.Since(lastProgress) >= 200*time.Millisecond {
+				progress()
+				lastProgress = time.Now()
+			}
+		}
+		if readErr != nil {
+			progress()
+			if readErr == io.EOF {
+				if expected >= 0 && readBytes != expected {
+					return true, 0, io.ErrUnexpectedEOF
+				}
+				return false, 0, nil
+			}
+			return retryDownloadError(readErr), 0, readErr
+		}
+	}
+}
+
+func parseDownloadRange(value string) (start, end, total int64, valid bool) {
+	if !strings.HasPrefix(value, "bytes ") {
 		return
 	}
-	dst := task.dst
-	downloadMu.Unlock()
-
-	_ = task.file.Close()
-	_ = task.resp.Body.Close()
-
-	if dst != "" {
-		_ = os.Remove(dst)
+	span, size, ok := strings.Cut(strings.TrimPrefix(value, "bytes "), "/")
+	first, last, okSpan := strings.Cut(span, "-")
+	if !ok || !okSpan {
+		return
 	}
-	global.CACHE.Del(key)
+	var err error
+	if start, err = strconv.ParseInt(first, 10, 64); err != nil {
+		return
+	}
+	if end, err = strconv.ParseInt(last, 10, 64); err != nil {
+		return
+	}
+	if total, err = strconv.ParseInt(size, 10, 64); err != nil {
+		return
+	}
+	valid = start >= 0 && end >= start && total > end
+	return
+}
+
+func publishDownload(out *os.File, dst string, original os.FileInfo, createdMode os.FileMode) error {
+	current, err := os.Lstat(dst)
+	if original == nil {
+		if err == nil {
+			return fmt.Errorf("download target was created by another operation")
+		}
+		if !os.IsNotExist(err) {
+			return err
+		}
+		if err := out.Chmod(createdMode); err != nil {
+			return err
+		}
+	} else {
+		if err != nil || !current.Mode().IsRegular() || !os.SameFile(original, current) ||
+			current.Size() != original.Size() || !current.ModTime().Equal(original.ModTime()) ||
+			current.Mode() != original.Mode() {
+			return fmt.Errorf("download target changed during download")
+		}
+		if owner, ok := original.Sys().(*syscall.Stat_t); ok {
+			currentOwner, sameType := current.Sys().(*syscall.Stat_t)
+			if !sameType || currentOwner.Uid != owner.Uid || currentOwner.Gid != owner.Gid {
+				return fmt.Errorf("download target ownership changed during download")
+			}
+			if err := out.Chown(int(owner.Uid), int(owner.Gid)); err != nil {
+				return err
+			}
+		}
+		if err := out.Chmod(original.Mode()); err != nil {
+			return err
+		}
+		if err := preserveDownloadTargetAttrs(dst, out, original); err != nil {
+			return err
+		}
+	}
+	if err := out.Sync(); err != nil {
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	if original == nil {
+		// Link is an atomic no-replace publication for a previously absent target.
+		return os.Link(out.Name(), dst)
+	}
+	return os.Rename(out.Name(), dst)
+}
+
+func preserveDownloadTargetAttrs(dst string, out *os.File, original os.FileInfo) error {
+	fd, err := unix.Open(dst, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	source := os.NewFile(uintptr(fd), dst)
+	defer source.Close()
+	info, err := source.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || !os.SameFile(original, info) {
+		return fmt.Errorf("download target changed while preserving attributes")
+	}
+	names, err := downloadXattrNames(fd)
+	if err != nil {
+		return err
+	}
+	outNames, err := downloadXattrNames(int(out.Fd()))
+	if err != nil {
+		return err
+	}
+	wanted := make(map[string]bool, len(names))
+	for _, name := range names {
+		wanted[name] = true
+	}
+	// Inherited ACLs on the temporary file must not grant access absent from the original.
+	for _, name := range outNames {
+		if !wanted[name] {
+			if err := unix.Fremovexattr(int(out.Fd()), name); err != nil {
+				return err
+			}
+		}
+	}
+	for _, name := range names {
+		size, err := unix.Fgetxattr(fd, name, nil)
+		if err != nil {
+			return err
+		}
+		value := make([]byte, size)
+		n, err := unix.Fgetxattr(fd, name, value)
+		if err != nil {
+			return err
+		}
+		if err := unix.Fsetxattr(int(out.Fd()), name, value[:n], 0); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func downloadXattrNames(fd int) ([]string, error) {
+	size, err := unix.Flistxattr(fd, nil)
+	if errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.EOPNOTSUPP) {
+		return nil, nil
+	}
+	if err != nil || size == 0 {
+		return nil, err
+	}
+	names := make([]byte, size)
+	n, err := unix.Flistxattr(fd, names)
+	if err != nil {
+		return nil, err
+	}
+	return strings.FieldsFunc(string(names[:n]), func(r rune) bool { return r == 0 }), nil
+}
+
+type downloadPartRecord struct {
+	Path   string
+	Device uint64
+	Inode  uint64
+}
+
+func recordDownloadPart(part string, info os.FileInfo) (string, error) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || global.Dir.TmpDir == "" {
+		return "", fmt.Errorf("download temporary file identity unavailable")
+	}
+	dir := filepath.Join(global.Dir.TmpDir, "remote-downloads")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	if err := validateDownloadRecordDir(dir); err != nil {
+		return "", err
+	}
+	record := filepath.Join(dir, filepath.Base(part)+".json")
+	data, err := json.Marshal(downloadPartRecord{Path: part, Device: uint64(stat.Dev), Inode: uint64(stat.Ino)})
+	if err != nil {
+		return "", err
+	}
+	file, err := os.OpenFile(record, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return "", err
+	}
+	_, writeErr := file.Write(data)
+	syncErr := file.Sync()
+	closeErr := file.Close()
+	return record, errors.Join(writeErr, syncErr, closeErr)
+}
+
+func removeDownloadPart(part string, original os.FileInfo) error {
+	current, err := os.Lstat(part)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if original == nil || !current.Mode().IsRegular() || !os.SameFile(original, current) {
+		return fmt.Errorf("download temporary file changed: %s", part)
+	}
+	return os.Remove(part)
+}
+
+func validateDownloadRecordDir(dir string) error {
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !info.IsDir() || info.Mode().Perm()&0077 != 0 || !ok || int(stat.Uid) != os.Geteuid() {
+		return fmt.Errorf("download recovery directory must be private and owned by the agent")
+	}
+	return nil
+}
+
+// Run before accepting requests. Only recorded, identity-matched partial files may be removed.
+func CleanupInterruptedDownloads() error {
+	dir := filepath.Join(global.Dir.TmpDir, "remote-downloads")
+	if err := validateDownloadRecordDir(dir); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".part.json") {
+			continue
+		}
+		recordPath := filepath.Join(dir, entry.Name())
+		data, err := os.ReadFile(recordPath)
+		var record downloadPartRecord
+		if err != nil || json.Unmarshal(data, &record) != nil || !filepath.IsAbs(record.Path) ||
+			!strings.HasPrefix(filepath.Base(record.Path), ".1panel-download-") ||
+			filepath.Base(record.Path)+".json" != entry.Name() {
+			errs = append(errs, fmt.Errorf("invalid download recovery record: %s", entry.Name()))
+			continue
+		}
+		info, err := os.Lstat(record.Path)
+		if err == nil {
+			stat, ok := info.Sys().(*syscall.Stat_t)
+			if !ok || !info.Mode().IsRegular() || uint64(stat.Dev) != record.Device || uint64(stat.Ino) != record.Inode {
+				errs = append(errs, fmt.Errorf("download recovery file identity changed: %s", record.Path))
+				continue
+			}
+			err = removeDownloadPart(record.Path, info)
+		}
+		if err != nil && !os.IsNotExist(err) {
+			errs = append(errs, err)
+			continue
+		}
+		if err := os.Remove(recordPath); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (f FileOp) DownloadFile(url, dst string) error {
@@ -590,6 +1156,12 @@ func (f FileOp) DownloadFile(url, dst string) error {
 }
 
 func (f FileOp) Cut(oldPaths []string, dst, name string, cover bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), cmdRecursiveTimeout)
+	defer cancel()
+	return f.CutWithContext(ctx, oldPaths, dst, name, cover)
+}
+
+func (f FileOp) CutWithContext(ctx context.Context, oldPaths []string, dst, name string, cover bool) error {
 	if len(oldPaths) == 0 {
 		return nil
 	}
@@ -613,7 +1185,7 @@ func (f FileOp) Cut(oldPaths []string, dst, name string, cover bool) error {
 	}
 	args = append(args, oldPaths...)
 	args = append(args, dstPath)
-	if err := cmd.NewCommandMgr(cmd.WithTimeout(cmdRecursiveTimeout)).Run("mv", args...); err != nil {
+	if err := cmd.NewCommandMgr(cmd.WithContext(ctx)).Run("mv", args...); err != nil {
 		return err
 	}
 	return nil
@@ -953,6 +1525,12 @@ func (f FileOp) Compress(ctx context.Context, srcRiles []string, dst string, nam
 		}
 		_ = f.DeleteFile(dstFile)
 		return NewZipArchiver().Compress(ctx, srcRiles, dstFile, "")
+	case Tar, Gz, Bz2, TarBz2, Tgz, Xz, TarXz:
+		err = NewTarArchiver(cType).Compress(ctx, srcRiles, dstFile, secret)
+		if err != nil {
+			_ = f.DeleteFile(dstFile)
+			return err
+		}
 	case TarGz:
 		err = NewTarGzArchiver().Compress(ctx, srcRiles, dstFile, secret)
 		if err != nil {
@@ -1031,20 +1609,217 @@ func decodeGBK(input string) (string, error) {
 	return decoded, nil
 }
 
-func (f FileOp) decompressWithSDK(ctx context.Context, srcFile string, dst string, cType CompressType) error {
-	format := getFormat(cType)
-	if cType == Gz {
-		if err := f.tryDecompressTarGz(ctx, srcFile, dst, format); err == nil {
-			return nil
-		}
-		return f.DecompressGzFile(ctx, srcFile, dst)
-	}
+type DecompressOptions struct {
+	PreserveOwner     bool
+	AllowCLIReextract bool
+}
 
+type archiveOwnership struct {
+	uid int
+	gid int
+}
+
+func getArchiveOwnership(file archiver.File) (archiveOwnership, bool) {
+	header, ok := getArchiveTarHeader(file)
+	if ok && header.Uid >= 0 && header.Gid >= 0 {
+		return archiveOwnership{uid: header.Uid, gid: header.Gid}, true
+	}
+	return getArchiveZipOwnership(file)
+}
+
+const zipUnixOwnershipExtraID = 0x7875
+
+func getArchiveZipOwnership(file archiver.File) (archiveOwnership, bool) {
+	var extra []byte
+	switch header := file.Header.(type) {
+	case *zip.FileHeader:
+		if header != nil {
+			extra = header.Extra
+		}
+	case zip.FileHeader:
+		extra = header.Extra
+	case *cZip.FileHeader:
+		if header != nil {
+			extra = header.Extra
+		}
+	case cZip.FileHeader:
+		extra = header.Extra
+	default:
+		return archiveOwnership{}, false
+	}
+	for len(extra) >= 4 {
+		fieldID := binary.LittleEndian.Uint16(extra[:2])
+		fieldSize := int(binary.LittleEndian.Uint16(extra[2:4]))
+		extra = extra[4:]
+		if fieldSize > len(extra) {
+			return archiveOwnership{}, false
+		}
+		field := extra[:fieldSize]
+		extra = extra[fieldSize:]
+		if fieldID != zipUnixOwnershipExtraID || len(field) < 4 || field[0] != 1 {
+			continue
+		}
+		uidSize := int(field[1])
+		if uidSize == 0 || uidSize > 4 || len(field) < 2+uidSize+1 {
+			return archiveOwnership{}, false
+		}
+		uid := decodeZipOwnershipID(field[2 : 2+uidSize])
+		gidSizeOffset := 2 + uidSize
+		gidSize := int(field[gidSizeOffset])
+		if gidSize == 0 || gidSize > 4 || len(field) < gidSizeOffset+1+gidSize {
+			return archiveOwnership{}, false
+		}
+		gid := decodeZipOwnershipID(field[gidSizeOffset+1 : gidSizeOffset+1+gidSize])
+		return archiveOwnership{uid: int(uid), gid: int(gid)}, true
+	}
+	return archiveOwnership{}, false
+}
+
+func decodeZipOwnershipID(value []byte) uint32 {
+	var result uint32
+	for i := len(value) - 1; i >= 0; i-- {
+		result = result<<8 | uint32(value[i])
+	}
+	return result
+}
+
+func appendZipOwnershipExtra(extra []byte, ownership archiveOwnership) []byte {
+	const fieldSize = 11
+	field := make([]byte, 4+fieldSize)
+	binary.LittleEndian.PutUint16(field[:2], zipUnixOwnershipExtraID)
+	binary.LittleEndian.PutUint16(field[2:4], fieldSize)
+	field[4] = 1
+	field[5] = 4
+	binary.LittleEndian.PutUint32(field[6:10], uint32(ownership.uid))
+	field[10] = 4
+	binary.LittleEndian.PutUint32(field[11:15], uint32(ownership.gid))
+	return append(extra, field...)
+}
+
+func getFileOwnership(info fs.FileInfo) (archiveOwnership, bool) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return archiveOwnership{}, false
+	}
+	return archiveOwnership{uid: int(stat.Uid), gid: int(stat.Gid)}, true
+}
+
+func getArchiveTarHeader(file archiver.File) (tar.Header, bool) {
+	switch header := file.Header.(type) {
+	case *tar.Header:
+		if header == nil {
+			return tar.Header{}, false
+		}
+		return *header, true
+	case tar.Header:
+		return header, true
+	default:
+		return tar.Header{}, false
+	}
+}
+
+func applyArchiveOwnership(filePath string, mode fs.FileMode, ownership archiveOwnership) error {
+	if mode&fs.ModeSymlink != 0 {
+		return os.Lchown(filePath, ownership.uid, ownership.gid)
+	}
+	return os.Chown(filePath, ownership.uid, ownership.gid)
+}
+
+func archiveDestinationPath(dst, name string) (string, error) {
+	cleaned := filepath.Clean(filepath.FromSlash(name))
+	if cleaned == "." {
+		return dst, nil
+	}
+	if filepath.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("invalid archive path: %s", name)
+	}
+	return filepath.Join(dst, cleaned), nil
+}
+
+func ensureArchiveDirectory(dirPath string, mode fs.FileMode) error {
+	info, err := os.Lstat(dirPath)
+	if err == nil {
+		if info.Mode()&fs.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("archive directory path is not a directory: %s", dirPath)
+		}
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return err
+	}
+	return os.Mkdir(dirPath, mode.Perm())
+}
+
+func ensureArchiveParent(dst, filePath string) error {
+	root := filepath.Clean(dst)
+	parent := filepath.Dir(filePath)
+	rel, err := filepath.Rel(root, parent)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("archive parent escapes destination: %s", parent)
+	}
+	if err := ensureArchiveDirectory(root, constant.DirPerm); err != nil {
+		return err
+	}
+	if rel == "." {
+		return nil
+	}
+	current := root
+	for _, part := range strings.Split(rel, string(os.PathSeparator)) {
+		current = filepath.Join(current, part)
+		if err := ensureArchiveDirectory(current, constant.DirPerm); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateArchiveHardlinkTarget(dst, targetPath string) error {
+	root := filepath.Clean(dst)
+	rel, err := filepath.Rel(root, targetPath)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("archive hardlink target escapes destination: %s", targetPath)
+	}
+	current := root
+	parts := strings.Split(rel, string(os.PathSeparator))
+	for i, part := range parts {
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if err != nil {
+			return fmt.Errorf("archive hardlink target is unavailable: %s: %w", targetPath, err)
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("archive hardlink target contains a symlink: %s", current)
+		}
+		if i < len(parts)-1 && !info.IsDir() {
+			return fmt.Errorf("archive hardlink target parent is not a directory: %s", current)
+		}
+		if i == len(parts)-1 && !info.Mode().IsRegular() {
+			return fmt.Errorf("archive hardlink target is not a regular file: %s", current)
+		}
+	}
+	return nil
+}
+
+func (f FileOp) extractArchiveWithSDK(ctx context.Context, input io.Reader, dst string, extractor archiver.Extractor, options DecompressOptions) (bool, error) {
 	type dirEntry struct {
-		path    string
-		modTime time.Time
+		path         string
+		mode         fs.FileMode
+		modTime      time.Time
+		ownership    archiveOwnership
+		hasOwnership bool
+	}
+	type hardlinkEntry struct {
+		path         string
+		target       string
+		mode         fs.FileMode
+		modTime      time.Time
+		ownership    archiveOwnership
+		hasOwnership bool
 	}
 	var dirs []dirEntry
+	var hardlinks []hardlinkEntry
+	extractionStarted := false
+	root := filepath.Clean(dst)
 
 	handler := func(ctx context.Context, archFile archiver.File) error {
 		info := archFile.FileInfo
@@ -1054,74 +1829,339 @@ func (f FileOp) decompressWithSDK(ctx context.Context, srcFile string, dst strin
 		fileName := archFile.NameInArchive
 		var err error
 		if header, ok := archFile.Header.(cZip.FileHeader); ok {
-			if header.NonUTF8 && header.Flags == 0 {
-				fileName, err = decodeGBK(fileName)
+			header, err = normalizeZipEntry(header)
+			if err != nil {
+				return err
+			}
+			fileName = header.Name
+			info = header.FileInfo()
+		}
+		header, hasTarHeader := getArchiveTarHeader(archFile)
+		ownership, hasOwnership := getArchiveOwnership(archFile)
+		filePath, err := archiveDestinationPath(dst, fileName)
+		if err != nil {
+			return err
+		}
+		extractionStarted = true
+		if info.IsDir() {
+			if filePath == root {
+				return ensureArchiveDirectory(root, constant.DirPerm)
+			}
+			if err := ensureArchiveParent(dst, filePath); err != nil {
+				return err
+			}
+			if err := ensureArchiveDirectory(filePath, info.Mode()); err != nil {
+				return err
+			}
+			dirs = append(dirs, dirEntry{
+				path:         filePath,
+				mode:         info.Mode(),
+				modTime:      info.ModTime(),
+				ownership:    ownership,
+				hasOwnership: hasOwnership,
+			})
+			return nil
+		}
+
+		if hasTarHeader && header.Typeflag == tar.TypeLink {
+			target, err := archiveDestinationPath(dst, header.Linkname)
+			if err != nil {
+				return err
+			}
+			hardlinks = append(hardlinks, hardlinkEntry{
+				path:         filePath,
+				target:       target,
+				mode:         info.Mode(),
+				modTime:      info.ModTime(),
+				ownership:    ownership,
+				hasOwnership: hasOwnership,
+			})
+			return nil
+		}
+
+		if err := ensureArchiveParent(dst, filePath); err != nil {
+			return err
+		}
+
+		if info.Mode()&fs.ModeSymlink != 0 || hasTarHeader && header.Typeflag == tar.TypeSymlink {
+			target := archFile.LinkTarget
+			if target == "" && hasTarHeader {
+				target = header.Linkname
+			}
+			if target == "" && archFile.Open != nil {
+				fr, err := archFile.Open()
 				if err != nil {
 					return err
 				}
+				data, readErr := io.ReadAll(io.LimitReader(fr, maxArchiveSymlinkTargetSize+1))
+				closeErr := fr.Close()
+				if readErr != nil {
+					return readErr
+				}
+				if closeErr != nil {
+					return closeErr
+				}
+				target = string(data)
 			}
-		}
-		filePath := filepath.Join(dst, fileName)
-		if archFile.FileInfo.IsDir() {
-			if err := f.Fs.MkdirAll(filePath, info.Mode()); err != nil {
+			if len(target) > maxArchiveSymlinkTargetSize {
+				return fmt.Errorf("archive symlink target for %s exceeds %d bytes", fileName, maxArchiveSymlinkTargetSize)
+			}
+			if target == "" {
+				return fmt.Errorf("archive symlink %s has no target", fileName)
+			}
+			if err := os.RemoveAll(filePath); err != nil {
 				return err
 			}
-			dirs = append(dirs, dirEntry{path: filePath, modTime: info.ModTime()})
-			return nil
-		} else {
-			parentDir := path.Dir(filePath)
-			if !f.Stat(parentDir) {
-				if err := f.Fs.MkdirAll(parentDir, constant.DirPerm); err != nil {
-					return err
+			if err := os.Symlink(target, filePath); err != nil {
+				return err
+			}
+			if options.PreserveOwner && hasOwnership {
+				if err := applyArchiveOwnership(filePath, info.Mode(), ownership); err != nil {
+					return fmt.Errorf("restore archive ownership for %s: %w", fileName, err)
 				}
 			}
+			return nil
 		}
+		if existing, err := os.Lstat(filePath); err == nil {
+			if existing.IsDir() {
+				return fmt.Errorf("archive file path is a directory: %s", fileName)
+			}
+			if err := os.Remove(filePath); err != nil {
+				return err
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+
 		fr, err := archFile.Open()
 		if err != nil {
 			return err
 		}
-		defer fr.Close()
-		fw, err := f.Fs.OpenFile(filePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, info.Mode())
+		fw, err := f.Fs.OpenFile(filePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, info.Mode().Perm())
 		if err != nil {
+			_ = fr.Close()
 			return err
 		}
-		defer fw.Close()
-		if _, err := io.Copy(fw, fr); err != nil {
-			return err
+		_, copyErr := io.Copy(fw, fr)
+		closeReadErr := fr.Close()
+		closeWriteErr := fw.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeReadErr != nil {
+			return closeReadErr
+		}
+		if closeWriteErr != nil {
+			return closeWriteErr
+		}
+		if options.PreserveOwner && hasOwnership {
+			if err := applyArchiveOwnership(filePath, info.Mode(), ownership); err != nil {
+				return fmt.Errorf("restore archive ownership for %s: %w", fileName, err)
+			}
+		}
+		if err := f.Fs.Chmod(filePath, info.Mode().Perm()); err != nil {
+			return fmt.Errorf("restore archive mode for %s: %w", fileName, err)
 		}
 		_ = os.Chtimes(filePath, info.ModTime(), info.ModTime())
 		return nil
 	}
+	if err := extractor.Extract(ctx, input, nil, handler); err != nil {
+		return extractionStarted, err
+	}
+	for _, link := range hardlinks {
+		if err := ensureArchiveParent(dst, link.path); err != nil {
+			return extractionStarted, err
+		}
+		if err := validateArchiveHardlinkTarget(dst, link.target); err != nil {
+			return extractionStarted, err
+		}
+		if err := os.RemoveAll(link.path); err != nil {
+			return extractionStarted, err
+		}
+		if err := os.Link(link.target, link.path); err != nil {
+			return extractionStarted, fmt.Errorf("restore archive hardlink %s: %w", link.path, err)
+		}
+		if options.PreserveOwner && link.hasOwnership {
+			if err := applyArchiveOwnership(link.path, link.mode, link.ownership); err != nil {
+				return extractionStarted, fmt.Errorf("restore archive ownership for %s: %w", link.path, err)
+			}
+		}
+		if err := f.Fs.Chmod(link.path, link.mode.Perm()); err != nil {
+			return extractionStarted, fmt.Errorf("restore archive mode for %s: %w", link.path, err)
+		}
+		_ = os.Chtimes(link.path, link.modTime, link.modTime)
+	}
+	for i := len(dirs) - 1; i >= 0; i-- {
+		if options.PreserveOwner && dirs[i].hasOwnership {
+			if err := applyArchiveOwnership(dirs[i].path, dirs[i].mode, dirs[i].ownership); err != nil {
+				return extractionStarted, fmt.Errorf("restore archive ownership for %s: %w", dirs[i].path, err)
+			}
+		}
+		if err := f.Fs.Chmod(dirs[i].path, dirs[i].mode.Perm()); err != nil {
+			return extractionStarted, fmt.Errorf("restore archive mode for %s: %w", dirs[i].path, err)
+		}
+		_ = os.Chtimes(dirs[i].path, dirs[i].modTime, dirs[i].modTime)
+	}
+	return extractionStarted, nil
+}
+
+func (f FileOp) decompressWithSDKState(ctx context.Context, srcFile string, dst string, cType CompressType, secret string, options DecompressOptions) (bool, error) {
 	input, err := f.Fs.Open(srcFile)
+	if err != nil {
+		return false, err
+	}
+	if cType == Zip || cType == SdkZip {
+		if _, err := inspectZipPaths(ctx, input); err != nil {
+			_ = input.Close()
+			return false, err
+		}
+	}
+	var extractor archiver.Extractor = getFormat(cType)
+	if cType == X7z {
+		extractor = archiver.SevenZip{Password: secret}
+	}
+	extractionStarted, extractErr := f.extractArchiveWithSDK(ctx, input, dst, extractor, options)
+	closeErr := input.Close()
+	if cType == Gz {
+		if extractErr == nil && extractionStarted {
+			return true, closeErr
+		}
+		if extractionStarted {
+			return true, extractErr
+		}
+		return false, f.DecompressGzFile(ctx, srcFile, dst)
+	}
+	if extractErr != nil {
+		return extractionStarted, extractErr
+	}
+	if closeErr != nil {
+		return extractionStarted, closeErr
+	}
+	return extractionStarted, nil
+}
+
+func (f FileOp) decompressWithSDK(ctx context.Context, srcFile string, dst string, cType CompressType, secret string, options DecompressOptions) error {
+	_, err := f.decompressWithSDKState(ctx, srcFile, dst, cType, secret, options)
+	return err
+}
+
+func resetArchiveFallbackDestination(dst string) error {
+	info, err := os.Lstat(dst)
+	if os.IsNotExist(err) {
+		return os.MkdirAll(dst, constant.DirPerm)
+	}
 	if err != nil {
 		return err
 	}
-	defer input.Close()
-	if err := format.Extract(ctx, input, nil, handler); err != nil {
+	if info.Mode()&fs.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("archive fallback destination is not a directory: %s", dst)
+	}
+	mode := info.Mode().Perm()
+	ownership, hasOwnership := getFileOwnership(info)
+	if err := os.RemoveAll(dst); err != nil {
 		return err
 	}
-	for i := len(dirs) - 1; i >= 0; i-- {
-		_ = os.Chtimes(dirs[i].path, dirs[i].modTime, dirs[i].modTime)
+	if err := os.MkdirAll(dst, mode); err != nil {
+		return err
+	}
+	if hasOwnership {
+		if err := os.Chown(dst, ownership.uid, ownership.gid); err != nil {
+			return err
+		}
+	}
+	return os.Chmod(dst, mode)
+}
+
+func (f FileOp) decompressSevenZipWithFallback(ctx context.Context, srcFile, dst, secret string, options DecompressOptions) error {
+	return f.decompressSevenZipWithFallbackUsing(ctx, srcFile, dst, secret, options, f.decompressWithSDKState)
+}
+
+func (f FileOp) decompressSevenZipWithFallbackUsing(
+	ctx context.Context,
+	srcFile, dst, secret string,
+	options DecompressOptions,
+	sdkExtract func(context.Context, string, string, CompressType, string, DecompressOptions) (bool, error),
+) error {
+	extractionStarted, sdkErr := sdkExtract(ctx, srcFile, dst, X7z, secret, options)
+	if sdkErr == nil {
+		return nil
+	}
+	if secret != "" {
+		return sdkErr
+	}
+	if extractionStarted && !options.AllowCLIReextract {
+		return sdkErr
+	}
+	if extractionStarted {
+		if err := resetArchiveFallbackDestination(dst); err != nil {
+			return fmt.Errorf("reset 7z CLI fallback destination: %w", err)
+		}
+	}
+
+	shellArchiver, err := NewExtractShellArchiver(X7z)
+	if err != nil {
+		return err
+	}
+	if global.LOG != nil {
+		global.LOG.Warnf("7z SDK decompression failed, falling back to CLI: %v", sdkErr)
+	}
+	if err := shellArchiver.Extract(ctx, srcFile, dst, secret); err != nil {
+		return fmt.Errorf("7z SDK decompression failed: %v; CLI fallback failed: %w", sdkErr, err)
 	}
 	return nil
 }
 
+type ownershipPreservingShellExtractor interface {
+	ExtractWithOptions(ctx context.Context, filePath, dstDir, secret string, preserveOwner bool) error
+}
+
+func extractWithShellOptions(ctx context.Context, shellArchiver ShellArchiver, srcFile, dst, secret string, options DecompressOptions) error {
+	if options.PreserveOwner {
+		if extractor, ok := shellArchiver.(ownershipPreservingShellExtractor); ok {
+			return extractor.ExtractWithOptions(ctx, srcFile, dst, secret, true)
+		}
+	}
+	return shellArchiver.Extract(ctx, srcFile, dst, secret)
+}
+
 func (f FileOp) Decompress(ctx context.Context, srcFile string, dst string, cType CompressType, secret string) error {
-	if cType == Tar || cType == Zip || cType == TarGz || cType == Rar || cType == X7z {
+	return f.DecompressWithOptions(ctx, srcFile, dst, cType, secret, DecompressOptions{})
+}
+
+func (f FileOp) DecompressWithOptions(ctx context.Context, srcFile string, dst string, cType CompressType, secret string, options DecompressOptions) error {
+	if cType == Zip {
+		handled, err := f.decompressZipWithPathCompatibility(ctx, srcFile, dst, options)
+		if handled || err != nil {
+			return err
+		}
+	}
+	if cType == X7z && options.PreserveOwner {
+		return f.decompressSevenZipWithFallback(ctx, srcFile, dst, secret, options)
+	}
+
+	var shellErr error
+	useShell := cType == Rar || cType == Zip || cType == Tar || cType == TarGz ||
+		!options.PreserveOwner && cType == X7z
+	if useShell {
 		shellArchiver, err := NewExtractShellArchiver(cType)
 		if !f.Stat(dst) {
 			_ = f.CreateDir(dst, 0755)
 		}
 		if err == nil {
-			if err = shellArchiver.Extract(ctx, srcFile, dst, secret); err == nil {
+			if err = extractWithShellOptions(ctx, shellArchiver, srcFile, dst, secret, options); err == nil {
 				return nil
 			}
+			shellErr = err
 			if cType == TarGz {
 				if strings.Contains(err.Error(), "bad decrypt") {
 					return buserr.New("ErrBadDecrypt")
 				}
-				if err := shellArchiver.Extract(ctx, srcFile, dst, "-"); strings.Contains(err.Error(), "bad decrypt") {
+				if retryErr := extractWithShellOptions(ctx, shellArchiver, srcFile, dst, "-", options); retryErr == nil {
+					return nil
+				} else if strings.Contains(retryErr.Error(), "bad decrypt") {
 					return buserr.New("ErrBadDecrypt")
+				} else {
+					shellErr = retryErr
 				}
 			}
 		} else {
@@ -1130,7 +2170,15 @@ func (f FileOp) Decompress(ctx context.Context, srcFile string, dst string, cTyp
 			}
 		}
 	}
-	return f.decompressWithSDK(ctx, srcFile, dst, cType)
+	if shellErr != nil && global.LOG != nil {
+		global.LOG.Warnf("shell decompression for %s failed, falling back to SDK: %v", cType, shellErr)
+	}
+	if shellErr != nil && options.AllowCLIReextract {
+		if err := resetArchiveFallbackDestination(dst); err != nil {
+			return fmt.Errorf("reset %s SDK fallback destination: %w", cType, err)
+		}
+	}
+	return f.decompressWithSDK(ctx, srcFile, dst, cType, secret, options)
 }
 
 func ZipFile(ctx context.Context, files []archiver.File, dst afero.File, progress func(current, total int, message string)) error {
@@ -1152,6 +2200,9 @@ func ZipFile(ctx context.Context, files []archiver.File, dst afero.File, progres
 		}
 		hdr.Method = zip.Deflate
 		hdr.Name = file.NameInArchive
+		if ownership, ok := getFileOwnership(file.FileInfo); ok {
+			hdr.Extra = appendZipOwnershipExtra(hdr.Extra, ownership)
+		}
 		if file.IsDir() {
 			if !strings.HasSuffix(hdr.Name, "/") {
 				hdr.Name += "/"
@@ -1207,69 +2258,6 @@ func (r *contextReader) Read(p []byte) (int, error) {
 	default:
 		return r.r.Read(p)
 	}
-}
-
-func (f FileOp) tryDecompressTarGz(ctx context.Context, srcFile string, dst string, format archiver.CompressedArchive) error {
-	input, err := f.Fs.Open(srcFile)
-	if err != nil {
-		return err
-	}
-	defer input.Close()
-
-	type dirEntry struct {
-		path    string
-		modTime time.Time
-	}
-	var dirs []dirEntry
-	extracted := false
-
-	handler := func(ctx context.Context, archFile archiver.File) error {
-		info := archFile.FileInfo
-		if isIgnoreFile(archFile.Name()) {
-			return nil
-		}
-		filePath := filepath.Join(dst, archFile.NameInArchive)
-		if info.IsDir() {
-			if err := f.Fs.MkdirAll(filePath, info.Mode()); err != nil {
-				return err
-			}
-			dirs = append(dirs, dirEntry{path: filePath, modTime: info.ModTime()})
-		} else {
-			parentDir := filepath.Dir(filePath)
-			if !f.Stat(parentDir) {
-				if err := f.Fs.MkdirAll(parentDir, constant.DirPerm); err != nil {
-					return err
-				}
-			}
-			fr, err := archFile.Open()
-			if err != nil {
-				return err
-			}
-			defer fr.Close()
-			fw, err := f.Fs.OpenFile(filePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, info.Mode())
-			if err != nil {
-				return err
-			}
-			defer fw.Close()
-			if _, err := io.Copy(fw, fr); err != nil {
-				return err
-			}
-			_ = os.Chtimes(filePath, info.ModTime(), info.ModTime())
-		}
-		extracted = true
-		return nil
-	}
-
-	if err := format.Extract(ctx, input, nil, handler); err != nil {
-		return err
-	}
-	if !extracted {
-		return fmt.Errorf("no files extracted as tar.gz")
-	}
-	for i := len(dirs) - 1; i >= 0; i-- {
-		_ = os.Chtimes(dirs[i].path, dirs[i].modTime, dirs[i].modTime)
-	}
-	return nil
 }
 
 func (f FileOp) DecompressGzFile(ctx context.Context, srcFile, dst string) error {

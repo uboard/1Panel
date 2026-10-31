@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -51,6 +52,8 @@ type FileService struct {
 
 const fileHistorySnapshotMaxSize = 10 * 1024 * 1024
 
+var fileTransferLocks = newFileTransferLocks()
+
 type IFileService interface {
 	GetFileList(op request.FileOption) (response.FileInfo, error)
 	SearchUploadWithPage(req request.SearchUploadWithPage) (int64, interface{}, error)
@@ -71,6 +74,7 @@ type IFileService interface {
 	ChangeName(req request.FileRename) error
 	Wget(w request.FileWget) (string, error)
 	MvFile(m request.FileMove) error
+	StopMvFile(taskID string) error
 	ChangeOwner(req request.FileRoleUpdate) error
 	ChangeMode(op request.FileCreate) error
 	BatchChangeModeAndOwner(op request.FileRoleReq) error
@@ -154,6 +158,10 @@ func (f *FileService) SearchUploadWithPage(req request.SearchUploadWithPage) (in
 			Name:      item.Name(),
 		})
 	}
+
+	sort.SliceStable(files, func(i, j int) bool {
+		return files[i].CreatedAt > files[j].CreatedAt
+	})
 
 	total, start, end := len(files), (req.Page-1)*req.PageSize, req.Page*req.PageSize
 	if start > total {
@@ -431,13 +439,15 @@ func (f *FileService) Compress(c request.FileCompress) error {
 	if err := preflightCompressTool(files.CompressType(c.Type)); err != nil {
 		return err
 	}
-	taskItem, err := task.NewTask(c.Name, task.TaskExec, task.TaskScopeTask, c.TaskID, 1)
+	taskName := i18n.GetMsgWithMap("FileTaskCompress", map[string]interface{}{"dst": strconv.Quote(filepath.Join(c.Dst, c.Name))})
+	taskItem, err := task.NewTask(taskName, task.TaskExec, task.TaskScopeTask, c.TaskID, 1)
 	if err != nil {
 		return err
 	}
 	go func() {
-		taskItem.AddSubTask(c.Name, func(t *task.Task) error {
-			t.LogStart(c.Name)
+		taskItem.AddSubTask(taskName, func(t *task.Task) error {
+			logFileTaskSources(t, c.Files)
+			t.Log(i18n.GetMsgWithMap("FileTaskFormat", map[string]interface{}{"format": strconv.Quote(c.Type)}))
 			compressType := files.CompressType(c.Type)
 			dstFile := filepath.Join(c.Dst, c.Name)
 			success := false
@@ -466,7 +476,7 @@ func (f *FileService) Compress(c request.FileCompress) error {
 
 func preflightCompressTool(compressType files.CompressType) error {
 	switch compressType {
-	case files.TarGz, files.Rar, files.X7z:
+	case files.Tar, files.Gz, files.Bz2, files.TarBz2, files.Tgz, files.TarGz, files.Xz, files.TarXz, files.Rar, files.X7z:
 		_, err := files.NewShellArchiver(compressType)
 		return err
 	default:
@@ -476,7 +486,7 @@ func preflightCompressTool(compressType files.CompressType) error {
 
 func preflightDecompressTool(decompressType files.CompressType) error {
 	switch decompressType {
-	case files.Rar, files.X7z:
+	case files.Rar:
 		_, err := files.NewExtractShellArchiver(decompressType)
 		return err
 	default:
@@ -508,13 +518,15 @@ func (f *FileService) DeCompress(c request.FileDeCompress) error {
 	if err := preflightDecompressTool(files.CompressType(c.Type)); err != nil {
 		return err
 	}
-	taskItem, err := task.NewTask(c.Path, task.TaskExec, task.TaskScopeTask, c.TaskID, 1)
+	taskName := i18n.GetMsgWithMap("FileTaskDecompress", map[string]interface{}{"dst": strconv.Quote(c.Dst)})
+	taskItem, err := task.NewTask(taskName, task.TaskExec, task.TaskScopeTask, c.TaskID, 1)
 	if err != nil {
 		return err
 	}
 	go func() {
-		taskItem.AddSubTask(c.Path, func(t *task.Task) error {
-			t.LogStart(c.Path)
+		taskItem.AddSubTask(taskName, func(t *task.Task) error {
+			logFileTaskSources(t, []string{c.Path})
+			t.Log(i18n.GetMsgWithMap("FileTaskFormat", map[string]interface{}{"format": strconv.Quote(c.Type)}))
 			dstExisted := fo.Stat(c.Dst)
 			parentDir := filepath.Dir(c.Dst)
 			if !fo.Stat(parentDir) {
@@ -533,7 +545,10 @@ func (f *FileService) DeCompress(c request.FileDeCompress) error {
 					_ = os.RemoveAll(c.Dst)
 				}
 			}()
-			if err := fo.Decompress(t.TaskCtx, c.Path, tempDst, files.CompressType(c.Type), c.Secret); err != nil {
+			if err := fo.DecompressWithOptions(t.TaskCtx, c.Path, tempDst, files.CompressType(c.Type), c.Secret, files.DecompressOptions{
+				PreserveOwner:     true,
+				AllowCLIReextract: true,
+			}); err != nil {
 				return err
 			}
 			if err := fo.CreateDir(c.Dst, constant.DirPerm); err != nil {
@@ -551,19 +566,42 @@ func (f *FileService) DeCompress(c request.FileDeCompress) error {
 }
 
 func copyDecompressTree(ctx context.Context, srcDir, dstDir string) error {
+	state := decompressCopyState{hardlinks: make(map[decompressFileIdentity]string)}
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
-		if err := copyDecompressEntry(ctx, filepath.Join(srcDir, entry.Name()), filepath.Join(dstDir, entry.Name())); err != nil {
+		if err := copyDecompressEntryWithState(ctx, filepath.Join(srcDir, entry.Name()), filepath.Join(dstDir, entry.Name()), &state); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+type decompressFileIdentity struct {
+	device uint64
+	inode  uint64
+}
+
+type decompressCopyState struct {
+	hardlinks map[decompressFileIdentity]string
+}
+
+func decompressHardlinkIdentity(info os.FileInfo) (decompressFileIdentity, bool) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Nlink < 2 {
+		return decompressFileIdentity{}, false
+	}
+	return decompressFileIdentity{device: uint64(stat.Dev), inode: uint64(stat.Ino)}, true
+}
+
 func copyDecompressEntry(ctx context.Context, srcPath, dstPath string) (retErr error) {
+	state := decompressCopyState{hardlinks: make(map[decompressFileIdentity]string)}
+	return copyDecompressEntryWithState(ctx, srcPath, dstPath, &state)
+}
+
+func copyDecompressEntryWithState(ctx context.Context, srcPath, dstPath string, state *decompressCopyState) (retErr error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -605,13 +643,16 @@ func copyDecompressEntry(ctx context.Context, srcPath, dstPath string) (retErr e
 			if err := applyDecompressOwnership(srcPath, dstPath); err != nil {
 				return err
 			}
+			if err := os.Chmod(dstPath, info.Mode().Perm()); err != nil {
+				return err
+			}
 		}
 		entries, err := os.ReadDir(srcPath)
 		if err != nil {
 			return err
 		}
 		for _, entry := range entries {
-			if err := copyDecompressEntry(ctx, filepath.Join(srcPath, entry.Name()), filepath.Join(dstPath, entry.Name())); err != nil {
+			if err := copyDecompressEntryWithState(ctx, filepath.Join(srcPath, entry.Name()), filepath.Join(dstPath, entry.Name()), state); err != nil {
 				return err
 			}
 		}
@@ -633,6 +674,15 @@ func copyDecompressEntry(ctx context.Context, srcPath, dstPath string) (retErr e
 	}
 	if err := os.MkdirAll(filepath.Dir(dstPath), constant.DirPerm); err != nil {
 		return err
+	}
+	identity, isHardlink := decompressHardlinkIdentity(info)
+	if !keepExistingFile && isHardlink {
+		if existingPath, ok := state.hardlinks[identity]; ok {
+			if err := os.Link(existingPath, dstPath); err != nil {
+				return err
+			}
+			return os.Chtimes(dstPath, info.ModTime(), info.ModTime())
+		}
 	}
 
 	srcFile, err := os.Open(srcPath)
@@ -658,6 +708,12 @@ func copyDecompressEntry(ctx context.Context, srcPath, dstPath string) (retErr e
 		if err := applyDecompressOwnership(srcPath, dstPath); err != nil {
 			return err
 		}
+		if err := os.Chmod(dstPath, info.Mode().Perm()); err != nil {
+			return err
+		}
+		if isHardlink {
+			state.hardlinks[identity] = dstPath
+		}
 	}
 	return os.Chtimes(dstPath, info.ModTime(), info.ModTime())
 }
@@ -667,7 +723,7 @@ func applyDecompressOwnership(srcPath, dstPath string) error {
 	if err != nil {
 		return err
 	}
-	stat, ok := info.Sys().(*unix.Stat_t)
+	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return nil
 	}
@@ -826,6 +882,16 @@ func (f *FileService) ChangeName(req request.FileRename) error {
 	if hasInvalidFileName(req.NewName) {
 		return buserr.New("ErrInvalidChar")
 	}
+	if req.OldName == req.NewName {
+		return nil
+	}
+	// os.Rename silently replaces an existing target on Linux, so reject the
+	// rename here to avoid losing the target file without confirmation.
+	if _, err := os.Lstat(req.NewName); err == nil {
+		return buserr.New("ErrFileIsExist")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	fo := files.NewFileOp()
 	content, mode, shouldRecordHistory := readEditableFileHistoryContent(req.OldName)
 	if err := fo.Rename(req.OldName, req.NewName); err != nil {
@@ -844,6 +910,7 @@ func (f *FileService) Wget(w request.FileWget) (string, error) {
 	key := "file-wget-" + common.GetUuid()
 	options := files.DownloadOptions{
 		IgnoreCertificate: w.IgnoreCertificate,
+		UseServerFilename: w.UseServerFilename,
 	}
 	if w.UseProxy {
 		systemProxy, err := NewISettingService().GetSystemProxy()
@@ -861,19 +928,79 @@ func (f *FileService) Wget(w request.FileWget) (string, error) {
 	return key, fo.DownloadFileWithProcess(w.Url, filepath.Join(w.Path, w.Name), key, options)
 }
 
+func logFileTaskSources(t *task.Task, sources []string) {
+	for _, source := range sources {
+		t.Log(i18n.GetMsgWithMap("FileTaskSource", map[string]interface{}{"path": strconv.Quote(source)}))
+	}
+}
+
 func (f *FileService) MvFile(m request.FileMove) error {
 	fo := files.NewFileOp()
+	if err := validateFileMove(fo, m); err != nil {
+		return err
+	}
+	if m.TaskID == "" {
+		m.TaskID = common.GetUuid()
+	}
+	if !fileTransferLocks.Acquire(m.TaskID, getFileTransferPaths(m)) {
+		return buserr.New("TaskIsExecuting")
+	}
+	nameKey := "FileTaskCopy"
+	if m.Type == "cut" {
+		nameKey = "FileTaskMove"
+	}
+	taskName := i18n.GetMsgWithMap(nameKey, map[string]interface{}{"dst": strconv.Quote(m.NewPath)})
+	taskItem, err := task.NewTask(taskName, task.TaskExec, task.TaskScopeTask, m.TaskID, 1)
+	if err != nil {
+		fileTransferLocks.Release(m.TaskID)
+		return err
+	}
+	go func() {
+		defer fileTransferLocks.Release(m.TaskID)
+		taskItem.AddSubTaskWithOps(taskName, func(t *task.Task) error {
+			logFileTaskSources(t, m.OldPaths)
+			logFileTaskSources(t, m.CoverPaths)
+			if m.Name != "" {
+				t.Log(i18n.GetMsgWithMap("FileTaskRename", map[string]interface{}{"name": strconv.Quote(m.Name)}))
+			}
+			err := f.moveFileWithContext(t.TaskCtx, m)
+			if err != nil && t.TaskCtx.Err() != nil {
+				return t.TaskCtx.Err()
+			}
+			return err
+		}, nil, 0, 0)
+		_ = taskItem.Execute()
+	}()
+	return nil
+}
+
+func (f *FileService) StopMvFile(taskID string) error {
+	if cancel, ok := global.LoadTaskCancel(taskID); ok {
+		cancel()
+		return nil
+	}
+	return buserr.New("TaskNotFound")
+}
+
+func validateFileMove(fo files.FileOp, m request.FileMove) error {
 	if !fo.Stat(m.NewPath) {
 		return buserr.New("ErrPathNotFound")
 	}
-	for _, oldPath := range m.OldPaths {
+	for _, oldPath := range append(append([]string{}, m.OldPaths...), m.CoverPaths...) {
 		if !fo.Stat(oldPath) {
 			return buserr.WithName("ErrFileNotFound", oldPath)
 		}
-		if oldPath == m.NewPath || strings.Contains(m.NewPath, filepath.Clean(oldPath)+"/") {
+		oldPath = filepath.Clean(oldPath)
+		newPath := filepath.Clean(m.NewPath)
+		if oldPath == newPath || strings.HasPrefix(newPath, oldPath+string(filepath.Separator)) {
 			return buserr.New("ErrMovePathFailed")
 		}
 	}
+	return nil
+}
+
+func (f *FileService) moveFileWithContext(ctx context.Context, m request.FileMove) error {
+	fo := files.NewFileOp()
 	type moveSnapshot struct {
 		path    string
 		content []byte
@@ -889,13 +1016,25 @@ func (f *FileService) MvFile(m request.FileMove) error {
 		}
 		if len(m.CoverPaths) > 0 {
 			for _, src := range m.CoverPaths {
-				if err := fo.CopyAndReName(src, m.NewPath, "", true); err != nil {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if err := fo.CopyAndReNameWithContext(ctx, src, m.NewPath, "", true); err != nil {
 					errs = append(errs, err)
 					global.LOG.Errorf("cut copy file [%s] to [%s] failed, err: %s", src, m.NewPath, err.Error())
+					continue
+				}
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if err := fo.DeleteDir(src); err != nil {
+					removeErr := fmt.Errorf("remove merged source [%s] failed: %w", src, err)
+					errs = append(errs, removeErr)
+					global.LOG.Errorf("%s", removeErr.Error())
 				}
 			}
 		}
-		if err := fo.Cut(m.OldPaths, m.NewPath, m.Name, m.Cover); err != nil {
+		if err := fo.CutWithContext(ctx, m.OldPaths, m.NewPath, m.Name, m.Cover); err != nil {
 			return err
 		}
 		for _, snapshot := range snapshots {
@@ -906,18 +1045,18 @@ func (f *FileService) MvFile(m request.FileMove) error {
 				}
 			}
 		}
-		return nil
+		return aggregateFileMoveErrors(errs)
 	}
 	if m.Type == "copy" {
 		for _, src := range m.OldPaths {
-			if err := fo.CopyAndReName(src, m.NewPath, m.Name, m.Cover); err != nil {
+			if err := fo.CopyAndReNameWithContext(ctx, src, m.NewPath, m.Name, m.Cover); err != nil {
 				errs = append(errs, err)
 				global.LOG.Errorf("copy file [%s] to [%s] failed, err: %s", src, m.NewPath, err.Error())
 			}
 		}
 		if len(m.CoverPaths) > 0 {
 			for _, src := range m.CoverPaths {
-				if err := fo.CopyAndReName(src, m.NewPath, "", true); err != nil {
+				if err := fo.CopyAndReNameWithContext(ctx, src, m.NewPath, "", true); err != nil {
 					errs = append(errs, err)
 					global.LOG.Errorf("copy file [%s] to [%s] failed, err: %s", src, m.NewPath, err.Error())
 				}
@@ -925,14 +1064,7 @@ func (f *FileService) MvFile(m request.FileMove) error {
 		}
 	}
 
-	var errString string
-	for _, err := range errs {
-		errString += err.Error() + "\n"
-	}
-	if errString != "" {
-		return errors.New(errString)
-	}
-	return nil
+	return aggregateFileMoveErrors(errs)
 }
 
 func readEditableFileHistoryContent(filePath string) ([]byte, os.FileMode, bool) {
@@ -1188,7 +1320,7 @@ func (f *FileService) BatchCheckFiles(req request.FilePathsCheck) []response.Exi
 }
 
 func (f *FileService) GetHostMount() []dto.DiskInfo {
-	return loadDiskInfo()
+	return loadDiskInfo(false)
 }
 
 func (f *FileService) GetUsersAndGroups() (*response.UserGroupResponse, error) {

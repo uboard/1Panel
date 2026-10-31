@@ -4,9 +4,7 @@
             <div class="flex flex-wrap gap-4">
                 <a href="https://1panel.pro/" target="_blank">Copyright © {{ year }} {{ $t('commons.lingxia') }}</a>
             </div>
-            <div class="flex flex-row gap-2 md:flex-col lg:flex-row">
-                <SystemUpgrade :footer="true" />
-            </div>
+            <SystemUpgrade class="footer-upgrade" />
         </div>
     </div>
 </template>
@@ -15,7 +13,7 @@
 import SystemUpgrade from '@/components/system-upgrade/index.vue';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 
-const { isFxplay, isIntl, isMobile } = useGlobalStore();
+const { isMobile } = useGlobalStore();
 
 const year = new Date().getFullYear();
 </script>
@@ -25,11 +23,12 @@ const year = new Date().getFullYear();
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 48px;
+    min-height: 48px;
+    height: auto;
     background: var(--panel-footer-bg);
     border-top: 1px solid var(--panel-footer-border);
     box-sizing: border-box;
-    padding: 10px 20px;
+    padding: 10px 12px;
     a {
         font-size: 12px;
         color: #858585;
@@ -41,6 +40,45 @@ const year = new Date().getFullYear();
         color: #858585;
         text-decoration: none;
         letter-spacing: 0.5px;
+    }
+}
+
+.footer--mobile {
+    min-height: 76px;
+}
+
+.footer-content {
+    display: flex;
+    width: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px 12px;
+}
+
+.footer-copyright {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.footer-upgrade {
+    white-space: nowrap;
+}
+
+@media (min-width: 768px) {
+    .footer-content {
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        gap: 0;
+    }
+
+    .footer {
+        padding: 10px 20px;
+    }
+
+    .footer-copyright {
+        justify-content: flex-start;
     }
 }
 </style>

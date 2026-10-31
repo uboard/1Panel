@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,7 +47,7 @@ type RuntimeService struct {
 type IRuntimeService interface {
 	Page(req request.RuntimeSearch) (int64, []response.RuntimeDTO, error)
 	Create(create request.RuntimeCreate) (*model.Runtime, error)
-	Delete(delete request.RuntimeDelete) error
+	Delete(delete request.RuntimeDelete) (string, error)
 	Update(req request.RuntimeUpdate) error
 	Get(id uint) (res *response.RuntimeDTO, err error)
 	GetNodePackageRunScript(req request.NodePackageReq) ([]response.PackageScripts, error)
@@ -376,16 +377,16 @@ func (r *RuntimeService) DeleteCheck(runTimeId uint) ([]dto.AppResource, error) 
 	return res, nil
 }
 
-func (r *RuntimeService) Delete(runtimeDelete request.RuntimeDelete) error {
+func (r *RuntimeService) Delete(runtimeDelete request.RuntimeDelete) (string, error) {
 	runtime, err := runtimeRepo.GetFirst(context.Background(), repo.WithByID(runtimeDelete.ID))
 	if err != nil {
-		return err
+		return "", err
 	}
 	website, _ := websiteRepo.GetFirst(websiteRepo.WithRuntimeID(runtimeDelete.ID))
 	if website.ID > 0 {
-		return buserr.New("ErrDelWithWebsite")
+		return runtime.Name, buserr.New("ErrDelWithWebsite")
 	}
-	return startRuntimeDeleteTask(runtimeDelete, runtime)
+	return runtime.Name, startRuntimeDeleteTask(runtimeDelete, runtime)
 }
 
 func startRuntimeDeleteTask(runtimeDelete request.RuntimeDelete, runtime *model.Runtime) error {
@@ -584,6 +585,21 @@ func (r *RuntimeService) Get(id uint) (*response.RuntimeDTO, error) {
 
 		for _, form := range appForm.FormFields {
 			if v, ok := envs[form.EnvKey]; ok {
+				if form.EnvKey == "PHP_VERSION" {
+					// Refresh only version choices; keep the saved form if synchronized metadata is unavailable.
+					var latestForm dto.AppForm
+					if json.Unmarshal([]byte(appDetail.Params), &latestForm) == nil {
+						for _, latest := range latestForm.FormFields {
+							if latest.EnvKey == form.EnvKey && len(latest.Values) > 0 {
+								form.Values = latest.Values
+								break
+							}
+						}
+					}
+					if v != "" && !slices.ContainsFunc(form.Values, func(value dto.AppFormValue) bool { return value.Value == v }) {
+						form.Values = append(form.Values, dto.AppFormValue{Label: v, Value: v})
+					}
+				}
 				appParam := response.AppParam{
 					Edit:     false,
 					Key:      form.EnvKey,
@@ -631,7 +647,7 @@ func (r *RuntimeService) Get(id uint) (*response.RuntimeDTO, error) {
 	return &res, nil
 }
 
-func (r *RuntimeService) Update(req request.RuntimeUpdate) error {
+func (r *RuntimeService) Update(req request.RuntimeUpdate) (err error) {
 	runtime, err := runtimeRepo.GetFirst(context.Background(), repo.WithByID(req.ID))
 	if err != nil {
 		return err
@@ -640,6 +656,13 @@ func (r *RuntimeService) Update(req request.RuntimeUpdate) error {
 		runtime.Version = req.Version
 		return runtimeRepo.Save(runtime)
 	}
+	oldRuntime := *runtime
+	appDetail, err := getRuntimeUpdateAppDetail(runtime, req)
+	if err != nil {
+		return err
+	}
+	versionChanged := appDetail.ID != runtime.AppDetailID || appDetail.Version != runtime.Version
+	req.Version = appDetail.Version
 	oldImage := runtime.Image
 	oldEnv := runtime.Env
 	var hostPorts []string
@@ -659,23 +682,6 @@ func (r *RuntimeService) Update(req request.RuntimeUpdate) error {
 			}
 		}
 
-		appDetail, err := appDetailRepo.GetFirst(repo.WithByID(runtime.AppDetailID))
-		if err != nil {
-			return err
-		}
-		app, err := appRepo.GetFirst(repo.WithByID(appDetail.AppId))
-		if err != nil {
-			return err
-		}
-		fileOp := files.NewFileOp()
-		appVersionDir := path.Join(global.Dir.AppResourceDir, app.Resource, app.Key, appDetail.Version)
-		if !fileOp.Stat(appVersionDir) || appDetail.Update {
-			if err := downloadApp(app, appDetail, nil, nil); err != nil {
-				return err
-			}
-			_ = fileOp.Rename(path.Join(runtime.GetPath(), "run.sh"), path.Join(runtime.GetPath(), "run.sh.bak"))
-			_ = fileOp.CopyFile(path.Join(appVersionDir, "run.sh"), runtime.GetPath())
-		}
 	}
 
 	if containerName, ok := req.Params["CONTAINER_NAME"]; ok && containerName != getRuntimeEnv(runtime.Env, "CONTAINER_NAME") {
@@ -683,6 +689,50 @@ func (r *RuntimeService) Update(req request.RuntimeUpdate) error {
 			return err
 		}
 		runtime.ContainerName = containerName.(string)
+	}
+
+	app, err := appRepo.GetFirst(repo.WithByID(appDetail.AppId))
+	if err != nil {
+		return err
+	}
+	fileOp := files.NewFileOp()
+	appVersionDir := filepath.Join(app.GetAppResourcePath(), appDetail.Version)
+	refreshTemplate := !fileOp.Stat(appVersionDir) || appDetail.Update
+	if err = downloadApp(app, appDetail, nil, nil); err != nil {
+		return err
+	}
+	var snapshot *runtimeUpdateSnapshot
+	if runtime.Type != constant.RuntimePHP {
+		snapshot, err = snapshotRuntimeUpdate(&oldRuntime)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if err != nil {
+				if restoreErr := snapshot.restoreFiles(); restoreErr != nil {
+					err = fmt.Errorf("%w; restore runtime configuration: %v", err, restoreErr)
+				}
+			}
+		}()
+	}
+	if versionChanged {
+		if err = updateRuntimeVersionFiles(runtime, appVersionDir); err != nil {
+			return err
+		}
+	} else if refreshTemplate && runtime.Type != constant.RuntimePHP {
+		if err = fileOp.CopyFile(filepath.Join(appVersionDir, "run.sh"), runtime.GetPath()); err != nil {
+			return err
+		}
+	}
+	if runtime.Type == constant.RuntimePHP {
+		composeContent, err := fileOp.GetContent(runtime.GetComposePath())
+		if err != nil {
+			return err
+		}
+		req.Environments, err = getDockerComposeEnvironments(composeContent)
+		if err != nil {
+			return err
+		}
 	}
 
 	projectDir := path.Join(global.Dir.RuntimeDir, runtime.Type, runtime.Name)
@@ -702,19 +752,21 @@ func (r *RuntimeService) Update(req request.RuntimeUpdate) error {
 			ExtraHosts:   req.ExtraHosts,
 		},
 	}
-	composeContent, envContent, _, err := handleParams(create, projectDir)
+	composeContent, envContent, forms, err := handleParams(create, projectDir)
 	if err != nil {
 		return err
 	}
 	runtime.Remark = req.Remark
+	runtime.AppDetailID = appDetail.ID
+	runtime.Version = appDetail.Version
 	runtime.Env = string(envContent)
 	runtime.DockerCompose = string(composeContent)
 
 	switch runtime.Type {
 	case constant.RuntimePHP:
 		runtime.Image = req.Image
+		runtime.Params = string(forms)
 		runtime.Status = constant.StatusBuilding
-		_ = runtimeRepo.Save(runtime)
 		client, err := docker.NewClient()
 		if err != nil {
 			return err
@@ -724,15 +776,25 @@ func (r *RuntimeService) Update(req request.RuntimeUpdate) error {
 		if err != nil {
 			return err
 		}
-		go buildRuntime(runtime, imageID, oldEnv, req.Rebuild)
+		if err = runtimeRepo.Save(runtime); err != nil {
+			return err
+		}
+		go buildRuntime(runtime, imageID, oldEnv, req.Rebuild || versionChanged)
 	case constant.RuntimeNode, constant.RuntimeJava, constant.RuntimeGo, constant.RuntimePython, constant.RuntimeDotNet:
-		runtime.Version = req.Version
 		runtime.CodeDir = req.CodeDir
 		runtime.Port = strings.Join(hostPorts, ",")
 		runtime.Status = constant.StatusReCreating
 		runtime.ContainerName = req.Params["CONTAINER_NAME"].(string)
-		_ = runtimeRepo.Save(runtime)
-		go reCreateRuntime(runtime)
+		if err = runtimeRepo.Save(runtime); err != nil {
+			return err
+		}
+		go func() {
+			if err := prepareRuntimeUpdate(runtime, snapshot); err != nil {
+				global.LOG.Errorf("prepare runtime [%s] update failed: %v", runtime.Name, err)
+				return
+			}
+			reCreateRuntime(runtime)
+		}()
 	}
 	return nil
 }

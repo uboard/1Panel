@@ -57,7 +57,7 @@ func (s *Systemd) Status(serviceName string) (string, error) {
 	return run(s.toolCmd, "status", serviceName)
 }
 func (s *Systemd) Operate(operate, serviceName string) error {
-	out, err := run(s.toolCmd, operate, serviceName)
+	out, err := runWithTimeout(serviceOperationTimeout(operate, serviceName), s.toolCmd, operate, serviceName)
 	if err != nil {
 		if fallbackName := systemdAliasFallbackName(serviceName); fallbackName != "" && strings.Contains(out, "alias name or linked unit file") {
 			return s.Operate(operate, fallbackName)
@@ -65,7 +65,7 @@ func (s *Systemd) Operate(operate, serviceName string) error {
 		if err := NewSnap().Operate(operate, serviceName); err == nil {
 			return nil
 		}
-		return handlerErr(run(s.toolCmd, operate, serviceName))
+		return handlerErr(out, err)
 	}
 	return nil
 }

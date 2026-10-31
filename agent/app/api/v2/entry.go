@@ -42,7 +42,9 @@ var (
 	fileShareService          = service.NewIFileShareService()
 	sshService                = service.NewISSHService()
 	firewallService           = service.NewIFirewallService()
-	iptablesService           = service.NewIIptablesService()
+	firewallSettingService    = service.NewIFirewallSettingService()
+	forwardingService         = service.NewIForwardingService()
+	dockerPortGuardService    = service.NewIDockerPortGuardService()
 	monitorService            = service.NewIMonitorService()
 	systemService             = service.NewISystemService()
 	runtimeDiagnosticsService = service.NewIRuntimeDiagnosticsService()
@@ -60,6 +62,7 @@ var (
 	websiteDnsAccountService  = service.NewIWebsiteDnsAccountService()
 	websiteSSLService         = service.NewIWebsiteSSLService()
 	websiteAcmeAccountService = service.NewIWebsiteAcmeAccountService()
+	websiteTemplateService    = service.NewIWebsiteTemplateService()
 
 	nginxService = service.NewINginxService()
 

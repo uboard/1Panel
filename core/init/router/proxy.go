@@ -1,10 +1,14 @@
 package router
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/1Panel-dev/1Panel/core/app/api/v2/helper"
 	baseRepo "github.com/1Panel-dev/1Panel/core/app/repo"
@@ -14,12 +18,61 @@ import (
 	"github.com/1Panel-dev/1Panel/core/init/proxy"
 	psessionUtils "github.com/1Panel-dev/1Panel/core/init/session/psession"
 	"github.com/1Panel-dev/1Panel/core/middleware"
+	"github.com/1Panel-dev/1Panel/core/utils/mcpapi"
+	"github.com/1Panel-dev/1Panel/core/utils/req_helper/proxy_local"
+	terminalsession "github.com/1Panel-dev/1Panel/core/utils/terminal_session"
 	"github.com/1Panel-dev/1Panel/core/utils/xpack"
+	"github.com/1Panel-dev/1Panel/core/utils/xpack/providers"
 	"github.com/gin-gonic/gin"
 )
 
-func Proxy() gin.HandlerFunc {
+var errInternalOnlyAgentEndpoint = errors.New("internal agent endpoint cannot be proxied")
+
+var loadLocalTerminalCapabilities = func(ctx context.Context) (interface{}, error) {
+	return proxy_local.NewLocalClientWithContext(ctx, terminalsession.CapabilityPath, http.MethodGet, nil, nil, 5*time.Second)
+}
+
+type agentProxyPolicy struct {
+	clear func(*http.Request)
+	grant func(*gin.Context, bool)
+}
+
+func Proxy(policies ...agentProxyPolicy) gin.HandlerFunc {
+	policies = append([]agentProxyPolicy(nil), policies...)
 	return func(c *gin.Context) {
+		terminalsession.ClearForwardedHeaders(c)
+		mcpapi.ClearForwardedHeaders(c.Request.Header)
+		for _, policy := range policies {
+			if policy.clear != nil {
+				policy.clear(c.Request)
+			}
+		}
+		if mcpapi.HasIdentity(c.Request) && !mcpapi.IsRequest(c.Request) {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+		if _, owner, ok := mcpapi.Identity(c.Request); ok {
+			nodeID, _ := mcpapi.NodeID(c.Request)
+			provider, supported := xpack.AuthProvider.(providers.MCPAPIAuthorizer)
+			if !c.GetBool("MCP_API_AUTH") || !supported || provider.AuthorizeMCPAPI(owner, nodeID, c.Request.Method, c.Request.URL.Path) != nil {
+				c.AbortWithStatus(http.StatusForbidden)
+				return
+			}
+			nodeName := "local"
+			if nodeProvider, supported := xpack.AuthProvider.(providers.MCPNodeProvider); supported {
+				node, err := nodeProvider.ResolveMCPNode(owner, nodeID)
+				if err != nil || node.ID != nodeID || node.IsLocal != (nodeID == "local") || node.IsLocal != (node.Name == "local") || node.Name == "" {
+					c.AbortWithStatus(http.StatusForbidden)
+					return
+				}
+				nodeName = node.Name
+			} else if nodeID != "local" {
+				c.AbortWithStatus(http.StatusForbidden)
+				return
+			}
+			c.Request.Header.Set("CurrentNode", url.QueryEscape(nodeName))
+			mcpapi.SetForwardedHeaders(c.Request.Header, c.Request)
+		}
 		reqPath := c.Request.URL.Path
 		if !middleware.ShouldProxyToAgent(reqPath) {
 			c.Next()
@@ -37,10 +90,15 @@ func Proxy() gin.HandlerFunc {
 			helper.ErrorWithDetail(c, http.StatusBadRequest, "ErrProxy", err)
 			return
 		}
+		useLocalAgent := currentNode == "local" || len(currentNode) == 0
+		if nodeID, ok := mcpapi.NodeID(c.Request); ok {
+			useLocalAgent = nodeID == "local"
+		}
 
 		apiReq := c.GetBool("API_AUTH")
+		terminalRevalidate := c.Query("terminalRevalidate") == "1" && isTerminalRevalidationEndpoint(reqPath)
 
-		if !apiReq && !isLocalAPI(reqPath) && !isPublicFileShareAPI(reqPath) && !checkSession(c) {
+		if !apiReq && !isLocalAPI(reqPath) && !middleware.IsPublicFileShareAPI(reqPath) && !checkSession(c, !terminalRevalidate) {
 			data, _ := res.ErrorMsg.ReadFile("html/401.html")
 			c.Data(401, "text/html; charset=utf-8", data)
 			c.Abort()
@@ -50,13 +108,26 @@ func Proxy() gin.HandlerFunc {
 		if userName := middleware.LoadOperationUser(c); userName != "" {
 			c.Request.Header.Set("X-Panel-User", url.QueryEscape(userName))
 		}
+		if identity, ok := terminalsession.FromContext(c); ok {
+			terminalsession.SetForwardedHeaders(c, identity)
+		}
 
-		if reqPath == "/api/v2/hosts/terminal/local" && (currentNode == "local" || len(currentNode) == 0) {
+		if isInternalOnlyAgentEndpoint(reqPath) {
+			helper.ErrorWithDetail(c, http.StatusForbidden, "ErrProxy", errInternalOnlyAgentEndpoint)
+			return
+		}
+		for _, policy := range policies {
+			if policy.grant != nil {
+				policy.grant(c, useLocalAgent)
+			}
+		}
+
+		if reqPath == "/api/v2/hosts/terminal/local" && useLocalAgent {
 			proxyLocalAgent(c)
 			return
 		}
 
-		if !strings.HasPrefix(reqPath, "/api/v2/core") && (currentNode == "local" || len(currentNode) == 0) {
+		if !strings.HasPrefix(reqPath, "/api/v2/core") && useLocalAgent {
 			proxyLocalAgent(c)
 			return
 		}
@@ -65,7 +136,32 @@ func Proxy() gin.HandlerFunc {
 	}
 }
 
+func isTerminalRevalidationEndpoint(reqPath string) bool {
+	switch reqPath {
+	case "/api/v2/hosts/terminal/local", "/api/v2/hosts/terminal/ssh", "/api/v2/hosts/terminal/container":
+		return true
+	default:
+		return false
+	}
+}
+
+func isInternalOnlyAgentEndpoint(reqPath string) bool {
+	normalizedPath := path.Clean(reqPath)
+	return normalizedPath == "/api/v2/xpack/alert/offline/email" ||
+		strings.HasPrefix(normalizedPath, "/api/v2/internal/mcp/") ||
+		normalizedPath == "/api/v2/xpack/alert/offline/webhook" ||
+		normalizedPath == "/api/v2/hosts/firewall/port" ||
+		normalizedPath == "/api/v2/internal/terminal/sessions/revoke" ||
+		normalizedPath == terminalsession.CapabilityPath
+}
+
 func proxyLocalAgent(c *gin.Context) {
+	if terminalsession.RequiresLeaseCapability(c) {
+		if err := terminalsession.CheckLeaseCapability(func() (interface{}, error) { return loadLocalTerminalCapabilities(c.Request.Context()) }); err != nil {
+			helper.ErrorWithDetail(c, http.StatusBadRequest, "ErrAPIKeyTerminalUpgradeRequired", nil)
+			return
+		}
+	}
 	defer func() {
 		if err := recover(); err != nil && err != http.ErrAbortHandler {
 			global.LOG.Debug(err)
@@ -75,7 +171,7 @@ func proxyLocalAgent(c *gin.Context) {
 	c.Abort()
 }
 
-func checkSession(c *gin.Context) bool {
+func checkSession(c *gin.Context, refresh bool) bool {
 	psession, err := global.SESSION.Get(c)
 	if err != nil {
 		return false
@@ -87,6 +183,9 @@ func checkSession(c *gin.Context) bool {
 		return false
 	}
 	lifeTime, _ := strconv.Atoi(sessionTimeout)
+	if !refresh {
+		return true
+	}
 	if _, err := global.SESSION.RefreshIfNeeded(c, psession, global.CONF.Conn.SSL == constant.StatusEnable, lifeTime); err != nil {
 		global.LOG.Warnf("proxy refresh session failed, path=%s, err=%v", c.Request.URL.Path, err)
 		return false
@@ -96,8 +195,4 @@ func checkSession(c *gin.Context) bool {
 
 func isLocalAPI(urlPath string) bool {
 	return urlPath == "/api/v2/core/xpack/sync/ssl" || urlPath == "/api/v2/core/xpack/settings/search"
-}
-
-func isPublicFileShareAPI(urlPath string) bool {
-	return urlPath == "/api/v2/files/share/download" || urlPath == "/api/v2/files/share/check" || urlPath == "/api/v2/files/share/info"
 }

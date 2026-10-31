@@ -16,6 +16,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"github.com/1Panel-dev/1Panel/agent/app/dto"
+	"github.com/1Panel-dev/1Panel/agent/app/model"
 	"github.com/1Panel-dev/1Panel/agent/app/repo"
 	"github.com/1Panel-dev/1Panel/agent/app/task"
 	"github.com/1Panel-dev/1Panel/agent/buserr"
@@ -56,10 +58,10 @@ type ContainerService struct{}
 var containerLogAnsiRegex = regexp.MustCompile("\x1b\\[[0-9;?]*[A-Za-z]|\x1b=|\x1b>")
 
 type IContainerService interface {
-	Page(req dto.PageContainer) (int64, interface{}, error)
+	Page(ctx context.Context, req dto.PageContainer) (int64, interface{}, error)
 	List() []dto.ContainerOptions
 	ListByImage(imageName string) []dto.ContainerOptions
-	LoadStatus() (dto.ContainerStatus, error)
+	LoadStatus(ctx context.Context, containersOnly bool) (dto.ContainerStatus, error)
 	PageNetwork(req dto.SearchWithPage) (int64, interface{}, error)
 	ListNetwork() ([]dto.Options, error)
 	PageVolume(req dto.SearchWithPage) (int64, interface{}, error)
@@ -71,14 +73,15 @@ type IContainerService interface {
 	ComposeOperation(req dto.ComposeOperation) error
 	TestCompose(req dto.ComposeCreate) (bool, error)
 	ComposeUpdate(req dto.ComposeUpdate) error
+	ComposePin(req dto.ComposePin) error
 	ComposeLogClean(req dto.ComposeLogClean) error
 
 	ContainerCreate(req dto.ContainerOperate, inThread bool) error
 	ContainerUpdate(req dto.ContainerOperate) error
 	ContainerUpgrade(req dto.ContainerUpgrade) error
 	ContainerInfo(req dto.OperationWithName) (*dto.ContainerOperate, error)
-	ContainerListStats() ([]dto.ContainerListStats, error)
-	ContainerItemStats(req dto.OperationWithName) (dto.ContainerItemStats, error)
+	ContainerListStats(ctx context.Context, ids []string) ([]dto.ContainerListStats, error)
+	ContainerItemStats(ctx context.Context, req dto.OperationWithName) (dto.ContainerItemStats, error)
 	LoadResourceLimit() (*dto.ResourceLimit, error)
 	ContainerRename(req dto.ContainerRename) error
 	ContainerCommit(req dto.ContainerCommit) error
@@ -109,7 +112,7 @@ func NewIContainerService() IContainerService {
 	return &ContainerService{}
 }
 
-func (u *ContainerService) Page(req dto.PageContainer) (int64, interface{}, error) {
+func (u *ContainerService) Page(ctx context.Context, req dto.PageContainer) (int64, interface{}, error) {
 	client, err := docker.NewDockerClient()
 	if err != nil {
 		return 0, nil, err
@@ -120,7 +123,7 @@ func (u *ContainerService) Page(req dto.PageContainer) (int64, interface{}, erro
 		options.Filters = filters.NewArgs()
 		options.Filters.Add("label", req.Filters)
 	}
-	containers, err := client.ContainerList(context.Background(), options)
+	containers, err := client.ContainerList(ctx, options)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -203,27 +206,30 @@ func (u *ContainerService) ListByImage(imageName string) []dto.ContainerOptions 
 	return options
 }
 
-func (u *ContainerService) LoadStatus() (dto.ContainerStatus, error) {
+func (u *ContainerService) LoadStatus(ctx context.Context, containersOnly bool) (dto.ContainerStatus, error) {
 	var data dto.ContainerStatus
 	client, err := docker.NewDockerClient()
 	if err != nil {
 		return data, err
 	}
 	defer client.Close()
-	c := context.Background()
-
-	images, _ := client.ImageList(c, image.ListOptions{All: true})
-	data.ImageCount = len(images)
-	repo, _ := imageRepoRepo.List()
-	data.RepoCount = len(repo)
-	templates, _ := composeRepo.List()
-	data.ComposeTemplateCount = len(templates)
-	networks, _ := client.NetworkList(c, network.ListOptions{})
-	data.NetworkCount = len(networks)
-	volumes, _ := client.VolumeList(c, volume.ListOptions{})
-	data.VolumeCount = len(volumes.Volumes)
-	data.ComposeCount = loadComposeCount(client)
-	containers, _ := client.ContainerList(c, container.ListOptions{All: true})
+	if !containersOnly {
+		images, _ := client.ImageList(ctx, image.ListOptions{All: true})
+		data.ImageCount = len(images)
+		repo, _ := imageRepoRepo.List()
+		data.RepoCount = len(repo)
+		templates, _ := composeRepo.List()
+		data.ComposeTemplateCount = len(templates)
+		networks, _ := client.NetworkList(ctx, network.ListOptions{})
+		data.NetworkCount = len(networks)
+		volumes, _ := client.VolumeList(ctx, volume.ListOptions{})
+		data.VolumeCount = len(volumes.Volumes)
+		data.ComposeCount = loadComposeCount(client)
+	}
+	containers, err := client.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return data, err
+	}
 	data.ContainerCount = len(containers)
 	for _, item := range containers {
 		switch item.State {
@@ -245,15 +251,15 @@ func (u *ContainerService) LoadStatus() (dto.ContainerStatus, error) {
 	}
 	return data, nil
 }
-func (u *ContainerService) ContainerItemStats(req dto.OperationWithName) (dto.ContainerItemStats, error) {
+func (u *ContainerService) ContainerItemStats(ctx context.Context, req dto.OperationWithName) (dto.ContainerItemStats, error) {
 	var data dto.ContainerItemStats
 	client, err := docker.NewDockerClient()
 	if err != nil {
 		return data, err
 	}
+	defer client.Close()
 	if req.Name != "system" {
-		defer client.Close()
-		containerInfo, _, err := client.ContainerInspectWithRaw(context.Background(), req.Name, true)
+		containerInfo, _, err := client.ContainerInspectWithRaw(ctx, req.Name, true)
 		if err != nil {
 			return data, err
 		}
@@ -262,7 +268,7 @@ func (u *ContainerService) ContainerItemStats(req dto.OperationWithName) (dto.Co
 		return data, nil
 	}
 
-	usage, err := client.DiskUsage(context.Background(), types.DiskUsageOptions{})
+	usage, err := client.DiskUsage(ctx, types.DiskUsageOptions{})
 	if err != nil {
 		return data, err
 	}
@@ -289,25 +295,48 @@ func (u *ContainerService) ContainerItemStats(req dto.OperationWithName) (dto.Co
 	}
 	return data, nil
 }
-func (u *ContainerService) ContainerListStats() ([]dto.ContainerListStats, error) {
+func (u *ContainerService) ContainerListStats(ctx context.Context, ids []string) ([]dto.ContainerListStats, error) {
 	client, err := docker.NewDockerClient()
 	if err != nil {
 		return nil, err
 	}
 	defer client.Close()
-	list, err := client.ContainerList(context.Background(), container.ListOptions{All: true})
+	options := container.ListOptions{All: true}
+	if ids != nil {
+		if len(ids) == 0 {
+			return []dto.ContainerListStats{}, nil
+		}
+		options.Filters = filters.NewArgs()
+		for _, id := range ids {
+			options.Filters.Add("id", id)
+		}
+	}
+	list, err := client.ContainerList(ctx, options)
 	if err != nil {
 		return nil, err
 	}
 	datas := make([]dto.ContainerListStats, len(list))
+	jobs := make(chan int)
 	var wg sync.WaitGroup
-	wg.Add(len(list))
-	for i := 0; i < len(list); i++ {
-		go func(index int, item container.Summary) {
-			datas[index] = loadCpuAndMem(client, item.ID)
-			wg.Done()
-		}(i, list[i])
+	for worker := 0; worker < min(8, len(list)); worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for index := range jobs {
+				datas[index].ContainerID = list[index].ID
+				if ctx.Err() == nil && list[index].State == "running" {
+					datas[index] = loadCpuAndMem(ctx, client, list[index].ID)
+				}
+				if len(list[index].Names) > 0 {
+					datas[index].ContainerName = strings.TrimPrefix(list[index].Names[0], "/")
+				}
+			}
+		}()
 	}
+	for index := range list {
+		jobs <- index
+	}
+	close(jobs)
 	wg.Wait()
 	return datas, nil
 }
@@ -323,39 +352,46 @@ func (u *ContainerService) Inspect(req dto.InspectReq) (string, error) {
 	case "container":
 		inspectInfo, err = client.ContainerInspect(context.Background(), req.ID)
 	case "compose":
-		filePath := ""
-		cli, err := docker.NewDockerClient()
-		if err != nil {
-			return "", err
-		}
-		defer cli.Close()
+		config, workdir := "", ""
 		options := container.ListOptions{All: true}
 		options.Filters = filters.NewArgs()
 		options.Filters.Add("label", fmt.Sprintf("%s=%s", composeProjectLabel, req.ID))
-		containers, err := cli.ContainerList(context.Background(), options)
+		containers, err := client.ContainerList(context.Background(), options)
 		if err != nil {
 			return "", err
 		}
-		for _, container := range containers {
-			config := container.Labels[composeConfigLabel]
-			if len(req.Detail) != 0 && strings.Contains(config, req.Detail) {
-				config = req.Detail
-			}
-			workdir := container.Labels[composeWorkdirLabel]
-			if len(config) != 0 && len(workdir) != 0 && strings.Contains(config, workdir) {
-				filePath = config
-				break
-			} else {
-				filePath = workdir
-				break
-			}
-		}
 		if len(containers) == 0 {
-			composeItem, _ := composeRepo.GetRecord(repo.WithByName(req.ID))
-			filePath = composeItem.Path
+			composeItem, err := composeRepo.GetRecord(repo.WithByName(req.ID))
+			if err != nil {
+				return "", err
+			}
+			config = composeItem.Path
+			workdir = filepath.Dir(primaryComposePath(config))
+		} else {
+			config = containers[0].Labels[composeConfigLabel]
+			workdir = containers[0].Labels[composeWorkdirLabel]
 		}
-		if _, err := os.Stat(filePath); err != nil {
+		composeFiles, err := resolveComposeFiles(workdir, config)
+		if err != nil {
 			return "", err
+		}
+		filePath := composeFiles[0]
+		if strings.TrimSpace(req.Detail) != "" {
+			selectedFiles, err := resolveComposeFiles(workdir, req.Detail)
+			if err != nil {
+				return "", err
+			}
+			if len(selectedFiles) != 1 || !slices.Contains(composeFiles, selectedFiles[0]) {
+				return "", fmt.Errorf("compose file %s does not belong to project %s", req.Detail, req.ID)
+			}
+			filePath = selectedFiles[0]
+		}
+		info, err := os.Stat(filePath)
+		if err != nil {
+			return "", err
+		}
+		if !info.Mode().IsRegular() {
+			return "", fmt.Errorf("compose path %s is not a regular file", filePath)
 		}
 		content, err := os.ReadFile(filePath)
 		if err != nil {
@@ -380,11 +416,6 @@ func (u *ContainerService) Inspect(req dto.InspectReq) (string, error) {
 }
 
 func (u *ContainerService) Prune(req dto.ContainerPrune) error {
-	client, err := docker.NewDockerClient()
-	if err != nil {
-		return err
-	}
-	defer client.Close()
 	name := ""
 	switch req.PruneType {
 	case "container":
@@ -405,6 +436,14 @@ func (u *ContainerService) Prune(req dto.ContainerPrune) error {
 	}
 
 	taskItem.AddSubTask(i18n.GetMsgByKey("TaskClean"), func(t *task.Task) error {
+		if err := t.TaskCtx.Err(); err != nil {
+			return err
+		}
+		client, err := docker.NewDockerClient()
+		if err != nil {
+			return err
+		}
+		defer client.Close()
 		pruneFilters := filters.NewArgs()
 		if req.WithTagAll {
 			pruneFilters.Add("dangling", "false")
@@ -428,10 +467,7 @@ func (u *ContainerService) Prune(req dto.ContainerPrune) error {
 			}
 			SpaceReclaimed = int(rep.SpaceReclaimed)
 		case "network":
-			_, err := client.NetworksPrune(context.Background(), pruneFilters)
-			if err != nil {
-				return err
-			}
+			return cleanUnusedNetworks(t, client)
 		case "volume":
 			versions, err := client.ServerVersion(context.Background())
 			if err != nil {
@@ -533,7 +569,9 @@ func (u *ContainerService) ContainerCreate(req dto.ContainerOperate, inThread bo
 		if err != nil {
 			return err
 		}
-		normalizeContainerEndpointSettings(ctx, client, networkConf, nil)
+		if err := normalizeContainerEndpointSettings(ctx, client, networkConf, nil); err != nil {
+			return err
+		}
 		con, err := client.ContainerCreate(ctx, config, hostConf, networkConf, &v1.Platform{}, req.Name)
 		if err != nil {
 			taskItem.Log(i18n.GetMsgByKey("ContainerCreateFailed"))
@@ -643,14 +681,9 @@ func loadContainerNetworkInfo(name string, endpoint *network.EndpointSettings) d
 	if endpoint.IPAMConfig != nil {
 		item.LinkLocalIPs = append([]string(nil), endpoint.IPAMConfig.LinkLocalIPs...)
 	}
-	if name != "bridge" {
-		if endpoint.IPAMConfig != nil {
-			item.Ipv4 = endpoint.IPAMConfig.IPv4Address
-			item.Ipv6 = endpoint.IPAMConfig.IPv6Address
-		} else {
-			item.Ipv4 = endpoint.IPAddress
-			item.Ipv6 = endpoint.GlobalIPv6Address
-		}
+	if name != "bridge" && endpoint.IPAMConfig != nil {
+		item.Ipv4 = endpoint.IPAMConfig.IPv4Address
+		item.Ipv6 = endpoint.IPAMConfig.IPv6Address
 	}
 	return item
 }
@@ -803,31 +836,31 @@ func (u *ContainerService) ContainerLogClean(req dto.OperationWithName) error {
 func (u *ContainerService) StreamLogs(ctx *gin.Context, params dto.StreamLog) {
 	messageChan := make(chan string, 1024)
 	errorChan := make(chan error, 1)
-	doneChan := make(chan struct{})
-
-	go func() {
-		<-ctx.Request.Context().Done()
-		close(doneChan)
-	}()
+	logCtx, cancel := context.WithCancel(ctx.Request.Context())
+	defer cancel()
+	doneChan := logCtx.Done()
 	go collectLogs(doneChan, params, messageChan, errorChan)
 	ctx.Stream(func(w io.Writer) bool {
-		select {
-		case msg, ok := <-messageChan:
-			if !ok {
-				return false
-			}
-			_, err := fmt.Fprintf(w, "data: %s\n\n", msg)
-			if err != nil {
-				return false
-			}
-			return true
-		case err := <-errorChan:
-			if err != nil {
-				_, _ = fmt.Fprintf(w, "event: error\ndata: %v\n\n", err.Error())
-			}
-			return false
-		}
+		return writeContainerLogMessage(w, doneChan, messageChan, errorChan)
 	})
+}
+
+func writeContainerLogMessage(w io.Writer, done <-chan struct{}, messages <-chan string, errors <-chan error) bool {
+	select {
+	case <-done:
+		return false
+	case message, ok := <-messages:
+		if ok {
+			_, err := fmt.Fprintf(w, "data: %s\n\n", message)
+			return err == nil
+		}
+		// The collector closes both channels when it finishes. Drain all buffered
+		// logs before handling its result, or a ready error channel can drop the tail.
+		if err := <-errors; err != nil {
+			_, _ = fmt.Fprintf(w, "event: error\ndata: %v\n\n", err)
+		}
+		return false
+	}
 }
 
 func collectLogs(done <-chan struct{}, params dto.StreamLog, messageChan chan<- string, errorChan chan<- error) {
@@ -1627,6 +1660,10 @@ func calculateNetwork(network map[string]container.NetworkStats) (float64, float
 }
 
 func checkImageExist(client *client.Client, imageItem string) bool {
+	return checkImageExistContext(context.Background(), client, imageItem)
+}
+
+func checkImageExistContext(ctx context.Context, client *client.Client, imageItem string) bool {
 	if client == nil {
 		var err error
 		client, err = docker.NewDockerClient()
@@ -1634,7 +1671,7 @@ func checkImageExist(client *client.Client, imageItem string) bool {
 			return false
 		}
 	}
-	images, err := client.ImageList(context.Background(), image.ListOptions{})
+	images, err := client.ImageList(ctx, image.ListOptions{})
 	if err != nil {
 		return false
 	}
@@ -1676,38 +1713,56 @@ func checkImageLike(client *client.Client, imageName string) bool {
 }
 
 func pullImages(task *task.Task, client *client.Client, imageName string) error {
-	dockerCli := docker.NewClientWithExist(client)
-	options := image.PullOptions{}
-	repos, _ := imageRepoRepo.List()
-	if len(repos) != 0 {
-		for _, repo := range repos {
-			if strings.HasPrefix(imageName, repo.DownloadUrl) && repo.Auth {
-				authConfig := registry.AuthConfig{
-					Username: repo.Username,
-					Password: repo.Password,
-				}
-				encodedJSON, err := json.Marshal(authConfig)
-				if err != nil {
-					return err
-				}
-				authStr := base64.URLEncoding.EncodeToString(encodedJSON)
-				options.RegistryAuth = authStr
-			}
-		}
-	} else {
-		hasAuth, authStr := loadAuthInfo(imageName)
-		if hasAuth {
-			options.RegistryAuth = authStr
-		}
-	}
-	return dockerCli.PullImageWithProcessAndOptions(task, imageName, options)
+	return pullImagesContext(context.Background(), task, client, imageName)
 }
 
-func loadCpuAndMem(client *client.Client, containerItem string) dto.ContainerListStats {
+func pullImagesContext(ctx context.Context, task *task.Task, client *client.Client, imageName string) error {
+	dockerCli := docker.NewClientWithExist(client)
+	repos, err := imageRepoRepo.List()
+	if err != nil {
+		return err
+	}
+	imageRepo := selectImageRepo(imageName, repos)
+	if imageRepo == nil || !imageRepo.Auth {
+		return dockerCli.PullImageWithProcessContext(ctx, task, imageName)
+	}
+
+	options := image.PullOptions{}
+	authConfig := registry.AuthConfig{
+		Username: imageRepo.Username,
+		Password: imageRepo.Password,
+	}
+	encodedJSON, err := json.Marshal(authConfig)
+	if err != nil {
+		return err
+	}
+	options.RegistryAuth = base64.URLEncoding.EncodeToString(encodedJSON)
+	return dockerCli.PullImageWithProcessAndOptionsContext(ctx, task, imageName, options)
+}
+
+func selectImageRepo(imageName string, repos []model.ImageRepo) *model.ImageRepo {
+	var selected *model.ImageRepo
+	selectedURLLength := 0
+	for i := range repos {
+		downloadURL := strings.TrimRight(strings.TrimSpace(repos[i].DownloadUrl), "/")
+		if downloadURL == "" || !strings.HasPrefix(imageName, downloadURL+"/") {
+			continue
+		}
+		if len(downloadURL) > selectedURLLength {
+			selected = &repos[i]
+			selectedURLLength = len(downloadURL)
+		}
+	}
+	return selected
+}
+
+func loadCpuAndMem(ctx context.Context, client *client.Client, containerItem string) dto.ContainerListStats {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
 	data := dto.ContainerListStats{
 		ContainerID: containerItem,
 	}
-	res, err := client.ContainerStats(context.Background(), containerItem, false)
+	res, err := client.ContainerStats(ctx, containerItem, false)
 	if err != nil {
 		return data
 	}
@@ -1757,7 +1812,10 @@ func checkPortStats(ports []dto.PortHelper, checkInUse bool) (nat.PortMap, error
 			}
 			for i := 0; i <= hostEnd-hostStart; i++ {
 				bindItem := nat.PortBinding{HostPort: strconv.Itoa(hostStart + i), HostIP: port.HostIP}
-				portMap[nat.Port(fmt.Sprintf("%d/%s", containerStart+i, port.Protocol))] = []nat.PortBinding{bindItem}
+				portKey := nat.Port(fmt.Sprintf("%d/%s", containerStart+i, port.Protocol))
+				if !slices.Contains(portMap[portKey], bindItem) {
+					portMap[portKey] = append(portMap[portKey], bindItem)
+				}
 			}
 			for i := hostStart; i <= hostEnd; i++ {
 				if checkInUse && common.ScanPortWithIP(port.HostIP, i) {
@@ -1775,7 +1833,10 @@ func checkPortStats(ports []dto.PortHelper, checkInUse bool) (nat.PortMap, error
 				return portMap, buserr.WithDetail("ErrPortInUsed", portItem, nil)
 			}
 			bindItem := nat.PortBinding{HostPort: strconv.Itoa(portItem), HostIP: port.HostIP}
-			portMap[nat.Port(fmt.Sprintf("%s/%s", port.ContainerPort, port.Protocol))] = []nat.PortBinding{bindItem}
+			portKey := nat.Port(fmt.Sprintf("%s/%s", port.ContainerPort, port.Protocol))
+			if !slices.Contains(portMap[portKey], bindItem) {
+				portMap[portKey] = append(portMap[portKey], bindItem)
+			}
 		}
 	}
 	return portMap, nil
@@ -1921,90 +1982,7 @@ func loadPortByInspect(id string, client *client.Client) ([]container.Port, erro
 	return itemPorts, nil
 }
 func transPortToStr(ports []container.Port) []string {
-	var (
-		ipv4Ports []container.Port
-		ipv6Ports []container.Port
-	)
-	for _, port := range ports {
-		if strings.Contains(port.IP, ":") {
-			ipv6Ports = append(ipv6Ports, port)
-		} else {
-			ipv4Ports = append(ipv4Ports, port)
-		}
-	}
-	list1 := simplifyPort(ipv4Ports)
-	list2 := simplifyPort(ipv6Ports)
-	return append(list1, list2...)
-}
-func simplifyPort(ports []container.Port) []string {
-	var datas []string
-	if len(ports) == 0 {
-		return datas
-	}
-	if len(ports) == 1 {
-		ip := ""
-		if len(ports[0].IP) != 0 {
-			ip = ports[0].IP + ":"
-		}
-		itemPortStr := fmt.Sprintf("%s%v/%s", ip, ports[0].PrivatePort, ports[0].Type)
-		if ports[0].PublicPort != 0 {
-			itemPortStr = fmt.Sprintf("%s%v->%v/%s", ip, ports[0].PublicPort, ports[0].PrivatePort, ports[0].Type)
-		}
-		datas = append(datas, itemPortStr)
-		return datas
-	}
-
-	sort.Slice(ports, func(i, j int) bool {
-		return ports[i].PrivatePort < ports[j].PrivatePort
-	})
-	start := ports[0]
-
-	for i := 1; i < len(ports); i++ {
-		if ports[i].PrivatePort != ports[i-1].PrivatePort+1 || ports[i].IP != ports[i-1].IP || ports[i].PublicPort != ports[i-1].PublicPort+1 || ports[i].Type != ports[i-1].Type {
-			if ports[i-1].PrivatePort == start.PrivatePort {
-				itemPortStr := fmt.Sprintf("%s:%v/%s", start.IP, start.PrivatePort, start.Type)
-				if start.PublicPort != 0 {
-					itemPortStr = fmt.Sprintf("%s:%v->%v/%s", start.IP, start.PublicPort, start.PrivatePort, start.Type)
-				}
-				if len(start.IP) == 0 {
-					itemPortStr = strings.TrimPrefix(itemPortStr, ":")
-				}
-				datas = append(datas, itemPortStr)
-			} else {
-				itemPortStr := fmt.Sprintf("%s:%v-%v/%s", start.IP, start.PrivatePort, ports[i-1].PrivatePort, start.Type)
-				if start.PublicPort != 0 {
-					itemPortStr = fmt.Sprintf("%s:%v-%v->%v-%v/%s", start.IP, start.PublicPort, ports[i-1].PublicPort, start.PrivatePort, ports[i-1].PrivatePort, start.Type)
-				}
-				if len(start.IP) == 0 {
-					itemPortStr = strings.TrimPrefix(itemPortStr, ":")
-				}
-				datas = append(datas, itemPortStr)
-			}
-			start = ports[i]
-		}
-		if i == len(ports)-1 {
-			if ports[i].PrivatePort == start.PrivatePort {
-				itemPortStr := fmt.Sprintf("%s:%v/%s", start.IP, start.PrivatePort, start.Type)
-				if start.PublicPort != 0 {
-					itemPortStr = fmt.Sprintf("%s:%v->%v/%s", start.IP, start.PublicPort, start.PrivatePort, start.Type)
-				}
-				if len(start.IP) == 0 {
-					itemPortStr = strings.TrimPrefix(itemPortStr, ":")
-				}
-				datas = append(datas, itemPortStr)
-			} else {
-				itemPortStr := fmt.Sprintf("%s:%v-%v/%s", start.IP, start.PrivatePort, ports[i].PrivatePort, start.Type)
-				if start.PublicPort != 0 {
-					itemPortStr = fmt.Sprintf("%s:%v-%v->%v-%v/%s", start.IP, start.PublicPort, ports[i].PublicPort, start.PrivatePort, ports[i].PrivatePort, start.Type)
-				}
-				if len(start.IP) == 0 {
-					itemPortStr = strings.TrimPrefix(itemPortStr, ":")
-				}
-				datas = append(datas, itemPortStr)
-			}
-		}
-	}
-	return datas
+	return docker.SimplifyPorts(ports)
 }
 
 func loadComposeCount(client *client.Client) int {
@@ -2025,6 +2003,9 @@ func loadComposeCount(client *client.Client) int {
 		}
 	}
 	for _, compose := range composeCreatedByLocal {
+		if len(compose.Path) == 0 {
+			continue
+		}
 		if _, has := composeMap[compose.Name]; !has {
 			composeMap[compose.Name] = struct{}{}
 		}
@@ -2034,7 +2015,7 @@ func loadComposeCount(client *client.Client) int {
 }
 func loadContainerPortForInfo(itemPorts []container.Port) []dto.PortHelper {
 	var exposedPorts []dto.PortHelper
-	samePortMap := make(map[string]dto.PortHelper)
+	seenPorts := make(map[dto.PortHelper]struct{})
 	ports := transPortToStr(itemPorts)
 	for _, item := range ports {
 		itemStr := strings.Split(item, "->")
@@ -2055,16 +2036,11 @@ func loadContainerPortForInfo(itemPorts []container.Port) []dto.PortHelper {
 		}
 		itemPort.ContainerPort = itemContainer[0]
 		itemPort.Protocol = itemContainer[1]
-		keyItem := fmt.Sprintf("%s->%s/%s", itemPort.HostPort, itemPort.ContainerPort, itemPort.Protocol)
-		if val, ok := samePortMap[keyItem]; ok {
-			val.HostIP = ""
-			samePortMap[keyItem] = val
-		} else {
-			samePortMap[keyItem] = itemPort
+		if _, exists := seenPorts[itemPort]; exists {
+			continue
 		}
-	}
-	for _, val := range samePortMap {
-		exposedPorts = append(exposedPorts, val)
+		seenPorts[itemPort] = struct{}{}
+		exposedPorts = append(exposedPorts, itemPort)
 	}
 	return exposedPorts
 }

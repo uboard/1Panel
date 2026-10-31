@@ -90,6 +90,34 @@ func (u *BackupService) AppBackup(req dto.CommonBackup) (*model.BackupRecord, er
 	return record, nil
 }
 
+func backupAppWithParentTask(install *model.AppInstall, parentTask *task.Task, fileName string) (*model.BackupRecord, error) {
+	itemDir := fmt.Sprintf("app/%s/%s", install.App.Key, install.Name)
+	backupDir := path.Join(global.Dir.LocalBackupDir, itemDir)
+	record := &model.BackupRecord{
+		Type:              "app",
+		Name:              install.App.Key,
+		DetailName:        install.Name,
+		SourceAccountIDs:  "1",
+		DownloadAccountID: 1,
+		FileDir:           itemDir,
+		FileName:          fileName,
+		TaskID:            parentTask.TaskID,
+		Status:            constant.StatusWaiting,
+	}
+	if err := backupRepo.CreateRecord(record); err != nil {
+		return nil, err
+	}
+	if err := handleAppBackup(install, parentTask, record.ID, backupDir, fileName, "", "", parentTask.TaskID); err != nil {
+		markBackupFailed(record.ID, err)
+		record.Status = constant.StatusFailed
+		record.Message = err.Error()
+		return record, err
+	}
+	backupRepo.UpdateRecordByMap(record.ID, map[string]interface{}{"status": constant.StatusSuccess})
+	record.Status = constant.StatusSuccess
+	return record, nil
+}
+
 func (u *BackupService) AppRecover(req dto.CommonRecover) error {
 	app, err := appRepo.GetFirst(appRepo.WithKey(req.Name))
 	if err != nil {
@@ -104,11 +132,9 @@ func (u *BackupService) AppRecover(req dto.CommonRecover) error {
 	if !fileOp.Stat(req.File) {
 		return buserr.WithName("ErrFileNotFound", req.File)
 	}
-	if _, err := compose.Down(install.GetComposePath()); err != nil {
-		return err
-	}
 	if err := handleAppRecover(&install, nil, req.File, false, req.Secret, req.TaskID); err != nil {
 		global.LOG.Errorf("recover app %s failed, err: %v", req.DetailName, err)
+		return err
 	}
 	return nil
 }
@@ -171,9 +197,22 @@ func handleAppBackup(install *model.AppInstall, parentTask *task.Task, recordID 
 	return nil
 }
 
-func handleAppRecover(install *model.AppInstall, parentTask *task.Task, recoverFile string, isRollback bool, secret, taskID string) error {
+func handleAppRecover(install *model.AppInstall, parentTask *task.Task, recoverFile string, isRollback bool, secret, taskID string, startAfterRecover ...bool) error {
+	startAfter := len(startAfterRecover) == 0 || startAfterRecover[0]
+	// Validate AI Gateway backups before stopping the app, creating rollback
+	// backups, or touching its files/database. Keep the validated extraction for
+	// the restore so uploaded/encrypted archives are not unpacked twice.
+	preparedPath, cleanup, err := prepareAIGatewayAppRecover(install, recoverFile, secret)
+	if err != nil {
+		return err
+	}
+	if parentTask == nil && !isRollback {
+		if _, err := compose.Down(install.GetComposePath()); err != nil {
+			cleanup()
+			return err
+		}
+	}
 	var (
-		err          error
 		recoverTask  *task.Task
 		isOk         = false
 		rollbackFile string
@@ -182,11 +221,13 @@ func handleAppRecover(install *model.AppInstall, parentTask *task.Task, recoverF
 	if parentTask == nil {
 		recoverTask, err = task.NewTaskWithOps(install.Name, task.TaskRecover, task.TaskScopeBackup, taskID, install.ID)
 		if err != nil {
+			cleanup()
 			return err
 		}
 	}
 
 	recoverApp := func(t *task.Task) error {
+		defer cleanup()
 		fileOp := files.NewFileOp()
 		if !isRollback {
 			rollbackFile = path.Join(global.Dir.TmpDir, fmt.Sprintf("app/%s_%s.tar.gz", install.Name, time.Now().Format(constant.DateTimeSlimLayout)))
@@ -195,16 +236,26 @@ func handleAppRecover(install *model.AppInstall, parentTask *task.Task, recoverF
 			}
 		}
 
-		if err := fileOp.TarGzExtractPro(recoverFile, path.Dir(recoverFile), secret); err != nil {
-			return err
+		tmpPath := preparedPath
+		if tmpPath == "" {
+			if err := fileOp.TarGzExtractPro(recoverFile, path.Dir(recoverFile), secret); err != nil {
+				return err
+			}
+			tmpPath = strings.ReplaceAll(recoverFile, ".tar.gz", "")
 		}
-		tmpPath := strings.ReplaceAll(recoverFile, ".tar.gz", "")
 		if err := fileOp.TarGzExtractPro(tmpPath+"/app.tar.gz", tmpPath, ""); err != nil {
 			return err
 		}
 		defer func() {
-			_, _ = compose.Up(install.GetComposePath())
-			_ = os.RemoveAll(strings.ReplaceAll(recoverFile, ".tar.gz", ""))
+			defer os.RemoveAll(tmpPath)
+			if !startAfter {
+				return
+			}
+			if isRollback {
+				_, _ = compose.UpWithoutBuild(install.GetComposePath())
+			} else {
+				_, _ = compose.Up(install.GetComposePath())
+			}
 		}()
 
 		if !fileOp.Stat(tmpPath+"/app.json") || !fileOp.Stat(tmpPath+"/app.tar.gz") {
@@ -305,8 +356,12 @@ func handleAppRecover(install *model.AppInstall, parentTask *task.Task, recoverF
 
 		appDir := install.GetPath()
 		backPath := fmt.Sprintf("%s_bak", appDir)
-		_ = fileOp.Rename(appDir, backPath)
-		_ = fileOp.CreateDir(appDir, constant.DirPerm)
+		if err := fileOp.Rename(appDir, backPath); err != nil && !startAfter {
+			return err
+		}
+		if err := fileOp.CreateDir(appDir, constant.DirPerm); err != nil && !startAfter {
+			return err
+		}
 
 		deCompressName := i18n.GetWithName("DeCompressFile", "app.tar.gz")
 		t.LogStart(deCompressName)
@@ -329,6 +384,10 @@ func handleAppRecover(install *model.AppInstall, parentTask *task.Task, recoverF
 			_, _ = file.WriteString(mergedEnvContent)
 		}
 
+		// The upgrade transaction verifies readiness before saving its restored install.
+		if !startAfter {
+			return nil
+		}
 		backupInstall.ID = install.ID
 		backupInstall.Status = constant.StatusRunning
 		backupInstall.AppId = install.AppId
@@ -365,6 +424,7 @@ func handleAppRecover(install *model.AppInstall, parentTask *task.Task, recoverF
 	}
 	recoverTask.AddSubTask(task.GetTaskName(install.Name, task.TaskRecover, task.TaskScopeBackup), recoverApp, rollBackApp)
 	go func() {
+		defer cleanup()
 		_ = recoverTask.Execute()
 	}()
 	return nil

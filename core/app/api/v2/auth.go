@@ -7,8 +7,10 @@ import (
 	"path"
 
 	"github.com/1Panel-dev/1Panel/core/app/api/v2/helper"
+	appauth "github.com/1Panel-dev/1Panel/core/app/auth"
 	"github.com/1Panel-dev/1Panel/core/app/dto"
 	"github.com/1Panel-dev/1Panel/core/app/model"
+	"github.com/1Panel-dev/1Panel/core/app/service"
 	"github.com/1Panel-dev/1Panel/core/buserr"
 	"github.com/1Panel-dev/1Panel/core/constant"
 	"github.com/1Panel-dev/1Panel/core/global"
@@ -195,11 +197,19 @@ func (b *BaseApi) PasskeyFinishLogin(c *gin.Context) {
 // @Security Timestamp
 // @Router /core/auth/logout [post]
 func (b *BaseApi) LogOut(c *gin.Context) {
+	result, prepareErr := xpack.AuthProvider.PrepareLogout(c)
 	if err := authService.LogOut(c); err != nil {
 		helper.InternalServer(c, err)
 		return
 	}
-	helper.Success(c)
+	if prepareErr != nil {
+		global.LOG.Warnf("prepare external logout failed: %v", prepareErr)
+		result = &dto.LogoutResult{}
+	}
+	if result == nil {
+		result = &dto.LogoutResult{}
+	}
+	helper.SuccessWithData(c, result)
 }
 
 // @Tags Auth
@@ -256,6 +266,7 @@ func (b *BaseApi) GetLoginSetting(c *gin.Context) {
 		Language:      settingInfo.Language,
 		MenuTabs:      settingInfo.MenuTabs,
 		MenuAccordion: settingInfo.MenuAccordion,
+		PanelCache:    settingInfo.PanelCache,
 		PanelName:     settingInfo.PanelName,
 		Theme:         settingInfo.Theme,
 		NeedCaptcha:   needCaptcha,
@@ -406,16 +417,17 @@ func (b *BaseApi) MFAClose(c *gin.Context) {
 }
 
 // @Tags Auth
-// @Summary generate api key
+// @Summary Generate or reset the legacy API key
+// @Description Requires a panel login session and CSRF token. API Key authentication is not supported. This replaces the current account's legacy secret; existing clients using the previous secret must be updated. Independent API keys are unaffected.
 // @Accept json
-// @Success 200 {string} key
-// @Security ApiKeyAuth
-// @Security Timestamp
+// @Produce json
+// @Success 200 {object} dto.Response{data=string} "code=200 with the new secret; authentication and business errors use envelope code 400, 401 or 500"
+// @Header 200 {string} Cache-Control "no-store"
+// @Security PanelSession || CSRFToken
 // @Router /core/auth/api/generate [post]
 // @x-panel-log {"bodyKeys":[],"paramKeys":[],"BeforeFunctions":[],"formatZH":"生成 API 接口密钥","formatEN":"generate api key"}
 func (b *BaseApi) GenerateApiKey(c *gin.Context) {
-	panelToken := c.GetHeader("1Panel-Token")
-	if panelToken != "" {
+	if _, err := appauth.RequireAPIKeySession(c); err != nil {
 		helper.BadAuth(c, "ErrApiConfigDisable", nil)
 		return
 	}
@@ -424,21 +436,23 @@ func (b *BaseApi) GenerateApiKey(c *gin.Context) {
 		helper.InternalServer(c, err)
 		return
 	}
+	service.NewAPIKeyService().AuditLegacyChange(c)
+	c.Header("Cache-Control", "no-store")
 	helper.SuccessWithData(c, apiKey)
 }
 
 // @Tags Auth
-// @Summary Update api config
+// @Summary Update the legacy API key configuration
+// @Description Requires a panel login session and CSRF token. API Key authentication is not supported. This updates only the current account's legacy API configuration.
 // @Accept json
+// @Produce json
 // @Param request body dto.ApiInterfaceConfig true "request"
-// @Success 200
-// @Security ApiKeyAuth
-// @Security Timestamp
+// @Success 200 {object} dto.Response "code=200 on success; authentication and business errors use envelope code 400, 401 or 500"
+// @Security PanelSession || CSRFToken
 // @Router /core/auth/api/update [post]
-// @x-panel-log {"bodyKeys":["ipWhiteList"],"paramKeys":[],"BeforeFunctions":[],"formatZH":"更新 API 接口配置 => IP 白名单: [ipWhiteList]","formatEN":"update api config => IP White List: [ipWhiteList]"}
+// @x-panel-log {"bodyKeys":["ipWhiteList","apiTrustedProxies"],"paramKeys":[],"BeforeFunctions":[],"formatZH":"更新 API 接口配置 => IP 白名单: [ipWhiteList], API 可信代理: [apiTrustedProxies]","formatEN":"update api config => IP Allowlist: [ipWhiteList], API Trusted Proxies: [apiTrustedProxies]"}
 func (b *BaseApi) UpdateApiConfig(c *gin.Context) {
-	panelToken := c.GetHeader("1Panel-Token")
-	if panelToken != "" {
+	if _, err := appauth.RequireAPIKeySession(c); err != nil {
 		helper.BadAuth(c, "ErrApiConfigDisable", nil)
 		return
 	}
@@ -446,11 +460,18 @@ func (b *BaseApi) UpdateApiConfig(c *gin.Context) {
 	if err := helper.CheckBindAndValidate(&req, c); err != nil {
 		return
 	}
+	trustedProxies, err := appauth.NormalizeAPITrustedProxies(req.ApiTrustedProxies)
+	if err != nil {
+		helper.BadRequest(c, err)
+		return
+	}
+	req.ApiTrustedProxies = trustedProxies
 
 	if err := xpack.AuthProvider.UpdateApiConfig(c, req); err != nil {
 		helper.InternalServer(c, err)
 		return
 	}
+	service.NewAPIKeyService().AuditLegacyChange(c)
 	helper.Success(c)
 }
 
@@ -466,6 +487,10 @@ func (b *BaseApi) GetCurrentUser(c *gin.Context) {
 		helper.InternalServer(c, err)
 		return
 	}
+	if c.GetBool("API_AUTH") || appauth.HasAPICredentials(c) {
+		userInfo.ApiKey = ""
+	}
+	c.Header("Cache-Control", "no-store")
 	helper.SuccessWithData(c, userInfo)
 }
 

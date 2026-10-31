@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -44,9 +45,29 @@ func (a AgentService) GetFeishuConfig(req dto.AgentFeishuConfigReq) (*dto.AgentF
 	if err != nil {
 		return nil, err
 	}
+	if agent.AgentType != constant.AppOpenclaw || !isOpenclawBundledFeishuVersion(install.Version) {
+		result := extractFeishuConfig(conf)
+		result.Installed, _ = checkPluginInstalled(install.GetPath(), "feishu")
+		return &result, nil
+	}
+	legacy, configured, err := classifyLegacyFeishu(conf, install.GetPath())
+	if err != nil {
+		return nil, err
+	}
 	result := extractFeishuConfig(conf)
-	installed, _ := checkPluginInstalled(install.GetPath(), "feishu")
-	result.Installed = installed
+	if !legacy {
+		result = extractBundledFeishuConfig(conf)
+	}
+	result.BuiltinManaged = true
+	result.BuiltinAvailable = hasBundledFeishu(install.ContainerName)
+	result.Installed = result.BuiltinAvailable
+	result.Legacy, result.LegacyConfigured = legacy, configured
+	if legacy {
+		result.GroupSessionScope = "group"
+		if result.ThreadSession {
+			result.GroupSessionScope = "group_topic"
+		}
+	}
 	return &result, nil
 }
 
@@ -70,6 +91,9 @@ func (a AgentService) UpdateFeishuConfig(req dto.AgentFeishuConfigUpdateReq) err
 				Bots:           req.Bots,
 			})
 		})
+	}
+	if agent.AgentType == constant.AppOpenclaw && isOpenclawBundledFeishuVersion(install.Version) {
+		return saveBundledFeishuConfig(agent, install, req)
 	}
 	return a.mutateAgentConfig(req.AgentID, func(_ *model.Agent, _ *model.AppInstall, conf map[string]interface{}) error {
 		config := dto.AgentFeishuConfig{
@@ -357,6 +381,9 @@ func (a AgentService) InstallPlugin(req dto.AgentPluginInstallReq) error {
 	if err != nil {
 		return err
 	}
+	if req.Type == "feishu" && agent.AgentType == constant.AppOpenclaw && isOpenclawBundledFeishuVersion(install.Version) {
+		return buserr.New("ErrFeishuManaged")
+	}
 	if err := task.CheckScopeTaskIsExecuting(task.TaskScopeAI, req.AgentID); err != nil {
 		return err
 	}
@@ -402,6 +429,9 @@ func (a AgentService) UpgradePlugin(req dto.AgentPluginUpgradeReq) error {
 	if err != nil {
 		return err
 	}
+	if req.Type == "feishu" && agent.AgentType == constant.AppOpenclaw && isOpenclawBundledFeishuVersion(install.Version) {
+		return buserr.New("ErrFeishuManaged")
+	}
 	if err := task.CheckScopeTaskIsExecuting(task.TaskScopeAI, req.AgentID); err != nil {
 		return err
 	}
@@ -441,6 +471,9 @@ func (a AgentService) UninstallPlugin(req dto.AgentPluginUninstallReq) error {
 	agent, install, err := a.loadAgentAndInstall(req.AgentID)
 	if err != nil {
 		return err
+	}
+	if req.Type == "feishu" && agent.AgentType == constant.AppOpenclaw && isOpenclawBundledFeishuVersion(install.Version) {
+		return buserr.New("ErrFeishuManaged")
 	}
 	if err := task.CheckScopeTaskIsExecuting(task.TaskScopeAI, req.AgentID); err != nil {
 		return err
@@ -537,9 +570,12 @@ func (a AgentService) DeleteChannelConfig(req dto.AgentChannelDeleteReq) error {
 }
 
 func (a AgentService) CheckPlugin(req dto.AgentPluginCheckReq) (*dto.AgentPluginStatus, error) {
-	_, install, err := a.loadAgentAndInstall(req.AgentID)
+	agent, install, err := a.loadAgentAndInstall(req.AgentID)
 	if err != nil {
 		return nil, err
+	}
+	if req.Type == "feishu" && agent.AgentType == constant.AppOpenclaw && isOpenclawBundledFeishuVersion(install.Version) {
+		return &dto.AgentPluginStatus{Installed: hasBundledFeishu(install.ContainerName)}, nil
 	}
 	installed, err := checkPluginInstalled(install.GetPath(), req.Type)
 	if err != nil {
@@ -1320,6 +1356,10 @@ func appendPluginAllow(conf map[string]interface{}, pluginID string) {
 }
 
 func installOpenclawPlugin(mgr *cmd.CommandHelper, containerName, spec, pluginID string) error {
+	help, err := cmd.RunDockerExecWithStdout(time.Minute, containerName, "openclaw", "plugins", "install", "--help")
+	if err != nil {
+		return err
+	}
 	workdir := path.Join(openclawPluginPackageTmpDir, pluginID)
 	defer func() {
 		_ = mgr.Run("docker", "exec", containerName, "rm", "-rf", workdir)
@@ -1341,7 +1381,19 @@ func installOpenclawPlugin(mgr *cmd.CommandHelper, containerName, spec, pluginID
 	if pkgPath == "" {
 		return fmt.Errorf("openclaw plugin package not found")
 	}
-	return mgr.Run("docker", "exec", containerName, "openclaw", "plugins", "install", pkgPath, "--dangerously-force-unsafe-install")
+	args := []string{"exec", containerName, "openclaw", "plugins", "install", pkgPath}
+	// Newer CLIs require source confirmation; older releases do not support --force.
+	options := strings.Fields(help)
+	if slices.Contains(options, "--force") {
+		args = append(args, "--force")
+	} else if slices.Contains(options, "--dangerously-force-unsafe-install") {
+		args = append(args, "--dangerously-force-unsafe-install")
+	}
+	// Source confirmation does not grant the selected channel plugin's capabilities.
+	if slices.Contains(options, "--accept-capabilities") {
+		args = append(args, "--accept-capabilities")
+	}
+	return mgr.Run("docker", args...)
 }
 
 func uninstallOpenclawPlugin(mgr *cmd.CommandHelper, containerName, pluginID string) error {

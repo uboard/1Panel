@@ -65,6 +65,12 @@ export const getEnterpriseLicense = () => {
 export const getEnterpriseLicenseStatus = () => {
     return http.get<Setting.LicenseStatus>(`/core/enterprise/licenses/status`);
 };
+export const getCommunityRestoreStatus = () => {
+    return http.get<Setting.CommunityRestoreStatus>(`/core/enterprise/licenses/community-restore/status`);
+};
+export const restoreCommunity = (mode: Setting.CommunityRestoreMode) => {
+    return http.post(`/core/enterprise/licenses/community-restore`, { mode });
+};
 
 // agent
 export const loadBaseDir = (node?: string) => {
@@ -120,7 +126,7 @@ export const getSettingBaseInfo = () => {
 export const getTerminalInfo = () => {
     return http.post<Setting.TerminalInfo>(`/core/settings/terminal/search`);
 };
-export const UpdateTerminalInfo = (param: Setting.TerminalInfo) => {
+export const UpdateTerminalInfo = (param: Partial<Setting.TerminalInfo>) => {
     return http.post(`/core/settings/terminal/update`, param);
 };
 export const getSystemAvailable = () => {

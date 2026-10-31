@@ -77,6 +77,9 @@
 </template>
 
 <script lang="ts" setup>
+import { toRef } from 'vue';
+import { useRoute } from 'vue-router';
+import { useSearchState } from '@/utils/search-reset';
 import OperateDialog from './operate/index.vue';
 import ComposeLogs from '@/components/log/compose/index.vue';
 import PortJumpDialog from '@/components/port-jump/index.vue';
@@ -101,7 +104,16 @@ const paginationConfig = reactive({
     pageSize: 10,
     total: 0,
 });
-const searchName = ref();
+useSearchState(
+    'ai/model/tensorrt/index',
+    {
+        page: toRef(paginationConfig, 'currentPage'),
+        pageSize: toRef(paginationConfig, 'pageSize'),
+    },
+    { onRevisit: () => search() },
+);
+const route = useRoute();
+const searchName = ref(typeof route.query.name === 'string' ? route.query.name : '');
 const opRef = ref();
 const dialogRef = ref();
 const composeLogRef = ref();
@@ -199,7 +211,7 @@ const buttons = [
         label: i18n.global.t('commons.button.stop'),
         permission: true,
         disabled: (row: AI.TensorRTLLM) => {
-            return row.status !== 'Running';
+            return !['Running', 'ReStarting', 'Restarting'].includes(row.status);
         },
         click: (row: AI.TensorRTLLM) => {
             operate(row, 'stop');

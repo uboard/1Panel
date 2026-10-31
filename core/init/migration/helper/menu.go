@@ -98,8 +98,8 @@ func LoadMenus() string {
 		{ID: "2", Disabled: true, Title: "menu.apps", IsShow: true, Label: "App-Menu", Path: "/apps/all", Sort: 200},
 		{ID: "3", Disabled: false, Title: "menu.aiTools", IsShow: true, Label: "AI-Menu", Path: "/ai/model/account", Sort: 300,
 			Children: []dto.ShowMenu{
-				{ID: "44", Disabled: false, Title: "aiTools.agents.agent", IsShow: true, Label: "Agents", Path: "/ai/agents/agent", Sort: 50},
-				{ID: "41", Disabled: false, Title: "aiTools.model.model", IsShow: true, Label: "AIModel", Path: "/ai/model/account", Sort: 100},
+				{ID: "41", Disabled: false, Title: "aiTools.model.model", IsShow: true, Label: "AIModel", Path: "/ai/model/account", Sort: 50},
+				{ID: "44", Disabled: false, Title: "aiTools.agents.agent", IsShow: true, Label: "Agents", Path: "/ai/agents/agent", Sort: 100},
 				{ID: "42", Disabled: false, Title: "menu.mcp", IsShow: true, Label: "MCPServer", Path: "/ai/mcp", Sort: 200},
 				{ID: "43", Disabled: false, Title: "aiTools.gpu.gpu", IsShow: true, Label: "GPU", Path: "/ai/gpu", Sort: 300},
 			}},
@@ -107,6 +107,7 @@ func LoadMenus() string {
 			Children: []dto.ShowMenu{
 				{ID: "31", Disabled: false, Title: "menu.website", IsShow: true, Label: "Website", Path: "/websites", Sort: 100},
 				{ID: "32", Disabled: false, Title: "menu.ssl", IsShow: true, Label: "SSL", Path: "/websites/ssl", Sort: 200},
+				{ID: "34", Disabled: false, Title: "menu.template", IsShow: true, Label: "WebsiteTemplate", Path: "/websites/templates", Sort: 250},
 				{ID: "33", Disabled: false, Title: "menu.runtime", IsShow: true, Label: "PHP", Path: "/websites/runtimes/php", Sort: 300},
 			}},
 		{ID: "5", Disabled: false, Title: "menu.database", IsShow: true, Label: "Database-Menu", Path: "/databases", Sort: 500},
@@ -115,7 +116,7 @@ func LoadMenus() string {
 			Children: []dto.ShowMenu{
 				{ID: "71", Disabled: false, Title: "menu.files", IsShow: true, Label: "File", Path: "/hosts/files", Sort: 100},
 				{ID: "72", Disabled: false, Title: "menu.monitor", IsShow: true, Label: "Monitorx", Path: "/hosts/monitor/monitor", Sort: 200},
-				{ID: "74", Disabled: false, Title: "menu.firewall", IsShow: true, Label: "FirewallPort", Path: "/hosts/firewall/port", Sort: 300},
+				{ID: "74", Disabled: false, Title: "menu.firewall", IsShow: true, Label: "FirewallPort", Path: "/hosts/firewall/rules", Sort: 300},
 				{ID: "75", Disabled: false, Title: "menu.processManage", IsShow: true, Label: "Process", Path: "/hosts/process/process", Sort: 400},
 				{ID: "76", Disabled: false, Title: "menu.ssh", IsShow: true, Label: "SSH", Path: "/hosts/ssh/ssh", Sort: 500},
 				{ID: "77", Disabled: false, Title: "menu.disk", IsShow: true, Label: "Disk", Path: "/hosts/disk", Sort: 600},
@@ -130,7 +131,7 @@ func LoadMenus() string {
 				{ID: "111", Disabled: false, Title: "xpack.node.nodeManagement", IsShow: true, Label: "NodeDashboard", Path: "/xpack/node/dashboard", Sort: 300},
 				{ID: "113", Disabled: false, Title: "xpack.monitor.name", IsShow: true, Label: "MonitorDashboard", Path: "/xpack/monitor/dashboard", Sort: 600},
 				{ID: "115", Disabled: false, Title: "xpack.sync.menu", IsShow: true, Label: "Sync", Path: "/xpack/sync", Sort: 700},
-				{ID: "119", Disabled: false, Title: "xpack.upage", IsShow: true, Label: "Upage", Path: "/xpack/upage", Sort: 800},
+				{ID: "123", Disabled: false, Title: "xpack.vm.title", IsShow: true, Label: "VirtualMachine", Path: "/xpack/vm", Sort: 900},
 				{ID: "114", Disabled: false, Title: "xpack.tamper.tamper", IsShow: true, Label: "Tamper", Path: "/xpack/tamper", Sort: 1000},
 				{ID: "120", Disabled: false, Title: "xpack.cluster.cluster", IsShow: true, Label: "Cluster", Path: "/xpack/cluster", Sort: 1100},
 				{ID: "117", Disabled: false, Title: "xpack.setting.setting", IsShow: true, Label: "XSetting", Path: "/xpack/setting", Sort: 1200},
@@ -149,7 +150,7 @@ func LoadMenus() string {
 					Label:    "AIProxyManagement",
 					Path:     "/ai/ai-proxy/model-pool",
 					Sort:     150,
-				}, "AIModel")
+				}, "Agents")
 				item[i].Children = UpsertMenuByLabel(item[i].Children, dto.ShowMenu{
 					ID:       "47",
 					Disabled: false,
@@ -157,7 +158,7 @@ func LoadMenus() string {
 					IsShow:   true,
 					Label:    "SkillsHub",
 					Path:     "/ai/skills-hub",
-					Sort:     155,
+					Sort:     175,
 				}, "AIProxyManagement")
 				item[i].Children = UpsertMenuByLabel(item[i].Children, dto.ShowMenu{
 					ID:       "45",
@@ -166,8 +167,8 @@ func LoadMenus() string {
 					IsShow:   true,
 					Label:    "AIBenchmark",
 					Path:     "/ai/benchmark",
-					Sort:     160,
-				}, "SkillsHub")
+					Sort:     350,
+				}, "GPU")
 				continue
 			}
 			if item[i].Label != "Xpack-Menu" {
@@ -191,15 +192,6 @@ func LoadMenus() string {
 				Path:     "/enterprise/ops-report",
 				Sort:     500,
 			}, "UserManagement")
-			item[i].Children = UpsertMenuByLabel(item[i].Children, dto.ShowMenu{
-				ID:       "123",
-				Disabled: false,
-				Title:    "xpack.vm.title",
-				IsShow:   true,
-				Label:    "VirtualMachine",
-				Path:     "/enterprise/vm",
-				Sort:     900,
-			}, "Upage")
 			break
 		}
 	}
@@ -212,16 +204,17 @@ func MenuSort() []dto.MenuLabelSort {
 		{Label: "Home-Menu", Sort: 100},
 		{Label: "App-Menu", Sort: 200},
 		{Label: "AI-Menu", Sort: 300},
-		{Label: "Agents", Sort: 50},
-		{Label: "AIModel", Sort: 100},
+		{Label: "AIModel", Sort: 50},
+		{Label: "Agents", Sort: 100},
 		{Label: "AIProxyManagement", Sort: 150},
-		{Label: "SkillsHub", Sort: 155},
-		{Label: "AIBenchmark", Sort: 160},
+		{Label: "SkillsHub", Sort: 175},
 		{Label: "MCPServer", Sort: 200},
 		{Label: "GPU", Sort: 300},
+		{Label: "AIBenchmark", Sort: 350},
 		{Label: "Website-Menu", Sort: 400},
 		{Label: "Website", Sort: 100},
 		{Label: "SSL", Sort: 200},
+		{Label: "WebsiteTemplate", Sort: 250},
 		{Label: "PHP", Sort: 300},
 		{Label: "Database-Menu", Sort: 500},
 		{Label: "Container-Menu", Sort: 600},
@@ -253,7 +246,6 @@ func XpackMenuSort() []dto.MenuLabelSort {
 		{Label: "OpsReport", Sort: 500},
 		{Label: "MonitorDashboard", Sort: 600},
 		{Label: "Sync", Sort: 700},
-		{Label: "Upage", Sort: 800},
 		{Label: "VirtualMachine", Sort: 900},
 		{Label: "Tamper", Sort: 1000},
 		{Label: "Cluster", Sort: 1100},

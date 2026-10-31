@@ -49,7 +49,11 @@ class RequestHttp {
                     config.url === '/core/auth/login' ||
                     config.url === '/core/auth/mfalogin' ||
                     config.url === '/core/auth/passkey/begin' ||
-                    config.url === '/core/auth/passkey/finish'
+                    config.url === '/core/auth/passkey/finish' ||
+                    config.url === '/core/auth/oidc/begin' ||
+                    config.url === '/core/auth/oidc/finish' ||
+                    config.url === '/core/auth/saml2/begin' ||
+                    config.url === '/core/auth/saml2/finish'
                 ) {
                     config.headers.EntranceCode = encodeBase64(globalStore.entrance);
                 }
@@ -72,7 +76,7 @@ class RequestHttp {
         );
 
         this.service.interceptors.response.use(
-            (response: AxiosResponse) => {
+            async (response: AxiosResponse) => {
                 const globalStore = GlobalStore();
                 const { data } = response;
                 const authResult = handleAuthResponseCode(data, { showRBACMessage: true });
@@ -96,9 +100,9 @@ class RequestHttp {
                     return Promise.reject(data);
                 }
                 if (data.code == ResultEnum.NODE_UNBIND) {
-                    changeToLocal();
+                    await changeToLocal();
                     window.location.reload();
-                    return;
+                    return Promise.reject(data);
                 }
                 if (data.code == ResultEnum.ERR_GLOBAL_LOADING) {
                     globalStore.isLoading = true;
@@ -202,7 +206,7 @@ class RequestHttp {
         return this.service.delete(url, { params, ..._object });
     }
     download<BlobPart>(url: string, params?: object, _object = {}): Promise<BlobPart> {
-        return this.service.post(url, params, _object);
+        return this.service.post(url, params, _object) as unknown as Promise<BlobPart>;
     }
     upload<T>(url: string, params: object = {}, config?: RequestConfig): Promise<ResultData<T>> {
         return this.service.post(url, params, config);

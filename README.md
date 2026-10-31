@@ -1,7 +1,6 @@
 ## Quick Start
 
-> **Requirements:** Linux VPS (Debian / Ubuntu / CentOS / Rocky), 1 GB RAM, internet access.  
-> Takes ~60 seconds.
+Prepare your Linux server and run the following script:
 
 ```bash
 bash -c "$(curl -sSL https://raw.githubusercontent.com/uboard/1Panel/dev-hk/quick_start.sh)"

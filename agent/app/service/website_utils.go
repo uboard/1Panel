@@ -1,18 +1,22 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -123,7 +127,257 @@ func applyLocationProxyPass(location *components.Location, proxyPass string, sni
 	location.UpdateDirective("proxy_ssl_name", []string{sslName})
 }
 
-func createIndexFile(website *model.Website, runtime *model.Runtime) error {
+// websiteCreateFiles owns only paths actually created by this attempt.
+// Never recursively remove a reused directory (or a newly populated one).
+type websiteCreateFiles struct {
+	mu         sync.Mutex
+	entries    []websiteCreatedPath
+	rolledBack bool
+	restores   []func() error
+}
+type websiteCreatedPath struct {
+	path string
+	info os.FileInfo
+}
+
+func (f *websiteCreateFiles) mkdir(name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.rolledBack {
+		return fmt.Errorf("website creation already rolled back")
+	}
+	return f.mkdirLocked(filepath.Clean(name))
+}
+
+func (f *websiteCreateFiles) mkdirLocked(name string) error {
+	info, err := os.Lstat(name)
+	if err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("website path is not a directory: %s", name)
+		}
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return err
+	}
+	if err = f.mkdirLocked(filepath.Dir(name)); err != nil {
+		return err
+	}
+	if err = os.Mkdir(name, constant.DirPerm); err != nil {
+		if os.IsExist(err) {
+			return f.mkdirLocked(name)
+		}
+		return err
+	}
+	info, err = os.Lstat(name)
+	if err != nil {
+		return err
+	}
+	f.entries = append(f.entries, websiteCreatedPath{name, info})
+	return nil
+}
+
+// preserveExisting is for user content and logs; generated configuration must
+// fail on collision. Exclusive creation also protects against concurrent writes.
+func (f *websiteCreateFiles) write(name string, data []byte, mode os.FileMode, preserveExisting bool) error {
+	return f.writeReader(name, bytes.NewReader(data), mode, preserveExisting)
+}
+
+func (f *websiteCreateFiles) writeReader(name string, data io.Reader, mode os.FileMode, preserveExisting bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.rolledBack {
+		return fmt.Errorf("website creation already rolled back")
+	}
+	if err := f.mkdirLocked(filepath.Dir(name)); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if os.IsExist(err) && preserveExisting {
+		info, statErr := os.Lstat(name)
+		if statErr != nil {
+			return statErr
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("website path is not a regular file: %s", name)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("create website file %s: %w", name, err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return err
+	}
+	f.entries = append(f.entries, websiteCreatedPath{name, info})
+	_, err = io.Copy(file, data)
+	closeErr := file.Close()
+	if err != nil {
+		return err
+	}
+	return closeErr
+}
+
+func (f *websiteCreateFiles) rollback() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rolledBack = true
+	var firstErr error
+	for i := len(f.restores) - 1; i >= 0; i-- {
+		if err := f.restores[i](); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	f.restores = nil
+	for i := len(f.entries) - 1; i >= 0; i-- {
+		entry := f.entries[i]
+		info, err := os.Lstat(entry.path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if !os.SameFile(entry.info, info) {
+			continue
+		}
+		// os.Remove refuses non-empty directories, preserving untracked content.
+		if err = os.Remove(entry.path); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+func (f *websiteCreateFiles) copyTemplate(src, dst string) error {
+	// Reject symlinks and create files exclusively. The caller rolls back any
+	// paths created before a collision or copy error.
+	return filepath.Walk(src, func(name string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, name)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return f.mkdir(target)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("unsupported template file: %s", name)
+		}
+		file, err := os.Open(name)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		return f.writeReader(target, file, constant.FilePerm, false)
+	})
+}
+
+// Only change ownership on files created by this attempt, never recursively on
+// an existing document root.
+func (f *websiteCreateFiles) chownNew(root string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.rolledBack {
+		return fmt.Errorf("website creation already rolled back")
+	}
+	for _, entry := range f.entries {
+		rel, err := filepath.Rel(root, entry.path)
+		if err != nil {
+			return err
+		}
+		if rel == ".." || filepath.IsAbs(rel) || (len(rel) > 3 && rel[:3] == "../") {
+			continue
+		}
+		info, err := os.Lstat(entry.path)
+		if err != nil {
+			return err
+		}
+		if !os.SameFile(entry.info, info) {
+			continue
+		}
+		if err := os.Chown(entry.path, constant.WebsiteUID, constant.WebsiteGID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Serialize sites.json read-modify-write operations across website creations,
+// deletions, domain updates, and creation rollbacks.
+var wafWebsitesMu sync.Mutex
+
+func updateWAFWebsites(name string, update func([]request.WafWebsite) ([]request.WafWebsite, error)) error {
+	wafWebsitesMu.Lock()
+	defer wafWebsitesMu.Unlock()
+	info, err := os.Lstat(name)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("website config is not a regular file: %s", name)
+	}
+	content, err := os.ReadFile(name)
+	if err != nil {
+		return err
+	}
+	var websites []request.WafWebsite
+	if len(content) > 0 {
+		if err := json.Unmarshal(content, &websites); err != nil {
+			return err
+		}
+	}
+	websites, err = update(websites)
+	if err != nil {
+		return err
+	}
+	content, err = json.Marshal(websites)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(name, content, info.Mode().Perm())
+}
+
+func (f *websiteCreateFiles) addWAFWebsite(name string, website request.WafWebsite) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.rolledBack {
+		return fmt.Errorf("website creation already rolled back")
+	}
+	if err := updateWAFWebsites(name, func(websites []request.WafWebsite) ([]request.WafWebsite, error) {
+		for _, existing := range websites {
+			if existing.Key == website.Key {
+				return nil, fmt.Errorf("WAF website already exists: %s", website.Key)
+			}
+		}
+		return append(websites, website), nil
+	}); err != nil {
+		return err
+	}
+	f.restores = append(f.restores, func() error {
+		return updateWAFWebsites(name, func(websites []request.WafWebsite) ([]request.WafWebsite, error) {
+			// Keep the latest records for other sites, including concurrent domain changes.
+			remaining := make([]request.WafWebsite, 0, len(websites))
+			for _, existing := range websites {
+				if existing.Key != website.Key {
+					remaining = append(remaining, existing)
+				}
+			}
+			return remaining, nil
+		})
+	})
+	return nil
+}
+
+func createIndexFile(website *model.Website, runtime *model.Runtime, created *websiteCreateFiles) error {
 	var (
 		indexPath      string
 		indexContent   string
@@ -144,49 +398,23 @@ func createIndexFile(website *model.Website, runtime *model.Runtime) error {
 		}
 	}
 
-	fileOp := files.NewFileOp()
-	if !fileOp.Stat(indexFolder) {
-		if err := fileOp.CreateDir(indexFolder, constant.DirPerm); err != nil {
-			return err
-		}
+	if err := created.write(indexPath, []byte(indexContent), constant.FilePerm, true); err != nil {
+		return err
 	}
-	if !fileOp.Stat(indexPath) {
-		if err := fileOp.CreateFile(indexPath); err != nil {
-			return err
-		}
+	html404, _ := websiteService.GetDefaultHtml("404")
+	if err := created.write(path.Join(indexFolder, "404.html"), []byte(html404.Content), constant.FilePerm, true); err != nil {
+		return err
 	}
 	if website.Type == constant.Runtime && runtime.Resource == constant.ResourceAppstore {
-		if err := chownRootDir(indexFolder); err != nil {
-			return err
-		}
-	}
-	if err := fileOp.WriteFile(indexPath, strings.NewReader(indexContent), constant.DirPerm); err != nil {
-		return err
-	}
-
-	html404, _ := websiteService.GetDefaultHtml("404")
-	path404 := path.Join(indexFolder, "404.html")
-	if err := fileOp.WriteFile(path404, strings.NewReader(html404.Content), constant.DirPerm); err != nil {
-		return err
+		return created.chownNew(indexFolder)
 	}
 
 	return nil
 }
 
-func createProxyFile(website *model.Website) error {
+func createProxyFile(website *model.Website, created *websiteCreateFiles) error {
 	proxyFolder := GetSitePath(*website, SiteProxyDir)
 	filePath := path.Join(proxyFolder, "root.conf")
-	fileOp := files.NewFileOp()
-	if !fileOp.Stat(proxyFolder) {
-		if err := fileOp.CreateDir(proxyFolder, constant.DirPerm); err != nil {
-			return err
-		}
-	}
-	if !fileOp.Stat(filePath) {
-		if err := fileOp.CreateFile(filePath); err != nil {
-			return err
-		}
-	}
 	config, err := parser.NewStringParser(string(nginx_conf.Proxy)).Parse()
 	if err != nil {
 		return err
@@ -200,67 +428,55 @@ func createProxyFile(website *model.Website) error {
 	location.ChangePath("^~", "/")
 	applyLocationProxyPass(location, website.Proxy, nil, "")
 	location.UpdateDirective("proxy_set_header", []string{"Host", "$host"})
-	if err := nginx.WriteConfig(config, nginx.IndentedStyle); err != nil {
+	if err := created.write(filePath, []byte(nginx.DumpConfig(config, nginx.IndentedStyle)), constant.FilePerm, false); err != nil {
 		return buserr.WithErr("ErrUpdateBuWebsite", err)
 	}
 	return nil
 }
 
-func createWebsiteFolder(website *model.Website, runtime *model.Runtime) error {
+func createWebsiteFolder(website *model.Website, runtime *model.Runtime, created *websiteCreateFiles) error {
 	siteFolder := GetSiteDir(website.Alias)
-	fileOp := files.NewFileOp()
-	if !fileOp.Stat(siteFolder) {
-		if err := fileOp.CreateDir(siteFolder, constant.DirPerm); err != nil {
+	dirs := []string{siteFolder, path.Join(siteFolder, "log")}
+	if website.Type != constant.Stream {
+		dirs = append(dirs, path.Join(siteFolder, "index"), path.Join(siteFolder, "ssl"))
+	}
+	for _, dir := range dirs {
+		if err := created.mkdir(dir); err != nil {
 			return err
 		}
-		if err := fileOp.CreateDir(path.Join(siteFolder, "log"), constant.DirPerm); err != nil {
+	}
+	for _, name := range []string{"access.log", "error.log"} {
+		if err := created.write(path.Join(siteFolder, "log", name), nil, constant.FilePerm, true); err != nil {
 			return err
 		}
-		if err := fileOp.CreateFile(path.Join(siteFolder, "log", "access.log")); err != nil {
+	}
+	if website.Type == constant.Runtime && runtime.Type == constant.RuntimePHP && runtime.Resource == constant.ResourceLocal {
+		if err := created.write(path.Join(siteFolder, "php-pool", "php-fpm.sock"), nil, constant.FilePerm, true); err != nil {
 			return err
 		}
-		if err := fileOp.CreateFile(path.Join(siteFolder, "log", "error.log")); err != nil {
+	}
+	if website.Type == constant.Static || (website.Type == constant.Runtime && runtime.Type == constant.RuntimePHP) {
+		if err := createIndexFile(website, runtime, created); err != nil {
 			return err
 		}
-		if website.Type != constant.Stream {
-			if err := fileOp.CreateDir(path.Join(siteFolder, "index"), constant.DirPerm); err != nil {
-				return err
-			}
-			if err := fileOp.CreateDir(path.Join(siteFolder, "ssl"), constant.DirPerm); err != nil {
-				return err
-			}
-		}
-		if website.Type == constant.Runtime {
-			if runtime.Type == constant.RuntimePHP && runtime.Resource == constant.ResourceLocal {
-				phpPoolDir := path.Join(siteFolder, "php-pool")
-				if err := fileOp.CreateDir(phpPoolDir, constant.DirPerm); err != nil {
-					return err
-				}
-				if err := fileOp.CreateFile(path.Join(phpPoolDir, "php-fpm.sock")); err != nil {
-					return err
-				}
-			}
-		}
-		if website.Type == constant.Static || (website.Type == constant.Runtime && runtime.Type == constant.RuntimePHP) {
-			if err := createIndexFile(website, runtime); err != nil {
-				return err
-			}
-		}
-		if website.Type == constant.Proxy {
-			if err := createProxyFile(website); err != nil {
-				return err
-			}
-		}
+	}
+	if website.Type == constant.Proxy {
+		return createProxyFile(website, created)
 	}
 	return nil
 }
 
-func configDefaultNginx(website *model.Website, domains []model.WebsiteDomain, appInstall *model.AppInstall, runtime *model.Runtime, streamConfig request.StreamConfig) error {
+type websiteInitialSSL struct {
+	certificate model.WebsiteSSL
+	request     request.WebsiteHTTPSOp
+}
+
+func configDefaultNginx(website *model.Website, domains []model.WebsiteDomain, appInstall *model.AppInstall, runtime *model.Runtime, streamConfig request.StreamConfig, initialSSL *websiteInitialSSL, created *websiteCreateFiles) error {
 	nginxInstall, err := getAppInstallByKey(constant.AppOpenresty)
 	if err != nil {
 		return err
 	}
-	if err = createWebsiteFolder(website, runtime); err != nil {
+	if err = createWebsiteFolder(website, runtime, created); err != nil {
 		return err
 	}
 	var (
@@ -325,6 +541,16 @@ func configDefaultNginx(website *model.Website, domains []model.WebsiteDomain, a
 			setListen(server, strconv.Itoa(domain.Port), website.IPV6, false, website.DefaultServer, false)
 		}
 		server.UpdateServerName(serverNames)
+		if initialSSL != nil {
+			plan := buildWebsiteTLSPlan(domains, nginxInstall.HttpPort, nginxInstall.HttpsPort)
+			applyWebsiteSSLConfig(server, *website, plan, initialSSL.request)
+			if err = created.write(path.Join(GetSitePath(*website, SiteSSLDir), "fullchain.pem"), []byte(initialSSL.certificate.Pem), constant.FilePerm, false); err != nil {
+				return err
+			}
+			if err = created.write(path.Join(GetSitePath(*website, SiteSSLDir), "privkey.pem"), []byte(initialSSL.certificate.PrivateKey), 0600, false); err != nil {
+				return err
+			}
+		}
 
 		siteFolder := path.Join("/www", "sites", website.Alias)
 		server.UpdateDirective("access_log", []string{path.Join(siteFolder, "log", "access.log"), "main"})
@@ -391,17 +617,13 @@ func configDefaultNginx(website *model.Website, domains []model.WebsiteDomain, a
 		}
 	}
 	config.FilePath = configPath
-	if err = nginx.WriteConfig(config, nginx.IndentedStyle); err != nil {
-		return err
-	}
-	if err = opNginx(nginxInstall.ContainerName, constant.NginxCheck); err != nil {
-		return err
-	}
-	if err = opNginx(nginxInstall.ContainerName, constant.NginxReload); err != nil {
+	if err = created.write(configPath, []byte(nginx.DumpConfig(config, nginx.IndentedStyle)), constant.FilePerm, false); err != nil {
 		return err
 	}
 	return nil
 }
+
+var defaultWAFRuleNames = []string{"acl", "args", "cookie", "defaultUaBlack", "defaultUrlBlack", "fileExt", "header", "methodWhite", "cdn"}
 
 func moveDefaultWafConfig(websiteDir string, defaultConfigContent []byte, defaultRuleDir string, fileOp files.FileOp) error {
 	if !fileOp.Stat(websiteDir) {
@@ -418,8 +640,7 @@ func moveDefaultWafConfig(websiteDir string, defaultConfigContent []byte, defaul
 			return err
 		}
 	}
-	defaultRulesName := []string{"acl", "args", "cookie", "defaultUaBlack", "defaultUrlBlack", "fileExt", "header", "methodWhite", "cdn"}
-	for _, ruleName := range defaultRulesName {
+	for _, ruleName := range defaultWAFRuleNames {
 		srcPath := path.Join(defaultRuleDir, ruleName+".json")
 		if fileOp.Stat(srcPath) {
 			_ = fileOp.Copy(srcPath, websiteRuleDir)
@@ -457,7 +678,10 @@ func createAllWebsitesWAFConfig(websites []model.Website) error {
 	if err != nil {
 		return err
 	}
-	if err := fileOp.SaveFileWithByte(websitesConfigPath, websitesContent, constant.DirPerm); err != nil {
+	wafWebsitesMu.Lock()
+	err = fileOp.SaveFileWithByte(websitesConfigPath, websitesContent, constant.DirPerm)
+	wafWebsitesMu.Unlock()
+	if err != nil {
 		return err
 	}
 	var (
@@ -486,7 +710,7 @@ func createOpenBasedirConfig(website *model.Website) {
 	_ = fileOp.SaveFile(userIniPath, fmt.Sprintf("open_basedir=/www/sites/%s/index:/tmp/", website.Alias), 0644)
 }
 
-func createWafConfig(website *model.Website, domains []model.WebsiteDomain) error {
+func createWafConfig(website *model.Website, domains []model.WebsiteDomain, created *websiteCreateFiles) error {
 	nginxInstall, err := getAppInstallByKey(constant.AppOpenresty)
 	if err != nil {
 		return err
@@ -497,16 +721,6 @@ func createWafConfig(website *model.Website, domains []model.WebsiteDomain) erro
 		return nil
 	}
 	websitesConfigPath := path.Join(wafDataPath, "conf", "sites.json")
-	content, err := fileOp.GetContent(websitesConfigPath)
-	if err != nil {
-		return err
-	}
-	var websitesArray []request.WafWebsite
-	if len(content) != 0 {
-		if err := json.Unmarshal(content, &websitesArray); err != nil {
-			return err
-		}
-	}
 	wafWebsite := request.WafWebsite{
 		Key:     website.Alias,
 		Domains: make([]string, 0),
@@ -516,14 +730,6 @@ func createWafConfig(website *model.Website, domains []model.WebsiteDomain) erro
 	for _, domain := range domains {
 		wafWebsite.Domains = append(wafWebsite.Domains, domain.Domain)
 		wafWebsite.Host = append(wafWebsite.Host, domain.Domain+":"+strconv.Itoa(domain.Port))
-	}
-	websitesArray = append(websitesArray, wafWebsite)
-	websitesContent, err := json.Marshal(websitesArray)
-	if err != nil {
-		return err
-	}
-	if err := fileOp.SaveFileWithByte(websitesConfigPath, websitesContent, constant.DirPerm); err != nil {
-		return err
 	}
 
 	var (
@@ -538,20 +744,25 @@ func createWafConfig(website *model.Website, domains []model.WebsiteDomain) erro
 		return err
 	}
 
-	defer func() {
-		if err != nil {
-			_ = fileOp.DeleteDir(websiteDir)
+	if err := created.write(path.Join(websiteDir, "config.json"), defaultConfigContent, constant.FilePerm, false); err != nil {
+		return err
+	}
+	if err := created.mkdir(path.Join(websiteDir, "rules")); err != nil {
+		return err
+	}
+	for _, name := range defaultWAFRuleNames {
+		data, err := os.ReadFile(path.Join(defaultRuleDir, name+".json"))
+		if os.IsNotExist(err) {
+			continue
 		}
-	}()
-
-	if err := moveDefaultWafConfig(websiteDir, defaultConfigContent, defaultRuleDir, fileOp); err != nil {
-		return err
+		if err != nil {
+			return err
+		}
+		if err := created.write(path.Join(websiteDir, "rules", name+".json"), data, constant.FilePerm, false); err != nil {
+			return err
+		}
 	}
-
-	if err = opNginx(nginxInstall.ContainerName, constant.NginxCheck); err != nil {
-		return err
-	}
-	if err = opNginx(nginxInstall.ContainerName, constant.NginxReload); err != nil {
+	if err := created.addWAFWebsite(websitesConfigPath, wafWebsite); err != nil {
 		return err
 	}
 
@@ -613,36 +824,26 @@ func delWafConfig(website model.Website, force bool) error {
 	if !fileOp.Stat(wafDataPath) {
 		return nil
 	}
-	monitorDir := path.Join(wafDataPath, "db", "sites", website.Alias)
-	if fileOp.Stat(monitorDir) {
-		_ = fileOp.DeleteDir(monitorDir)
-	}
 	websitesConfigPath := path.Join(wafDataPath, "conf", "sites.json")
-	content, err := fileOp.GetContent(websitesConfigPath)
-	if err != nil {
-		return err
-	}
-	var websitesArray []request.WafWebsite
-	var newWebsiteArray []request.WafWebsite
-	if len(content) > 0 {
-		if err = json.Unmarshal(content, &websitesArray); err != nil {
-			return err
+	if err := updateWAFWebsites(websitesConfigPath, func(websites []request.WafWebsite) ([]request.WafWebsite, error) {
+		remaining := make([]request.WafWebsite, 0, len(websites))
+		for _, existing := range websites {
+			if existing.Key != website.Alias {
+				remaining = append(remaining, existing)
+			}
 		}
-	}
-	for _, wafWebsite := range websitesArray {
-		if wafWebsite.Key != website.Alias {
-			newWebsiteArray = append(newWebsiteArray, wafWebsite)
-		}
-	}
-	websitesContent, err := json.Marshal(newWebsiteArray)
-	if err != nil {
-		return err
-	}
-	if err := fileOp.SaveFileWithByte(websitesConfigPath, websitesContent, constant.DirPerm); err != nil {
+		return remaining, nil
+	}); err != nil {
 		return err
 	}
 
-	_ = fileOp.DeleteDir(path.Join(wafDataPath, "sites", website.Alias))
+	for _, websiteDataDir := range []string{
+		path.Join(wafDataPath, "sites", website.Alias),
+		path.Join(wafDataPath, "db", "monitor", website.Alias),
+		path.Join(wafDataPath, "db", "sites", website.Alias),
+	} {
+		_ = fileOp.DeleteDir(websiteDataDir)
+	}
 
 	if err := opNginx(nginxInstall.ContainerName, constant.NginxReload); err != nil {
 		if force {
@@ -787,52 +988,22 @@ func createPemFile(website model.Website, websiteSSL model.WebsiteSSL) error {
 	return nil
 }
 
-func getHttpsPort(websiteID uint) map[int]struct{} {
-	domains, err := websiteDomainRepo.GetBy(websiteDomainRepo.WithWebsiteId(websiteID))
-	if err != nil {
-		return nil
-	}
-	httpsPorts := make(map[int]struct{})
-	nginxInstall, _ := getAppInstallByKey(constant.AppOpenresty)
-	hasDefaultPort := false
-	for _, domain := range domains {
-		if domain.Port == nginxInstall.HttpPort {
-			hasDefaultPort = true
-		}
-		if domain.SSL {
-			httpsPorts[domain.Port] = struct{}{}
-		}
-	}
-	if hasDefaultPort {
-		httpsPorts[nginxInstall.HttpsPort] = struct{}{}
-	}
-	if len(httpsPorts) == 0 {
-		for _, domain := range domains {
-			if !domain.SSL {
-				httpsPorts[domain.Port] = struct{}{}
-			}
-		}
-	}
-	return httpsPorts
+type websiteTLSPlan struct {
+	httpPorts       []int
+	httpsPorts      []int
+	redirectPort    int
+	defaultHTTPPort int
+	hasDefaultHTTP  bool
 }
 
-func applySSL(website *model.Website, websiteSSL model.WebsiteSSL, req request.WebsiteHTTPSOp) error {
-	nginxFull, err := getNginxFull(website)
-	if err != nil {
-		return nil
-	}
-	domains, err := websiteDomainRepo.GetBy(websiteDomainRepo.WithWebsiteId(website.ID))
-	if err != nil {
-		return nil
-	}
+func buildWebsiteTLSPlan(domains []model.WebsiteDomain, defaultHTTPPort, defaultHTTPSPort int) websiteTLSPlan {
 	httpPorts := make(map[int]struct{})
 	httpsPorts := make(map[int]struct{})
-	sslPort := 0
+	plan := websiteTLSPlan{defaultHTTPPort: defaultHTTPPort}
 
-	hasDefaultPort := false
 	for _, domain := range domains {
-		if domain.Port == nginxFull.Install.HttpPort {
-			hasDefaultPort = true
+		if domain.Port == defaultHTTPPort {
+			plan.hasDefaultHTTP = true
 		}
 		if domain.SSL {
 			httpsPorts[domain.Port] = struct{}{}
@@ -840,112 +1011,75 @@ func applySSL(website *model.Website, websiteSSL model.WebsiteSSL, req request.W
 			httpPorts[domain.Port] = struct{}{}
 		}
 	}
-	if hasDefaultPort {
-		httpsPorts[nginxFull.Install.HttpsPort] = struct{}{}
+	if plan.hasDefaultHTTP {
+		httpsPorts[defaultHTTPSPort] = struct{}{}
 	}
 	if len(httpsPorts) == 0 {
 		for port := range httpPorts {
 			httpsPorts[port] = struct{}{}
 		}
 	}
-	config := nginxFull.SiteConfig.Config
-	server := config.FindServers()[0]
-
-	defaultHttpPort := strconv.Itoa(nginxFull.Install.HttpPort)
-	defaultHttpPortIPV6 := "[::]:" + defaultHttpPort
-
 	for port := range httpsPorts {
-		sslPort = port
-		portStr := strconv.Itoa(port)
-		server.RemoveListenByBind(portStr)
-		server.RemoveListenByBind("[::]:" + portStr)
-		setListen(server, portStr, website.IPV6, req.Http3, website.DefaultServer, true)
+		delete(httpPorts, port)
 	}
+	for port := range httpPorts {
+		plan.httpPorts = append(plan.httpPorts, port)
+	}
+	for port := range httpsPorts {
+		plan.httpsPorts = append(plan.httpsPorts, port)
+	}
+	sort.Ints(plan.httpPorts)
+	sort.Ints(plan.httpsPorts)
+	if plan.hasDefaultHTTP {
+		plan.redirectPort = defaultHTTPSPort
+	} else if len(plan.httpsPorts) > 0 {
+		plan.redirectPort = plan.httpsPorts[0]
+	}
+	return plan
+}
 
-	server.UpdateDirective("http2", []string{"on"})
+func getHttpsPort(websiteID uint) map[int]struct{} {
+	domains, err := websiteDomainRepo.GetBy(websiteDomainRepo.WithWebsiteId(websiteID))
+	if err != nil {
+		return nil
+	}
+	nginxInstall, _ := getAppInstallByKey(constant.AppOpenresty)
+	plan := buildWebsiteTLSPlan(domains, nginxInstall.HttpPort, nginxInstall.HttpsPort)
+	httpsPorts := make(map[int]struct{}, len(plan.httpsPorts))
+	for _, port := range plan.httpsPorts {
+		httpsPorts[port] = struct{}{}
+	}
+	return httpsPorts
+}
 
-	switch req.HttpConfig {
-	case constant.HTTPSOnly:
-		server.RemoveListenByBind(defaultHttpPort)
-		server.RemoveListenByBind(defaultHttpPortIPV6)
-		server.RemoveDirective("if", []string{"($scheme"})
-	case constant.HTTPToHTTPS:
-		if hasDefaultPort {
-			server.UpdateListen(defaultHttpPort, website.DefaultServer)
-			if website.IPV6 {
-				server.UpdateListen(defaultHttpPortIPV6, website.DefaultServer)
-			}
-		}
-		server.AddHTTP2HTTPS(sslPort)
-	case constant.HTTPAlso:
-		if hasDefaultPort {
-			server.UpdateListen(defaultHttpPort, website.DefaultServer)
-			if website.IPV6 {
-				server.UpdateListen(defaultHttpPortIPV6, website.DefaultServer)
-			}
-		}
-		server.RemoveDirective("if", []string{"($scheme"})
-	}
-
-	if !req.Hsts {
-		server.RemoveDirective("add_header", []string{"Strict-Transport-Security", "\"max-age=31536000\""})
-		server.RemoveDirective("add_header", []string{"Strict-Transport-Security", "\"max-age=31536000; includeSubDomains\""})
-	}
-	if !req.Http3 {
-		for port := range httpsPorts {
-			server.RemoveListen(strconv.Itoa(port), "quic")
-			if website.IPV6 {
-				httpsPortIPV6 := "[::]:" + strconv.Itoa(port)
-				server.RemoveListen(httpsPortIPV6, "quic")
-			}
-		}
-		server.RemoveDirective("add_header", []string{"Alt-Svc"})
-	}
-
-	if err = nginx.WriteConfig(config, nginx.IndentedStyle); err != nil {
-		return err
-	}
-	if err = createPemFile(*website, websiteSSL); err != nil {
-		return err
-	}
+func buildWebsiteSSLParams(alias string, req request.WebsiteHTTPSOp, redirectPort int) []dto.NginxParam {
 	nginxParams := getNginxParamsFromStaticFile(dto.SSL, []dto.NginxParam{})
-	for i, param := range nginxParams {
-		if param.Name == "ssl_certificate" {
-			nginxParams[i].Params = []string{path.Join("/www", "sites", website.Alias, "ssl", "fullchain.pem")}
-		}
-		if param.Name == "ssl_certificate_key" {
-			nginxParams[i].Params = []string{path.Join("/www", "sites", website.Alias, "ssl", "privkey.pem")}
-		}
-		if param.Name == "ssl_protocols" {
+	for i := range nginxParams {
+		switch nginxParams[i].Name {
+		case "ssl_certificate":
+			nginxParams[i].Params = []string{path.Join("/www", "sites", alias, "ssl", "fullchain.pem")}
+		case "ssl_certificate_key":
+			nginxParams[i].Params = []string{path.Join("/www", "sites", alias, "ssl", "privkey.pem")}
+		case "ssl_protocols":
 			nginxParams[i].Params = req.SSLProtocol
 			if len(req.SSLProtocol) == 0 {
 				nginxParams[i].Params = []string{"TLSv1.3", "TLSv1.2"}
 			}
-		}
-		if param.Name == "ssl_ciphers" {
+		case "ssl_ciphers":
 			nginxParams[i].Params = []string{req.Algorithm}
 			if len(req.Algorithm) == 0 {
 				nginxParams[i].Params = []string{"ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA256:!aNULL:!eNULL:!EXPORT:!DSS:!DES:!RC4:!3DES:!MD5:!PSK:!KRB5:!SRP:!CAMELLIA:!SEED"}
 			}
-		}
-		if param.Name == "error_page" {
-			if len(param.Params) < 2 {
-				continue
-			}
-			code := param.Params[0]
-			if code == "497" {
-				if sslPort != 443 && param.Params[1] == "https://$host$request_uri" {
-					param.Params[1] = fmt.Sprintf("https://$host:%d$request_uri", sslPort)
-				}
+		case "error_page":
+			if len(nginxParams[i].Params) >= 2 && nginxParams[i].Params[0] == "497" && redirectPort != 443 && nginxParams[i].Params[1] == "https://$host$request_uri" {
+				nginxParams[i].Params[1] = fmt.Sprintf("https://$host:%d$request_uri", redirectPort)
 			}
 		}
 	}
 	if req.Hsts {
-		var hstsValue string
+		hstsValue := "\"max-age=31536000\""
 		if req.HstsIncludeSubDomains {
 			hstsValue = "\"max-age=31536000; includeSubDomains\""
-		} else {
-			hstsValue = "\"max-age=31536000\""
 		}
 		nginxParams = append(nginxParams, dto.NginxParam{
 			Name:   "add_header",
@@ -958,11 +1092,80 @@ func applySSL(website *model.Website, websiteSSL model.WebsiteSSL, req request.W
 			Params: []string{"Alt-Svc", "'h3=\":443\"; ma=2592000'"},
 		})
 	}
+	return nginxParams
+}
 
-	if err := updateNginxConfig(constant.NginxScopeServer, nginxParams, website); err != nil {
+func applyWebsiteSSLConfig(server *components.Server, website model.Website, plan websiteTLSPlan, req request.WebsiteHTTPSOp) {
+	for _, port := range plan.httpsPorts {
+		portStr := strconv.Itoa(port)
+		server.RemoveListenByBind(portStr)
+		server.RemoveListenByBind("[::]:" + portStr)
+		setListen(server, portStr, website.IPV6, req.Http3, website.DefaultServer, true)
+	}
+	server.UpdateDirective("http2", []string{"on"})
+
+	defaultHTTPPort := strconv.Itoa(plan.defaultHTTPPort)
+	switch req.HttpConfig {
+	case constant.HTTPSOnly:
+		if plan.hasDefaultHTTP {
+			server.RemoveListenByBind(defaultHTTPPort)
+			server.RemoveListenByBind("[::]:" + defaultHTTPPort)
+		}
+		server.RemoveDirective("if", []string{"($scheme"})
+	case constant.HTTPToHTTPS:
+		if plan.hasDefaultHTTP {
+			setListen(server, defaultHTTPPort, website.IPV6, false, website.DefaultServer, false)
+		}
+		if plan.redirectPort > 0 {
+			server.AddHTTP2HTTPS(plan.redirectPort)
+		}
+	case constant.HTTPAlso:
+		if plan.hasDefaultHTTP {
+			setListen(server, defaultHTTPPort, website.IPV6, false, website.DefaultServer, false)
+		}
+		server.RemoveDirective("if", []string{"($scheme"})
+	}
+
+	if !req.Hsts {
+		server.RemoveDirective("add_header", []string{"Strict-Transport-Security", "\"max-age=31536000\""})
+		server.RemoveDirective("add_header", []string{"Strict-Transport-Security", "\"max-age=31536000; includeSubDomains\""})
+	}
+	if !req.Http3 {
+		for _, port := range plan.httpsPorts {
+			server.RemoveListen(strconv.Itoa(port), "quic")
+			if website.IPV6 {
+				server.RemoveListen("[::]:"+strconv.Itoa(port), "quic")
+			}
+		}
+		server.RemoveDirective("add_header", []string{"Alt-Svc"})
+	}
+
+	for _, param := range buildWebsiteSSLParams(website.Alias, req, plan.redirectPort) {
+		server.UpdateDirective(param.Name, param.Params)
+	}
+}
+
+func applySSL(website *model.Website, websiteSSL model.WebsiteSSL, req request.WebsiteHTTPSOp) error {
+	nginxFull, err := getNginxFull(website)
+	if err != nil {
+		return nil
+	}
+	domains, err := websiteDomainRepo.GetBy(websiteDomainRepo.WithWebsiteId(website.ID))
+	if err != nil {
+		return nil
+	}
+	config := nginxFull.SiteConfig.Config
+	server := config.FindServers()[0]
+	plan := buildWebsiteTLSPlan(domains, nginxFull.Install.HttpPort, nginxFull.Install.HttpsPort)
+	applyWebsiteSSLConfig(server, *website, plan, req)
+
+	if err = createPemFile(*website, websiteSSL); err != nil {
 		return err
 	}
-	return nil
+	if err = nginx.WriteConfig(config, nginx.IndentedStyle); err != nil {
+		return err
+	}
+	return nginxCheckAndReload(nginxFull.SiteConfig.OldContent, nginxFull.SiteConfig.FilePath, nginxFull.Install.ContainerName)
 }
 
 func getParamArray(key string, param interface{}) []string {
@@ -1221,7 +1424,8 @@ func checkIsLinkApp(website model.Website) bool {
 
 func chownRootDir(path string) error {
 	cmdMgr := cmd.NewCommandMgr(cmd.WithTimeout(1 * time.Second))
-	if err := cmdMgr.Run("chown", "-R", "1000:1000", path); err != nil {
+	owner := fmt.Sprintf("%d:%d", constant.WebsiteUID, constant.WebsiteGID)
+	if err := cmdMgr.Run("chown", "-R", owner, path); err != nil {
 		return err
 	}
 	return nil
@@ -1250,10 +1454,10 @@ func getWebsiteDomains(domains []request.WebsiteDomain, defaultHTTPPort, default
 			return
 		}
 		domainModel.Domain = strings.ToLower(domainModel.Domain)
-		domainModel.Port = domain.Port
 		if domain.Port == 0 {
 			domain.Port = defaultHTTPPort
 		}
+		domainModel.Port = domain.Port
 		domainModel.SSL = domain.SSL
 		domainModel.WebsiteID = websiteID
 		domainModels = append(domainModels, domainModel)
@@ -1325,26 +1529,41 @@ func checkWebsitePort(defaultHTTPsPort, port int, websiteType string) error {
 	return nil
 }
 
+// certificateDirectories accepts both legacy single paths and newline-separated paths.
+func certificateDirectories(value string) []string {
+	var dirs []string
+	seen := make(map[string]bool)
+	for _, dir := range strings.Split(value, "\n") {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		dir = filepath.Clean(dir)
+		if !seen[dir] {
+			seen[dir] = true
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs
+}
+
 func saveCertificateFile(websiteSSL *model.WebsiteSSL, logger *log.Logger) {
-	if websiteSSL.PushDir {
-		fileOp := files.NewFileOp()
-		var (
-			pushErr error
-			MsgMap  = map[string]interface{}{"path": websiteSSL.Dir, "status": i18n.GetMsgByKey("Success")}
-		)
-		if pushErr = fileOp.SaveFile(path.Join(websiteSSL.Dir, "privkey.pem"), websiteSSL.PrivateKey, constant.FilePerm); pushErr != nil {
-			MsgMap["status"] = i18n.GetMsgByKey("Failed")
-			logger.Println(i18n.GetMsgWithMap("PushDirLog", MsgMap))
-			logger.Println("Push dir failed:" + pushErr.Error())
+	if !websiteSSL.PushDir {
+		return
+	}
+	fileOp := files.NewFileOp()
+	for _, dir := range certificateDirectories(websiteSSL.Dir) {
+		status := i18n.GetMsgByKey("Success")
+		for _, file := range []struct{ name, content string }{
+			{"privkey.pem", websiteSSL.PrivateKey},
+			{"fullchain.pem", websiteSSL.Pem},
+		} {
+			if err := fileOp.SaveFile(path.Join(dir, file.name), file.content, constant.FilePerm); err != nil {
+				status = i18n.GetMsgByKey("Failed")
+				logger.Printf("Push dir %s failed: %s", dir, err)
+			}
 		}
-		if pushErr = fileOp.SaveFile(path.Join(websiteSSL.Dir, "fullchain.pem"), websiteSSL.Pem, constant.FilePerm); pushErr != nil {
-			MsgMap["status"] = i18n.GetMsgByKey("Failed")
-			logger.Println(i18n.GetMsgWithMap("PushDirLog", MsgMap))
-			logger.Println("Push dir failed:" + pushErr.Error())
-		}
-		if pushErr == nil {
-			logger.Println(i18n.GetMsgWithMap("PushDirLog", MsgMap))
-		}
+		logger.Println(i18n.GetMsgWithMap("PushDirLog", map[string]interface{}{"path": dir, "status": status}))
 	}
 }
 
@@ -1559,7 +1778,7 @@ func GetSitePath(website model.Website, confType string) string {
 
 func GetConfDir(website model.Website) string {
 	if website.Type != constant.Stream {
-		return GetOpenrestyDir(SiteConf)
+		return GetOpenrestyDir(SiteConfDir)
 	}
 	return GetOpenrestyDir(StreamDir)
 }

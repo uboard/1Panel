@@ -11,6 +11,7 @@
             <fu-table
                 v-if="currentViewMode === 'table'"
                 v-bind="$attrs"
+                :data="props.data"
                 ref="tableRef"
                 @select="handleSelect"
                 @selection-change="handleSelectionChange"
@@ -40,7 +41,7 @@
                             <el-checkbox
                                 v-if="selectionColumn"
                                 class="complex-table__card-selection"
-                                :model-value="selectedRows.includes(cardRow)"
+                                :model-value="isRowSelected(cardRow)"
                                 :disabled="!isRowSelectable(cardRow)"
                                 @change="toggleCardSelection(cardRow, $event)"
                                 @click.stop
@@ -137,7 +138,7 @@
                         v-model:current-page="paginationConfig.currentPage"
                         v-model:page-size="paginationConfig.pageSize"
                         :total="paginationConfig.total"
-                        :page-sizes="[5, 10, 20, 50, 100, 200, 500]"
+                        :page-sizes="props.pageSizes"
                         @size-change="sizeChange"
                         @current-change="currentChange"
                         :pager-count="responsivePagerCount"
@@ -166,7 +167,8 @@
     </div>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, ref, useAttrs } from 'vue';
+import { panelCacheKey, writePanelCache } from '@/utils/panel-cache';
+import { computed, onDeactivated, onMounted, ref, useAttrs } from 'vue';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 import { flattenVNodes, type FuTableOperationButton } from '@/components/table/shared';
 import { useCardColumns } from './useCardColumns';
@@ -175,7 +177,7 @@ import { useResponsivePagination } from './useResponsivePagination';
 import { useTableSelection } from './useTableSelection';
 const slots = useSlots();
 const attrs = useAttrs();
-const { isMobile, openMenuTabs } = useGlobalStore();
+const { isMobile, openMenuTabs, currentNode } = useGlobalStore();
 
 defineOptions({ name: 'ComplexTable' });
 export type DropdownProps = FuTableOperationButton;
@@ -184,9 +186,15 @@ type ViewMode = 'table' | 'card';
 
 const props = defineProps({
     header: String,
+    data: { type: Array as PropType<any[]>, default: () => [] },
+    selectionContext: { type: [String, Number, Array, Object, Function], default: undefined },
     paginationConfig: {
         type: Object,
         required: false,
+    },
+    pageSizes: {
+        type: Array as PropType<number[]>,
+        default: () => [5, 10, 20, 50, 100, 200, 500],
     },
     heightDiff: {
         type: Number,
@@ -235,7 +243,7 @@ const selectionColumn = computed(() =>
     columnNodes.value.find((column) => (column.props as Record<string, any> | null)?.type === 'selection'),
 );
 const tableData = computed(() => {
-    const data = attrs.data;
+    const data = props.data;
     return Array.isArray(data) ? data : [];
 });
 const cardContentStyle = computed(() => {
@@ -291,15 +299,15 @@ const {
     isDisabled: isRightButtonDisabled,
     click: rightButtonClick,
 } = useContextMenu(() => props.rightButtons);
-const getTableData = () => (Array.isArray(attrs.data) ? attrs.data : []);
+const getTableData = () => props.data || [];
 const isRowSelectable = (row: any) => {
     const selectable = (selectionColumn.value?.props as Record<string, any> | null)?.selectable;
     return typeof selectable === 'function' ? selectable(row) : true;
 };
 const {
     selectedRows,
+    isRowSelected,
     clearSelects,
-    pruneSelection,
     toggleSelection,
     selectRow,
     syncTableSelection,
@@ -308,7 +316,18 @@ const {
     handleRowClick,
     handleKeyDown: handleSelectionKeyDown,
     handleKeyUp,
-} = useTableSelection(tableRef, getTableData, (rows) => emit('update:selects', rows), isRowSelectable);
+} = useTableSelection(
+    tableRef,
+    getTableData,
+    (rows) => emit('update:selects', rows),
+    isRowSelectable,
+    (row) => {
+        const key = attrs.rowKey ?? attrs['row-key'];
+        if (typeof key === 'function') return row == null ? undefined : key(row);
+        if (typeof key === 'string') return key.split('.').reduce((value, part) => value?.[part], row);
+        return row?.id;
+    },
+);
 const toggleCardSelection = (row: any, selected: boolean) => {
     selectRow(row, selected);
 };
@@ -316,20 +335,40 @@ const handleRightClick = (row, column, event) => {
     if (!props.rightButtons?.length) {
         return;
     }
-    if (isRowSelectable(row) && !selectedRows.value.includes(row)) {
+    if (isRowSelectable(row) && !isRowSelected(row)) {
         clearSelects();
         selectRow(row, true);
     }
     openContextMenu(row, event);
 };
 
+watch(
+    () => props.data,
+    () => {
+        const pagination = props.paginationConfig;
+        if (!pagination || !pagination.pageSize) return;
+        const lastPage = Math.max(1, Math.ceil(pagination.total / pagination.pageSize));
+        if (pagination.currentPage > lastPage) {
+            pagination.currentPage = lastPage;
+            emit('search');
+        }
+    },
+    { flush: 'post' },
+);
+
 function currentChange() {
     emit('search');
 }
 
 function sizeChange() {
+    if (props.paginationConfig.cacheSizeKey) {
+        writePanelCache(
+            'pagination',
+            panelCacheKey(`size:${props.paginationConfig.cacheSizeKey}`),
+            props.paginationConfig.pageSize,
+        );
+    }
     props.paginationConfig.currentPage = 1;
-    localStorage.setItem(props.paginationConfig.cacheSizeKey, props.paginationConfig.pageSize);
     emit('search');
 }
 
@@ -441,7 +480,28 @@ watch([currentViewMode, tableData, () => props.syncCardContentHeight], scheduleC
     flush: 'post',
 });
 
-watch(tableData, pruneSelection);
+onDeactivated(clearSelects);
+
+watch([() => props.paginationConfig?.currentPage, () => props.paginationConfig?.pageSize], clearSelects, {
+    flush: 'sync',
+});
+
+watch(
+    [
+        currentNode,
+        () =>
+            JSON.stringify(
+                typeof props.selectionContext === 'function' ? props.selectionContext() : props.selectionContext,
+            ),
+    ],
+    () => {
+        clearSelects();
+        if (props.paginationConfig) {
+            props.paginationConfig.currentPage = 1;
+        }
+    },
+    { flush: 'sync' },
+);
 
 onBeforeUnmount(() => {
     window.removeEventListener('resize', calcHeight);
@@ -723,6 +783,45 @@ onBeforeUnmount(() => {
     :deep(.el-pagination--small .el-pagination__sizes .el-select) {
         width: 100px;
         min-width: 100px;
+    }
+}
+
+@media (max-width: 767px) {
+    .table-footer-container {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+
+        .footer-left {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            flex-shrink: 1;
+            flex-wrap: wrap;
+
+            &:empty {
+                display: none;
+            }
+
+            :deep(.footer-left-button) {
+                width: 100%;
+                max-width: 100%;
+                min-width: 0;
+            }
+
+            :deep(.footer-left-button .el-select) {
+                flex: 1 1 auto;
+                max-width: 100%;
+                min-width: 0;
+            }
+        }
+    }
+
+    .complex-table__pagination {
+        flex: 0 1 auto;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
     }
 }
 </style>

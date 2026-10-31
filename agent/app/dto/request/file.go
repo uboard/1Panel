@@ -122,6 +122,7 @@ type FileWget struct {
 	Name              string `json:"name" validate:"required"`
 	IgnoreCertificate bool   `json:"ignoreCertificate"`
 	UseProxy          bool   `json:"useProxy"`
+	UseServerFilename bool   `json:"useServerFilename"`
 }
 
 type FileMove struct {
@@ -131,6 +132,11 @@ type FileMove struct {
 	Name       string   `json:"name"`
 	Cover      bool     `json:"cover"`
 	CoverPaths []string `json:"coverPaths"`
+	TaskID     string   `json:"taskID"`
+}
+
+type FileMoveStopReq struct {
+	TaskID string `json:"taskID" validate:"required"`
 }
 
 type FileDownload struct {
@@ -151,6 +157,10 @@ type DirSizeReq struct {
 
 type FileProcessReq struct {
 	Key string `json:"key"`
+}
+
+type FileProcessRemoveReq struct {
+	Keys []string `json:"keys" validate:"required,min=1,max=1000"`
 }
 
 type FileRoleUpdate struct {

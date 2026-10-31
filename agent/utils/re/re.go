@@ -6,8 +6,15 @@ import (
 )
 
 const (
+	ModelDownloaderRepoIDPattern = `^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$`
+	VMNameValidationPattern      = `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`
+	VMCommonPattern              = `^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,63}$`
+
+	VLLMMetricSamplePattern            = `^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{(?:[^"\\]|"(?:\\.|[^"\\])*")*\})?\s+(\S+)(?:\s+.*)?$`
+	VLLMMetricLabelPattern             = `([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*("(?:[^"\\]|\\.)*")`
 	NumberAlphaPattern                 = `(\d+)([A-Za-z]+)`
 	ComposeDisallowedCharsPattern      = `[^a-z0-9_-]+`
+	ComposeNamePattern                 = `^[a-z0-9][a-z0-9_-]{0,255}$`
 	ComposeEnvVarPattern               = `\$\{([^}]+)\}`
 	DiskKeyValuePattern                = `([A-Za-z0-9_]+)=("([^"\\]|\\.)*"|[^ \t]+)`
 	ValidatorNamePattern               = `^[a-zA-Z\p{Han}]{1}[a-zA-Z0-9_\p{Han}]{0,30}$`
@@ -51,14 +58,31 @@ const (
 	NginxModulePackagePattern          = `^[a-zA-Z0-9][a-zA-Z0-9+.-]*$`
 	NginxModuleArtifactPattern         = `^[a-zA-Z0-9_./+-]+\.so$`
 	NginxModuleChecksumPattern         = `^[a-fA-F0-9]{64}$`
+	AcceleratorMetricValuePattern      = `^\s*([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+))\s*(.*?)\s*$`
+	AscendVersionPattern               = `(?i)\bVersion:\s*([^\s|]+)`
+	AscendMemoryPattern                = `([0-9]+(?:\.[0-9]+)?)\s*/\s*([0-9]+(?:\.[0-9]+)?)`
+	NvidiaGPUUUIDPattern               = `^GPU-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
+	NvidiaGPUDeviceIDPattern           = `^([0-9]+|GPU-[a-zA-Z0-9-]+|MIG-[a-zA-Z0-9/-]+)$`
+	IntelGPURenderNamePattern          = `^renderD[0-9]+$`
+	IntelGPUDevicePathPattern          = `^/dev/dri/renderD[0-9]+$`
+	AscendGPUDeviceNamePattern         = `^davinci[0-9]+$`
+	AscendGPUDevicePathPattern         = `^/dev/davinci[0-9]+$`
+	AscendGPUDeviceIDPattern           = `^[0-9]+$`
 )
 
 var regexMap = make(map[string]*regexp.Regexp)
 
 func Init() {
 	patterns := []string{
+		ModelDownloaderRepoIDPattern,
+		VMNameValidationPattern,
+		VMCommonPattern,
+
+		VLLMMetricSamplePattern,
+		VLLMMetricLabelPattern,
 		NumberAlphaPattern,
 		ComposeDisallowedCharsPattern,
+		ComposeNamePattern,
 		ComposeEnvVarPattern,
 		DiskKeyValuePattern,
 		ValidatorNamePattern,
@@ -102,6 +126,16 @@ func Init() {
 		NginxModulePackagePattern,
 		NginxModuleArtifactPattern,
 		NginxModuleChecksumPattern,
+		AcceleratorMetricValuePattern,
+		AscendVersionPattern,
+		AscendMemoryPattern,
+		NvidiaGPUUUIDPattern,
+		NvidiaGPUDeviceIDPattern,
+		IntelGPURenderNamePattern,
+		IntelGPUDevicePathPattern,
+		AscendGPUDeviceNamePattern,
+		AscendGPUDevicePathPattern,
+		AscendGPUDeviceIDPattern,
 	}
 
 	for _, pattern := range patterns {

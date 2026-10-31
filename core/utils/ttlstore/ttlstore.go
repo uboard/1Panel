@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+const maxIDGenerationAttempts = 32
+
 type Item[T any] struct {
 	Value     T
 	ExpiresAt time.Time
@@ -30,15 +32,41 @@ func New[T any](ttl time.Duration, maxEntries int, newID func() string) *Store[T
 }
 
 func (s *Store[T]) Set(value T) string {
+	return s.set(value, true)
+}
+
+func (s *Store[T]) TrySet(value T) string {
+	return s.set(value, false)
+}
+
+func (s *Store[T]) set(value T, evictOldest bool) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.cleanupExpiredLocked()
+	itemID := ""
+	for range maxIDGenerationAttempts {
+		candidate := s.newID()
+		if candidate == "" {
+			continue
+		}
+		if _, exists := s.items[candidate]; exists {
+			continue
+		}
+		itemID = candidate
+		break
+	}
+	if itemID == "" {
+		return ""
+	}
+
 	if len(s.items) >= s.maxEntries {
+		if !evictOldest {
+			return ""
+		}
 		s.removeOldestLocked()
 	}
 
-	itemID := s.newID()
 	s.items[itemID] = Item[T]{
 		Value:     value,
 		ExpiresAt: s.now().Add(s.ttl),
@@ -57,6 +85,25 @@ func (s *Store[T]) Get(itemID string) (T, bool) {
 	}
 	if s.now().After(item.ExpiresAt) {
 		delete(s.items, itemID)
+		var zero T
+		return zero, false
+	}
+	return item.Value, true
+}
+
+// Take atomically returns and removes an item. It is intended for one-time
+// credentials such as authentication state and handoff tickets.
+func (s *Store[T]) Take(itemID string) (T, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	item, ok := s.items[itemID]
+	if !ok {
+		var zero T
+		return zero, false
+	}
+	delete(s.items, itemID)
+	if s.now().After(item.ExpiresAt) {
 		var zero T
 		return zero, false
 	}

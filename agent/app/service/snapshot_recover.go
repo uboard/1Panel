@@ -250,7 +250,11 @@ func handleDownloadSnapshot(itemHelper *snapRecoverHelper, snap model.Snapshot, 
 	itemHelper.Task.LogStart(i18n.GetMsgByKey("RecoverDownload"))
 
 	account, client, err := NewBackupClientWithID(snap.DownloadAccountID)
-	itemHelper.Task.LogWithStatus(i18n.GetWithName("RecoverDownloadAccount", fmt.Sprintf("%s - %s", account.Type, account.Name)), err)
+	if err != nil {
+		itemHelper.Task.LogWithStatus(i18n.GetWithName("RecoverDownloadAccount", "-"), err)
+		return err
+	}
+	itemHelper.Task.LogWithStatus(i18n.GetWithName("RecoverDownloadAccount", fmt.Sprintf("%s - %s", account.Type, account.Name)), nil)
 	targetPath := ""
 	if len(account.BackupPath) != 0 {
 		targetPath = path.Join(account.BackupPath, fmt.Sprintf("system_snapshot/%s.tar.gz", snap.Name))
@@ -259,9 +263,21 @@ func handleDownloadSnapshot(itemHelper *snapRecoverHelper, snap model.Snapshot, 
 	}
 	filePath := fmt.Sprintf("%s/%s.tar.gz", targetDir, snap.Name)
 	_ = os.RemoveAll(filePath)
-	_, err = client.Download(targetPath, filePath)
+	err = prepareSnapshotRecoverFile(account.Type, targetPath, filePath, func() error {
+		_, downloadErr := client.Download(targetPath, filePath)
+		return downloadErr
+	})
 	itemHelper.Task.LogWithStatus(i18n.GetMsgByKey("Download"), err)
 	return err
+}
+
+func prepareSnapshotRecoverFile(accountType, sourcePath, targetPath string, download func() error) error {
+	if accountType == constant.Local {
+		if err := os.Link(sourcePath, targetPath); err == nil {
+			return nil
+		}
+	}
+	return download()
 }
 
 func backupBeforeRecover(name string, itemHelper *snapRecoverHelper) error {
@@ -478,6 +494,9 @@ func restartCompose(composePath string, itemHelper *snapRecoverHelper) error {
 func recoverDBData(src string, itemHelper *snapRecoverHelper) error {
 	itemHelper.Task.Log("---------------------- 11 / 11 ----------------------")
 	itemHelper.Task.LogStart(i18n.GetMsgByKey("RecoverDBData"))
+	if err := os.Chmod(src, 0700); err != nil {
+		return err
+	}
 	dbDir := path.Join(global.Dir.DataDir, "db")
 	if err := os.RemoveAll(dbDir); err != nil {
 		itemHelper.Task.LogWithStatus(i18n.GetMsgByKey("RecoverDBData"), err)

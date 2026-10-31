@@ -32,12 +32,17 @@
         <template #main>
             <div>
                 <MainDiv :heightDiff="mode === 'upgrade' ? 280 : 300">
-                    <el-alert type="info" :closable="false" v-if="mode === 'installed' && !isIntl">
+                    <el-alert
+                        class="app-install-alert"
+                        type="info"
+                        :closable="false"
+                        v-if="mode === 'installed' && !isIntl"
+                    >
                         <template #title>
-                            <span class="flx-align-center">
-                                {{ $t('app.installHelper') }}
+                            <span class="flx-align-center app-install-helper">
+                                <span class="app-install-helper-text">{{ $t('app.installHelper') }}</span>
                                 <el-link
-                                    class="ml-5"
+                                    class="app-install-helper-link"
                                     icon="Position"
                                     @click="jumpToPath(router, '/containers/setting')"
                                     type="primary"
@@ -134,6 +139,7 @@
 </template>
 
 <script lang="ts" setup>
+import { useSearchState } from '@/utils/search-reset';
 import AppCard from '@/views/app-store/installed/app/card.vue';
 import Backups from '@/components/backup/index.vue';
 import Uploads from '@/components/upload/index.vue';
@@ -151,7 +157,7 @@ import IgnoreApp from '@/views/app-store/installed/ignore/create/index.vue';
 import TerminalDialog from '@/views/container/container/terminal/index.vue';
 
 import { searchAppInstalled, installedOp, appInstalledDeleteCheck, updateAppInstallSort } from '@/api/modules/app';
-import { onMounted, onUnmounted, reactive, ref, nextTick } from 'vue';
+import { toRef, onMounted, onUnmounted, reactive, ref, nextTick } from 'vue';
 import Sortable from 'sortablejs';
 import i18n from '@/lang';
 import { ElMessageBox } from 'element-plus';
@@ -175,9 +181,8 @@ const sortContainer = ref();
 let sortableInstance: Sortable | null = null;
 let timer: NodeJS.Timer | null = null;
 const paginationConfig = reactive({
-    cacheSizeKey: 'app-installed-page-size',
     currentPage: 1,
-    pageSize: Number(localStorage.getItem('app-installed-page-size')) || 20,
+    pageSize: 20,
     total: 0,
 });
 const open = ref(false);
@@ -205,6 +210,15 @@ const searchReq = reactive({
     update: false,
     sync: false,
 });
+useSearchState(
+    'app-store/installed/index',
+    {
+        search: toRef(searchReq, 'name'),
+        page: toRef(paginationConfig, 'currentPage'),
+        pageSize: toRef(paginationConfig, 'pageSize'),
+    },
+    { onRevisit: () => search() },
+);
 const router = useRouter();
 const activeName = ref(i18n.global.t('app.installed'));
 const mode = ref('installed');
@@ -227,8 +241,6 @@ const changeTag = (key: string) => {
 const search = async () => {
     searchReq.page = paginationConfig.currentPage;
     searchReq.pageSize = paginationConfig.pageSize;
-
-    localStorage.setItem('app-installed-page-size', String(searchReq.pageSize));
 
     const res = await searchAppInstalled(searchReq);
     data.value = res.data.items;
@@ -563,6 +575,42 @@ onUnmounted(() => {
 .d-button {
     .el-button + .el-button {
         margin-left: 0;
+    }
+}
+
+.app-install-helper {
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+}
+
+.app-install-helper-text {
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.app-install-helper-link {
+    flex: 0 0 auto;
+}
+
+@media only screen and (max-width: 767px) {
+    .app-install-alert {
+        :deep(.el-alert__content),
+        :deep(.el-alert__title) {
+            width: 100%;
+            min-width: 0;
+        }
+    }
+
+    .app-install-helper {
+        width: 100%;
+        align-items: flex-start;
+    }
+
+    .app-install-helper-text {
+        flex: 0 0 100%;
+        width: 100%;
+        text-wrap: balance;
     }
 }
 </style>

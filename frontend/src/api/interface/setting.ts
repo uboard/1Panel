@@ -41,6 +41,7 @@ export namespace Setting {
         theme: string;
         menuTabs: string;
         menuAccordion: string;
+        panelCache: string;
         language: string;
         docSource: string;
 
@@ -50,6 +51,7 @@ export namespace Setting {
         ssl: string;
         sslType: string;
         allowIPs: string;
+        allowIPTrustedProxies: string;
         bindDomain: string;
         passkeyTrustedProxies: string;
         securityEntrance: string;
@@ -71,11 +73,6 @@ export namespace Setting {
         proxyUser: string;
         proxyPasswd: string;
         proxyPasswdKeep: string;
-
-        opsReportExportFormat: string;
-        opsReportSchedule: string;
-        opsReportSavePath: string;
-        opsReportThreshold: string;
     }
     export interface SettingBaseInfo {
         systemVersion: string;
@@ -90,6 +87,7 @@ export namespace Setting {
         theme: string;
         menuTabs: string;
         menuAccordion: string;
+        panelCache: string;
         language: string;
         hideMenu: string;
         docSource: string;
@@ -105,6 +103,7 @@ export namespace Setting {
         dashboardSimpleNodeVisible: string;
     }
     export interface TerminalInfo {
+        showTerminalButton?: string;
         lineHeight: string;
         letterSpacing: string;
         fontSize: string;
@@ -307,6 +306,15 @@ export namespace Setting {
         status: string;
         message: string;
     }
+    export interface CommunityRestoreStatus {
+        state: 'Ready' | 'Running' | 'Failed';
+        message: string;
+        packageExist: boolean;
+        packageDirectory: string;
+        packageName: string;
+        packageURL: string;
+    }
+    export type CommunityRestoreMode = 'online' | 'offline';
     export interface NodeItem {
         id: number;
         groupID?: number;

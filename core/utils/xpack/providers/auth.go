@@ -9,6 +9,7 @@ import (
 type AuthProvider interface {
 	Login(c *gin.Context, info dto.Login, entrance string) (*dto.UserLoginInfo, string, error)
 	MFALogin(c *gin.Context, info dto.MFALogin, entrance string) (*dto.UserLoginInfo, string, error)
+	PrepareLogout(c *gin.Context) (*dto.LogoutResult, error)
 
 	ResetSuperAdminUser(name, password string) error
 
@@ -29,10 +30,12 @@ type AuthProvider interface {
 	ClearPasskeys() error
 
 	GetCurrentUserInfo(c *gin.Context) (*dto.CurrentUserInfo, error)
+	ShouldCheckPasswordExpiration(c *gin.Context) (bool, error)
 	LoadPasswordExpirationTime(c *gin.Context) (string, error)
 	SyncPasswordExpirationTime(expirationDays string) error
 	UpdateCurrentUserInfo(c *gin.Context, req dto.CurrentUserUpdate) error
 	HandlePasswordExpired(c *gin.Context, old, new string) error
+	RevokeTerminalSessions(scope, userID, authSessionID string) error
 
 	CoreAPIAuthMiddleware() gin.HandlerFunc
 	CoreRBACMiddlewares() []gin.HandlerFunc

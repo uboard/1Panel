@@ -1,6 +1,7 @@
 <template>
     <div :key="$route.fullPath" id="dashboard">
         <RouterButton
+            show-expires-at
             :buttons="[
                 {
                     label: i18n.global.t('menu.home'),
@@ -9,12 +10,17 @@
             ]"
         />
 
-        <el-alert v-if="!isSafety && showEntranceWarn" class="card-interval" type="warning" @close="hideEntrance">
+        <el-alert
+            v-if="!isSafety && showEntranceWarn"
+            class="card-interval dashboard-entrance-alert"
+            type="warning"
+            @close="hideEntrance"
+        >
             <template #title>
-                <span class="flx-align-center">
+                <span class="flx-align-center dashboard-entrance-alert-title">
                     <span>{{ $t('home.entranceHelper') }}</span>
                     <el-link
-                        style="font-size: 12px; margin-left: 5px"
+                        class="dashboard-entrance-alert-link"
                         icon="Position"
                         v-if="isAdmin"
                         @click="jumpToPath(router, '/settings/safe')"
@@ -44,20 +50,12 @@
                                 <el-col :span="6" v-for="item in baseInfo.quickJump" :key="item.name">
                                     <span>{{ $t(item.title, 2) }}</span>
                                     <div class="count">
-                                        <el-tooltip
-                                            v-if="item.alias || item.detail.length > 20"
-                                            :content="item.detail"
-                                            placement="bottom"
-                                        >
-                                            <el-button
-                                                link
-                                                :disabled="!checkPermission('File')"
-                                                type="primary"
-                                                @click="quickJump(item)"
-                                            >
-                                                {{ item.alias || item.detail.substring(0, 18) + '...' }}
-                                            </el-button>
-                                        </el-tooltip>
+                                        <QuickDirectories
+                                            v-if="item.name === 'File'"
+                                            :count="item.detail"
+                                            :disabled="!checkPermission('File')"
+                                            @change="updateQuickDirectoryCount"
+                                        />
                                         <el-button
                                             link
                                             :disabled="!checkPermission(item.name)"
@@ -74,8 +72,18 @@
                     </template>
                 </CardWithHeader>
                 <CardWithHeader :header="$t('commons.table.status')" class="card-interval">
+                    <template #header-r>
+                        <el-radio-group v-if="hasGPU" v-model="statusView">
+                            <el-radio-button value="system">{{ $t('menu.system') }}</el-radio-button>
+                            <el-radio-button value="gpu">GPU</el-radio-button>
+                        </el-radio-group>
+                    </template>
                     <template #body>
-                        <SystemStatus ref="statusRef" style="margin-bottom: 33px" />
+                        <SystemStatus
+                            ref="statusRef"
+                            :view="statusView"
+                            :style="{ marginBottom: statusView === 'gpu' ? '0' : '33px' }"
+                        />
                     </template>
                 </CardWithHeader>
                 <CardWithHeader
@@ -122,7 +130,7 @@
                         </el-select>
                     </template>
                     <template #body>
-                        <div style="position: relative; margin-top: 60px">
+                        <div class="monitor-chart-content">
                             <div class="monitor-tags" :style="monitorTagsStyle" v-if="chartOption === 'network'">
                                 <el-tag>
                                     {{ $t('monitor.up') }}: {{ computeSizeFromKBs(currentChartInfo.netBytesSent) }}
@@ -143,7 +151,7 @@
                                 <el-tag>{{ $t('home.ioDelay') }}: {{ currentChartInfo.ioTime }} ms</el-tag>
                             </div>
 
-                            <div v-if="chartOption === 'io'" style="margin-top: 40px" class="mobile-monitor-chart">
+                            <div v-if="chartOption === 'io'" class="mobile-monitor-chart">
                                 <v-charts
                                     height="383px"
                                     id="ioChart"
@@ -152,7 +160,7 @@
                                     :dataZoom="true"
                                 />
                             </div>
-                            <div v-if="chartOption === 'network'" style="margin-top: 40px" class="mobile-monitor-chart">
+                            <div v-if="chartOption === 'network'" class="mobile-monitor-chart">
                                 <v-charts
                                     height="383px"
                                     id="networkChart"
@@ -444,6 +452,7 @@ import SystemStatus from '@/views/home/status/index.vue';
 import AppLauncher from '@/views/home/app/index.vue';
 import VCharts from '@/components/v-charts/index.vue';
 import QuickJump from '@/views/home/quick/index.vue';
+import QuickDirectories from '@/views/home/quick/directories.vue';
 import CardWithHeader from '@/components/card-with-header/index.vue';
 import MarkDownEditor from '@/components/mkdown-editor/index.vue';
 import i18n from '@/lang';
@@ -464,7 +473,7 @@ import {
     updateMemo,
     updateSetting,
 } from '@/api/modules/setting';
-import { routerToFileWithPath, routerToNameWithQuery, routerToPath } from '@/utils/router';
+import { routerToNameWithQuery, routerToPath } from '@/utils/router';
 import { getWelcomePage } from '@/api/modules/auth';
 import {
     clearDashboardCache,
@@ -493,6 +502,7 @@ const DASHBOARD_CACHE_TTL = {
     ioOptions: 60 * 60 * 1000,
 };
 const monitorChartGrid = { left: 65, right: 65, bottom: '20%' };
+const monitorChartLegend = { top: 0, bottom: 'auto' };
 const monitorTagsStyle = {
     left: `${monitorChartGrid.left}px`,
     right: `${monitorChartGrid.right}px`,
@@ -515,6 +525,7 @@ const loadIOChartOption = () => ({
         },
     ],
     grid: monitorChartGrid,
+    legend: monitorChartLegend,
     formatStr: 'MB',
 });
 const loadNetworkChartOption = () => ({
@@ -530,6 +541,7 @@ const loadNetworkChartOption = () => ({
         },
     ],
     grid: monitorChartGrid,
+    legend: monitorChartLegend,
     formatStr: 'KB/s',
 });
 
@@ -542,7 +554,9 @@ const welcomeOpen = ref();
 const shadowContainer = ref();
 
 const chartOption = ref('network');
-let timer: NodeJS.Timer | null = null;
+const statusOption = ref(localStorage.getItem('dashboard_status_view') === 'gpu' ? 'gpu' : 'system');
+let timer: ReturnType<typeof setInterval> | null = null;
+let initialSampleTimer: ReturnType<typeof setTimeout> | null = null;
 let isInit = ref<boolean>(true);
 let isStatusInit = ref<boolean>(true);
 let isActive = ref(true);
@@ -664,6 +678,7 @@ const currentInfo = ref<Dashboard.CurrentInfo>({
 
     diskData: [],
     gpuData: [],
+    npuData: [],
     xpuData: [],
 
     netBytesSent: 0,
@@ -673,6 +688,16 @@ const currentInfo = ref<Dashboard.CurrentInfo>({
     topMemItems: [],
 
     shotTime: new Date(),
+});
+const hasGPU = computed(() =>
+    [currentInfo.value.gpuData, currentInfo.value.npuData, currentInfo.value.xpuData].some((items) => items?.length),
+);
+const statusView = computed({
+    get: () => (hasGPU.value && statusOption.value === 'gpu' ? 'gpu' : 'system'),
+    set: (value: 'system' | 'gpu') => {
+        statusOption.value = value;
+        localStorage.setItem('dashboard_status_view', value);
+    },
 });
 const currentChartInfo = reactive({
     ioReadBytes: 0,
@@ -785,14 +810,16 @@ const onLoadBaseInfo = async (isInit: boolean, range: string) => {
     const res = await loadBaseInfo(searchInfo.ioOption, searchInfo.netOption);
     baseInfo.value = res.data;
     updateCurrentInfo(baseInfo.value.currentInfo);
-    skipNextCurrentInfoDelta.value = true;
-    onLoadCurrentInfo();
+    skipNextCurrentInfoDelta.value = !isInit;
+    if (!isInit) {
+        onLoadCurrentInfo();
+    }
     isStatusInit.value = false;
     statusRef.value?.acceptParams(currentInfo.value, baseInfo.value);
     appRef.value?.acceptParams();
-    if (isInit) {
+    if (isInit && isCurrentActive.value) {
         clearTimer();
-        timer = setInterval(async () => {
+        const refreshCurrentInfo = async () => {
             try {
                 if (!isCurrentActive.value) {
                     throw new Error('jump out');
@@ -804,14 +831,18 @@ const onLoadBaseInfo = async (isInit: boolean, range: string) => {
             } catch {
                 clearTimer();
             }
-        }, 3000);
+        };
+        initialSampleTimer = setTimeout(refreshCurrentInfo, 500);
+        timer = setInterval(refreshCurrentInfo, 3000);
     }
 };
 
+const updateQuickDirectoryCount = (count: number) => {
+    const item = baseInfo.value.quickJump.find((item) => item.name === 'File');
+    if (item) item.detail = String(count);
+};
+
 const quickJump = (item: any) => {
-    if (item.name === 'File') {
-        return routerToFileWithPath(item.detail);
-    }
     return routerToPath(item.router);
 };
 
@@ -840,7 +871,9 @@ const jumpPanel = (row: any) => {
 
 const onLoadCurrentInfo = async () => {
     const res = await loadCurrentInfo(searchInfo.ioOption, searchInfo.netOption);
-    if (skipNextCurrentInfoDelta.value) {
+    const timeInterval =
+        (new Date(res.data.shotTime).getTime() - new Date(currentInfo.value.shotTime).getTime()) / 1000;
+    if (skipNextCurrentInfoDelta.value || !Number.isFinite(timeInterval) || timeInterval <= 0) {
         skipNextCurrentInfoDelta.value = false;
         currentChartInfo.netBytesSent = 0;
         currentChartInfo.netBytesRecv = 0;
@@ -856,7 +889,6 @@ const onLoadCurrentInfo = async () => {
     currentInfo.value.timeSinceUptime = res.data.timeSinceUptime;
     currentInfo.value.runningTime = res.data.runningTime;
 
-    let timeInterval = Number(res.data.uptime - currentInfo.value.uptime) || 3;
     currentChartInfo.netBytesSent =
         res.data.netBytesSent - currentInfo.value.netBytesSent > 0
             ? Number(((res.data.netBytesSent - currentInfo.value.netBytesSent) / 1024 / timeInterval).toFixed(2))
@@ -1136,6 +1168,8 @@ onBeforeRouteUpdate((to, from, next) => {
 const clearTimer = () => {
     clearInterval(Number(timer));
     timer = null;
+    clearTimeout(Number(initialSampleTimer));
+    initialSampleTimer = null;
 };
 
 onMounted(() => {
@@ -1155,8 +1189,58 @@ onBeforeUnmount(() => {
 </script>
 
 <style lang="scss" scoped>
+.dashboard-entrance-alert-title {
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+
+    > span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+}
+
+.dashboard-entrance-alert-link {
+    flex: 0 0 auto;
+    font-size: 12px;
+}
+
+.monitor-chart-content {
+    position: relative;
+    margin-top: 60px;
+}
+
+.mobile-monitor-chart {
+    margin-top: 40px;
+}
+
+@media only screen and (max-width: 767px) {
+    .dashboard-entrance-alert {
+        padding-right: 40px;
+
+        :deep(.el-alert__content),
+        :deep(.el-alert__title) {
+            width: 100%;
+            min-width: 0;
+        }
+    }
+
+    .dashboard-entrance-alert-title {
+        width: 100%;
+        align-items: flex-start;
+
+        > span {
+            flex: 0 0 100%;
+            width: 100%;
+            overflow-wrap: break-word;
+            text-wrap: balance;
+        }
+    }
+}
+
 @media only screen and (min-width: 992px) {
     .dashboard-right {
+        contain: size;
         display: flex;
         flex-direction: column;
         min-height: 0;
@@ -1277,6 +1361,44 @@ onBeforeUnmount(() => {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
+}
+
+@media only screen and (max-width: 1024px) {
+    .monitor-chart-content {
+        margin-top: 20px;
+    }
+
+    .monitor-chart-content .monitor-tags {
+        position: static;
+        display: grid;
+        width: 100%;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 12px;
+
+        :deep(.el-tag) {
+            width: 100%;
+            max-width: 100%;
+            height: auto;
+            min-height: 24px;
+            justify-content: center;
+            padding-block: 3px;
+            line-height: 1.3;
+            text-align: center;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+    }
+
+    .mobile-monitor-chart {
+        margin-top: 0;
+    }
+}
+
+@media only screen and (min-width: 768px) and (max-width: 1024px) {
+    .monitor-chart-content .monitor-tags {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
 }
 
 .version {

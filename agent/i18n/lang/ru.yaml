@@ -93,6 +93,9 @@ ErrAgentWebsiteBound: 'Этот агент уже связан с сайтом'
 ErrAgentWebsiteTypeUnsupported: 'Можно связывать только proxy- или static-сайты'
 ErrAgentWebsiteInUse: 'Этот сайт уже связан с другим агентом'
 ErrAgentWebsiteUnbindUnsupported: 'Сайты one-click deployment нельзя отвязать вручную'
+ErrQwenPawAuthRequest: 'Не удалось обновить учетные данные QwenPaw: {{ .err }}'
+ErrQwenPawAuthOutOfSync: 'Текущие учетные данные QwenPaw не совпадают с записью 1Panel. Сбросьте пароль QwenPaw или восстановите учетные данные в файле .env приложения'
+ErrQwenPawAuthDisabled: 'В QwenPaw не включена аутентификация при входе'
 ErrHermesPairingCodeUnavailable: 'Код сопряжения временно недоступен в Hermes, возможно из-за проблем с сетью. Повторите попытку позже.'
 ErrHermesFeishuGroupAllowlistRequiresAllowlist: 'Когда групповая политика Feishu — белый список, политика личных сообщений не может быть кодом сопряжения.'
 
@@ -132,7 +135,14 @@ ErrAppNameExist: 'Имя приложения уже существует'
 ErrAppInstallNameExist: 'Имя установки приложения {{ .name }} уже существует'
 AppStoreIsSyncing: 'App Store синхронизируется, повторите попытку позже'
 ErrGetCompose: 'Не удалось получить файл docker-compose.yml {{ .detail }}'
+ErrComposeProjectNameParse: 'Не удалось определить имя проекта из вывода конфигурации Docker Compose: {{ .detail }}'
+ErrComposeProjectNameEmpty: 'Не удалось получить имя проекта из конфигурации Docker Compose или родительского каталога файла. Введите имя и повторите попытку.'
+ErrComposeNameInvalid: 'Недопустимое имя проекта Compose: оно должно начинаться со строчной буквы или цифры, содержать только строчные буквы, цифры, дефисы и подчёркивания и иметь длину от 1 до 256 символов.'
 ErrAppVersionUnavailable: 'Эта версия приложения удалена из удаленного сервиса. Выберите другую версию и повторите попытку.'
+ErrVllmGB10ProOnly: 'Эта версия vLLM доступна только в профессиональной редакции 1Panel.'
+ErrAIGatewayDatabaseTypeMismatch: 'AI Gateway можно обновлять только в пределах одного типа базы данных (SQLite или PostgreSQL).'
+ErrAIGatewayRecoverDatabaseTypeMismatch: 'Резервная копия AI Gateway и целевое приложение должны использовать один и тот же тип базы данных (SQLite или PostgreSQL).'
+ErrHermesUpgradeVersion: 'Hermes Agent можно обновить только до более нового распознанного выпуска, разрешённого настройкой обновления между основными версиями. Для возврата к старой версии восстановите резервную копию.'
 ErrAppWarn: 'Ненормальное состояние, проверьте журнал'
 ErrAppParamKey: 'Поле параметра {{ .name }} ненормально'
 ErrAppUpgrade: 'Обновление приложения {{ .name }} не удалось {{ .err }}'
@@ -154,6 +164,11 @@ ErrAppVersionDeprecated: 'Приложение {{ .name }} несовмести�
 ErrDockerFailed: 'Состояние Docker аномально, проверьте состояние сервиса'
 ErrDockerComposeCmdNotFound: 'Команда Docker Compose отсутствует, пожалуйста, установите эту команду на хост-машине сначала'
 UseExistImage: 'Образ уже существует, используется существующий образ'
+UpgradePrepare: 'Подготовка обновления приложения'
+UpgradeStop: 'Остановка исходного приложения'
+UpgradeWaitReady: 'Ожидание готовности приложения'
+UpgradeBackupDisabled: 'Резервная копия обновления отключена; изменения данных из сценариев обновления нельзя полностью откатить'
+UpgradeRollbackFailed: 'Ошибка отката'
 ErrDatabaseNotFound: 'База данных {{ .name }} не существует'
 
 # SSH
@@ -204,6 +219,9 @@ ErrDomainFormat: 'Неверный формат доменного имени {{
 ErrDefaultAlias: 'по умолчанию зарезервирован код, используйте другой код'
 ErrParentWebsite: 'Сначала вам необходимо удалить дочерний сайт {{ .name }}'
 ErrBuildDirNotFound: 'Каталог сборки не существует'
+ErrBrotliDisabled: 'Модуль brotli не включён, сначала включите и соберите его'
+ErrBrotliUnsupported: 'Панель не смогла автоматически подключить настройки brotli к nginx.conf; проверьте файл или обновите OpenResty'
+ErrModuleBuildUnsupported: 'Эта версия OpenResty не может собирать модули, сначала обновите её'
 ErrImageNotExist: 'Образ операционной среды {{ .name }} не существует, пожалуйста, отредактируйте операционную среду заново'
 ErrProxyIsUsed: 'Балансировка нагрузки используется обратным прокси, невозможно удалить'
 ErrSSLValid: 'Файл сертификата аномален, проверьте статус сертификата'
@@ -285,6 +303,9 @@ BuildCache: 'Кэш сборки'
 Volume: 'Том хранилища'
 Network: 'Сеть'
 PruneStart: 'Очистка выполняется, пожалуйста, подождите...'
+NetworkCleanupConnected: "Сеть [{{ .name }}] ({{ .id }}) пропущена: подключены контейнеры или сеть используется; не удалена"
+NetworkCleanupSummary: "Очистка сетей завершена: удалено {{ .deleted }}, пропущено {{ .skipped }}, ошибок {{ .failed }}"
+NetworkCleanupPartialFailure: "Не удалось очистить некоторые сети; проверьте журнал задачи"
 ContainerBackupPrepare: 'Подготовить рабочую область резервной копии контейнера'
 ContainerBackupStop: 'Остановить контейнер перед резервным копированием'
 ContainerBackupInspect: 'Сделать резервную копию inspect и сети контейнера'
@@ -397,7 +418,7 @@ xss: 'XSS'
 phpExec: 'Выполнение PHP-скрипта'
 oneWordTrojan: 'Троян из одного слова'
 appFilter: 'Применить фильтрацию опасных каталогов'
-webShell: 'Be6-оболочка'
+webShell: 'Веб-оболочка'
 args: 'Правила параметров'
 protocolFilter: 'Фильтрация протоколов'
 javaFilter: 'Фильтр опасных файлов Java'
@@ -449,6 +470,11 @@ TaskCreate: 'Создать'
 TaskDelete: 'Удалить'
 TaskUpgrade: 'Обновить'
 TaskUpdate: 'Обновить'
+AgentPluginInstall: 'Установить плагин'
+AgentPluginEnable: 'Включить плагин'
+AgentPluginDisable: 'Отключить плагин'
+AgentPluginUpdate: 'Обновить плагин'
+AgentPluginUninstall: 'Удалить плагин'
 TaskRestart: 'Перезапуск'
 TaskProtect: 'Защита'
 TaskBackup: 'Резервное копирование'
@@ -462,7 +488,7 @@ TaskClean: 'Очистка'
 TaskHandle: 'Выполнить'
 TaskImport: 'Импорт'
 TaskExport: 'Экспорт'
-Website: 'Be6-сайт'
+Website: 'Веб-сайт'
 App: 'Приложение'
 Runtime: 'Среда выполнения'
 Database: 'База данных'
@@ -575,6 +601,10 @@ ContainerDisconnectOld: 'Освобождение сетевых адресов 
 ContainerCreateReplacement: 'Создание нового контейнера {{ .name }}'
 ContainerStartReplacement: 'Запуск нового контейнера {{ .name }}'
 ContainerWaitReplacement: 'Проверка готовности нового контейнера {{ .name }}'
+ContainerStartupDiagnostic: 'Диагностика сбоя запуска нового контейнера {{ .name }}'
+ContainerRecentLogs: 'Последние журналы контейнера (200 строк)'
+ContainerDiagnosticLogsFailed: 'Не удалось получить журналы сбойного контейнера {{ .name }}: {{ .err }}'
+ContainerDiagnosticLogsEmpty: 'Журналы контейнера отсутствуют'
 ContainerRollbackRestartOld: 'Повторный запуск исходного контейнера {{ .name }}'
 ContainerRollbackRemoveReplacement: 'Удаление неудачно созданного контейнера {{ .name }}'
 ContainerRollbackRenameOld: 'Восстановление имени исходного контейнера {{ .name }}'
@@ -604,14 +634,15 @@ AppAttributesNotMatch: 'Тип или имя приложения не совп�
 # оповещение
 ErrAlertMethodNotSupported: 'Эта версия не поддерживает данный способ оповещения'
 ErrAlertSync: 'Ошибка синхронизации информации о тревоге, проверьте и повторите попытку'
+ErrWebhookTestFailed: 'Проверьте конфигурацию Webhook. Подробности доступны в системных журналах.'
 
 # задача - среда выполнения
 ErrInstallExtension: 'Уже выполняется задача установки, подождите, пока задача завершится'
 
 # шаблон письма оповещения
 PanelAlertTitle: 'Уведомление панели'
-TestAlertTitle: 'Тестовое письмо - проверка подключения'
-TestAlert: 'Это тестовое письмо для проверки правильности настройки отправки писем.'
+TestAlertTitle: 'Тестовое уведомление панели'
+TestAlertMessage: 'Это тестовое уведомление для проверки настроек канала уведомлений и подключения.'
 LicenseExpirationAlert: 'Ваш панель {{ .node }}{{ .ip }}, лицензия истечет через {{ .day }} дней. Войдите в панель для получения деталей.'
 CronJobFailedAlert: 'Ваш панель {{ .node }}{{ .ip }}, выполнение запланированной задачи {{ .name }} не удалось. Войдите в панель для получения деталей.'
 ClamAlert: 'Ваш панель {{ .node }}{{ .ip }}, задача сканирования на вирусы обнаружила {{ .num }} зараженных файлов. Войдите в панель для получения деталей.'
@@ -625,6 +656,7 @@ CommonAlert: 'Ваш панель {{ .node }}{{ .ip }}, {{ .msg }}. Войдит
 NodeExceptionAlert: 'Ваш панель {{ .node }}{{ .ip }}, {{ .num }} узлов работают с ошибками. Войдите в панель для получения деталей.'
 LicenseExceptionAlert: 'Ваш панель {{ .node }}{{ .ip }}, {{ .num }} лицензий имеют ошибки. Войдите в панель для получения деталей.'
 SSHAndPanelLoginAlert: 'Ваш панель {{ .node }}{{ .ip }}, вход {{ .name }} с адреса {{ .loginIp }} является аномальным. Войдите в панель для получения деталей.'
+CronJobSuccessAlert: 'Панель {{ .node }}{{ .ip }}: запланированная задача {{ .name }} успешно завершена. Войдите для просмотра подробностей.'
 
 # диск
 DeviceNotFound: 'Устройство {{ .name }} не найдено'
@@ -637,6 +669,7 @@ XfsNotFound: 'Файловая система xfs не обнаружена, с�
 # терминал
 TerminalAIBlockedRiskyCommand: 'Опасная команда заблокирована: {{ .command }}'
 TerminalAIThinking: 'AI думает...'
+TerminalOutputTruncated: '[вывод усечён, показан только недавний вывод]'
 TerminalAIReadyToExecute: 'Обдумывание завершено, нажмите Enter для выполнения (время: {{ .duration }}, token: {{ .tokens }})'
 TerminalAIRequestFailed: 'Ошибка запроса AI: {{ .err }}'
 
@@ -649,3 +682,123 @@ ErrAIProxyModelMapEmpty: 'Сопоставление моделей не мож�
 ErrAIProxyModelMapEmptyExternalModel: 'Сопоставление моделей содержит пустую запрошенную модель'
 ErrAIProxyModelMapEmptyUpstreamModel: 'Upstream-модель для {{ .model }} не может быть пустой'
 AIProxyUserFallback: 'Удаленный пользователь (ID: {{ .id }})'
+AIProviderBailian: 'Alibaba Cloud Model Studio'
+AIProviderBailianCodingPlan: 'Alibaba Cloud Model Studio Coding Plan'
+AIProviderArk: 'Volcengine Ark'
+AIProviderArkCodingPlan: 'Volcengine Ark Coding Plan'
+
+# Firewall
+ErrDockerIptablesChainUnavailable: 'Цепочка Docker DOCKER-USER не найдена. Перезапустите Docker и повторите попытку'
+ErrDockerNftablesChainUnavailable: 'Цепочка IPv4 брандмауэра nftables Docker не найдена. Убедитесь, что текущая версия Docker поддерживает бэкенд брандмауэра nftables, перезапустите Docker и повторите попытку'
+ErrDockerForwardPolicyDrop: 'На этом сервере ограничена пересылка сетевого трафика. Сейчас невозможно включить защиту портов контейнеров.'
+Firewall: 'Межсетевой экран'
+FirewallTaskHost: 'Межсетевой экран хоста'
+FirewallTaskForwarding: 'Перенаправление портов'
+FirewallTaskDocker: 'Защита портов контейнеров'
+FirewallRuleTaskCreate: 'Создание правил межсетевого экрана [{{ .name }}]'
+FirewallRuleTaskUpdate: 'Обновление правил межсетевого экрана [{{ .name }}]'
+FirewallRuleTaskDelete: 'Удаление правил межсетевого экрана [{{ .name }}]'
+FirewallRuleTaskSync: 'Синхронизация правил межсетевого экрана [{{ .name }}]'
+FirewallTaskInitialize: 'Инициализация межсетевого экрана [{{ .name }}]'
+FirewallCreateRulesStep: 'Создание правил межсетевого экрана'
+FirewallCreateRulesResult: 'Результат создания: успешно — {{ .succeeded }}, ошибок — {{ .failed }}, не выполнено — {{ .skipped }}'
+FirewallRuleOperationResult: 'Результат операции: успешно — {{ .succeeded }}, ошибок — {{ .failed }}'
+FirewallCreateRuleSkipped: 'Не выполнено'
+FirewallImportRuleConversion: '[{{ .index }}/{{ .total }}] {{ .source }} → {{ .target }}: {{ .rule }}; преобразовано в {{ .count }} правил'
+FirewallCreateRuleExecutionFailed: 'Не удалось создать правило. Выполненные команды не отменены'
+FirewallInitializeChainsStep: 'Инициализировать и привязать базовые цепочки {{ .name }}'
+FirewallSyncWhitelistStep: 'Синхронизировать белый список портов межсетевого экрана'
+FirewallEnableForwardingStep: 'Включить и привязать цепочки перенаправления портов'
+FirewallRestoreForwardingRulesStep: 'Восстановить правила перенаправления портов из базы данных'
+FirewallInspectDockerGuardStep: 'Проверить бэкенд межсетевого экрана Docker и политики'
+FirewallInitializeDockerGuardStep: 'Инициализировать и привязать цепочки защиты портов {{ .name }}'
+FirewallPersistDockerGuardStep: 'Сохранить состояние защиты портов Docker'
+FileTaskCopy: 'Копирование файлов в {{ .dst }}'
+FileTaskMove: 'Перемещение файлов в {{ .dst }}'
+FileTaskCompress: 'Сжатие файлов в {{ .dst }}'
+FileTaskDecompress: 'Распаковка файлов в {{ .dst }}'
+FileTaskSource: 'Исходный путь: {{ .path }}'
+FileTaskFormat: 'Формат архива: {{ .format }}'
+FileTaskRename: 'Имя целевого файла: {{ .name }}'
+ErrFirewallBackendCleanupRequired: "В текущем бэкенде {{ .current }} остались правила 1Panel. Удалите их перед переключением на {{ .target }}."
+ErrDockerIPv4ForwardingDisabled: "Пересылка IPv4 отключена. Перед использованием бэкенда межсетевого экрана Docker установите net.ipv4.ip_forward=1."
+ErrFirewallRuleSavedApplyFailed: "Настройки нового правила сохранены, но применить их к межсетевому экрану не удалось. Повторите попытку с помощью синхронизации: {{ .detail }}"
+ErrFirewallRuleConflict: "В UFW уже есть правило с такими же условиями и другим действием. Отредактируйте существующее правило."
+ErrForwardInterfaceNotFound: "Сетевой интерфейс {{ .name }}, указанный в правиле перенаправления, не существует. Проверьте имя и повторите попытку."
+ErrIPv6RARisk: "Включение переадресации IPv6 заблокировано из-за риска потери связи. См. документацию и системные журналы."
+ErrIPv6RACheckFailed: "Включение переадресации IPv6 заблокировано: не удалось проверить настройки сети. Подробности в системных журналах."
+
+ErrSSHPublicKey: "Введите действительный открытый ключ SSH"
+ErrSSHPrivateKey: "Недопустимый закрытый ключ SSH или неверная парольная фраза; для зашифрованных ключей требуется исходная парольная фраза"
+ErrSSHKeyMismatch: "Открытый и закрытый ключи SSH не соответствуют друг другу"
+
+# виртуальная машина
+ErrVMNotFound: "Виртуальная машина не существует"
+ErrVMAlreadyExists: "Виртуальная машина уже существует"
+ErrVMCountLimit: "В редакции Professional можно создать не более {{ .limit }} виртуальных машин. Удалите существующую виртуальную машину или перейдите на Enterprise и повторите попытку."
+ErrVMImageAlreadyExists: "Файл образа виртуальной машины уже существует: {{ .detail }}"
+ErrVMStoragePathInUse: "Путь пула хранения уже используется [{{ .name }}]"
+ErrVMHelperNotFound: "1panel-kvm не найден"
+ErrVMBridgeManaged: "Имя моста уже управляется libvirt или Docker"
+ErrVMNetworkInUse: "Сеть используется и не может быть удалена"
+ErrVMStorageInUse: "Пул хранилища используется и не может быть удалён"
+ErrVMStorageNameCannotChange: "Имя пула хранилища нельзя изменить"
+ErrVMStoragePathCannotChange: "Путь к пулу хранилища нельзя изменить"
+ErrVMRunning: "Виртуальная машина запущена"
+ErrVMLibvirtConnect: "Не удалось подключиться к libvirt: {{ .detail }}"
+ErrVMPermission: "Нет разрешения на операцию с виртуальной машиной: {{ .detail }}"
+ErrVMNetworkNotFound: "Сеть виртуальной машины не существует: {{ .detail }}"
+ErrVMInvalidPath: "Недопустимый путь виртуальной машины: {{ .detail }}"
+ErrVMInvalidInput: "Недопустимые параметры виртуальной машины: {{ .detail }}"
+ErrVMCommandFailed: "Ошибка выполнения команды виртуальной машины: {{ .err }}"
+ErrVMDiskResizeBlocked: "Диск не соответствует условиям расширения или используется другим устройством. Проверьте состояние диска."
+ErrVMDiskReferenced: "Этот виртуальный диск используется другой виртуальной машиной или устройством; расширение пока недоступно."
+ErrVMDiskReferenceCheck: "Не удалось проверить ссылки на виртуальный диск. Расширение недоступно; проверьте диски других виртуальных машин."
+ErrVMSnapshotMetadataSync: "Снимок восстановлен, но синхронизация данных диска не удалась. Обновите данные и проверьте их; повторно восстанавливать снимок не нужно."
+VMCreateTask: "Создать виртуальную машину [{{ .name }}]"
+VMCreateFromTemplateTask: "Создать виртуальную машину [{{ .name }}] из шаблона"
+VMUpdateTask: "Обновить виртуальную машину [{{ .name }}]"
+VMDiskResizeTask: "Расширить диск [{{ .disk }}] виртуальной машины [{{ .name }}]"
+VMRenameTask: "Переименовать виртуальную машину [{{ .name }}] в [{{ .newName }}]"
+VMDeleteTask: "Удалить виртуальную машину [{{ .name }}]"
+VMTemplateCreateTask: "Сохранить виртуальную машину [{{ .name }}] как шаблон [{{ .template }}]"
+VMTemplateDeleteTask: "Удалить шаблон виртуальной машины [{{ .name }}]"
+VMForceDeleteMetadataOnly: "1panel-kvm не найден, принудительно удаляются только метаданные виртуальной машины [{{ .name }}]"
+VMForceDeleteMetadataAfterLibvirtFailed: "Не удалось удалить виртуальную машину [{{ .name }}] из libvirt, принудительно удаляются метаданные: {{ .err }}"
+VMForceDeleteDiskFailed: "Не удалось принудительно удалить файл диска виртуальной машины [{{ .path }}]: {{ .err }}"
+VMForceDeleteDiskSuccess: "Файл диска виртуальной машины [{{ .path }}] принудительно удален"
+VMSnapshotCreateTask: "Создать снимок [{{ .snapshot }}] для виртуальной машины [{{ .vm }}]"
+VMSnapshotCreateStep: "Создать снимок виртуальной машины [{{ .snapshot }}]"
+VMSnapshotRecoverTask: "Восстановить снимок [{{ .snapshot }}] виртуальной машины [{{ .vm }}]"
+VMSnapshotRecoverStep: "Восстановить снимок виртуальной машины [{{ .snapshot }}]"
+VMSnapshotDeleteTask: "Удалить снимок [{{ .snapshot }}] виртуальной машины [{{ .vm }}]"
+VMSnapshotDeleteStep: "Удалить снимок виртуальной машины [{{ .snapshot }}]"
+
+ErrCAUpload: "Upload a ZIP (up to 10 MB) containing a valid self-signed CA certificate ca.crt and its matching private key ca.key, with a supported RSA or EC algorithm."
+
+ErrCAImport: "Provide a valid self-signed root CA certificate and matching private key (up to 1 MB each), using a supported RSA or EC algorithm."
+
+# Built-in Feishu
+ErrFeishuConfig: "Исправьте несовместимые настройки перед продолжением: {{ .detail }}"
+ErrFeishuConfigChanged: "Настройки изменились во время переключения. Обновите страницу и повторите."
+ErrFeishuImageRequired: "Используйте образ со встроенным Feishu."
+ErrFeishuAlreadySwitched: "Feishu уже переключён на встроенный плагин."
+ErrFeishuSwitchRequired: "Сначала перейдите на встроенный плагин на странице канала Feishu."
+ErrFeishuManaged: "Управляйте Feishu на странице канала; плагин обновляется с образом."
+ErrFeishuRestore: "Не удалось восстановить настройки Feishu: {{ .err }}"
+ErrFeishuActivation: "Не удалось запустить встроенный плагин Feishu или шлюз."
+AgentFeishuSwitch: "Переключить плагин Feishu"
+AgentFeishuBackup: "Резервная копия настроек: {{ .name }}"
+AgentFeishuRestored: "Прежние настройки восстановлены."
+AgentFeishuProbeWarning: "Проверка подключения Feishu не пройдена. Проверьте сеть и учётные данные; переключение сохранено."
+AgentFeishuVerifyMessages: "Локальная активация завершена. Проверьте сопряжение, личные и групповые сообщения, маршрутизацию ботов и потоковые ответы в Feishu."
+
+ErrFeishuUpgradeConfirm: "Подтвердите параметры перехода Feishu на странице обновления."
+
+ErrFeishuUpgradeBackup: "Для обновления совместимости Feishu нужна полная резервная копия приложения."
+
+ErrFeishuUpgradeMounts: "Эти монтирования не поддерживают полное резервное копирование и восстановление. Используйте стандартные данные внутри каталога приложения."
+
+AgentFeishuRecoveryDisabled: "Шлюз восстановлен, Feishu отключён; исходная резервная копия конфигурации сохранена."
+
+ContainerUpgradeWaiting: "Waiting for a container upgrade execution slot"

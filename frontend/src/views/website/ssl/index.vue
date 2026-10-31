@@ -172,15 +172,12 @@
                     />
                 </ComplexTable>
             </template>
-            <DnsAccount ref="dnsAccountRef" />
-            <AcmeAccount ref="acmeAccountRef" />
             <Create ref="sslCreateRef" @close="search()" @submit="openLog" />
             <Detail ref="detailRef" />
             <SSLUpload ref="sslUploadRef" @close="search()" />
             <Apply ref="applyRef" @search="search" @submit="openLog" />
             <OpDialog ref="opRef" @search="search" @cancel="search" />
             <Log ref="logRef" @close="search()" :heightDiff="220" />
-            <CA ref="caRef" @close="search()" />
             <Obtain ref="obtainRef" @close="search()" @submit="openLog" />
             <DrawerPro v-model="pushOpen" :header="$t('commons.button.sync')" size="large" @close="handlePushClose">
                 <el-form
@@ -221,11 +218,10 @@
 </template>
 
 <script lang="ts" setup>
-import { defineAsyncComponent, onMounted, reactive, ref } from 'vue';
+import { useSearchState } from '@/utils/search-reset';
+import { toRef, defineAsyncComponent, onMounted, reactive, ref } from 'vue';
 import { deleteSSL, downloadFile, pushSSLToNode, searchSSL, updateSSL } from '@/api/modules/website';
-import DnsAccount from './dns-account/index.vue';
-import AcmeAccount from './acme-account/index.vue';
-import CA from './ca/index.vue';
+import { routerToNameWithQuery } from '@/utils/router';
 import Create from './create/index.vue';
 import Detail from './detail/index.vue';
 import { dateFormat } from '@/utils/date';
@@ -258,13 +254,10 @@ const PushToNode = defineAsyncComponent(async () => {
 });
 
 const paginationConfig = reactive({
-    cacheSizeKey: 'ssl-page-size',
     currentPage: 1,
-    pageSize: Number(localStorage.getItem('ssl-page-size')) || 20,
+    pageSize: 20,
     total: 0,
 });
-const acmeAccountRef = ref();
-const dnsAccountRef = ref();
 const sslCreateRef = ref();
 const detailRef = ref();
 const data = ref();
@@ -274,7 +267,6 @@ const sslUploadRef = ref();
 const applyRef = ref();
 const logRef = ref();
 const taskLogRef = ref();
-const caRef = ref();
 const obtainRef = ref();
 const pushFormRef = ref<FormInstance>();
 const pushOpen = ref(false);
@@ -286,6 +278,15 @@ const req = reactive({
     orderBy: 'updated_at',
     order: 'descending',
 });
+useSearchState(
+    'website/ssl/index',
+    {
+        search: toRef(req, 'domain'),
+        page: toRef(paginationConfig, 'currentPage'),
+        pageSize: toRef(paginationConfig, 'pageSize'),
+    },
+    { onRevisit: () => search() },
+);
 const pushForm = ref({
     id: 0,
     pushNode: true,
@@ -301,6 +302,8 @@ const routerButton = [
         path: '/websites/ssl',
     },
 ];
+
+const shouldRevokeSSL = (row: Website.SSLDTO) => ['dnsAccount', 'dnsManual', 'http'].includes(row.provider);
 
 const buttons = [
     {
@@ -377,6 +380,15 @@ const buttons = [
         click: function (row: Website.SSLDTO) {
             deletessl(row);
         },
+        show: (row: Website.SSLDTO) => !shouldRevokeSSL(row),
+    },
+    {
+        label: i18n.global.t('ssl.deleteAndRevoke'),
+        permission: true,
+        click: function (row: Website.SSLDTO) {
+            deletessl(row);
+        },
+        show: shouldRevokeSSL,
     },
 ];
 
@@ -444,10 +456,10 @@ const updateConfig = (row: Website.SSLDTO) => {
 };
 
 const openAcmeAccount = () => {
-    acmeAccountRef.value.acceptParams();
+    routerToNameWithQuery('SSL-ACME', { uncached: 'true' });
 };
 const openDnsAccount = () => {
-    dnsAccountRef.value.acceptParams();
+    routerToNameWithQuery('SSL-DNS', { uncached: 'true' });
 };
 const openSSL = () => {
     sslCreateRef.value.acceptParams('create');
@@ -522,7 +534,7 @@ const submitPush = async () => {
 };
 
 const openCA = () => {
-    caRef.value.acceptParams();
+    routerToNameWithQuery('SSL-CA', { uncached: 'true' });
 };
 
 const applySSL = (row: Website.SSLDTO) => {
@@ -530,9 +542,13 @@ const applySSL = (row: Website.SSLDTO) => {
 };
 
 const deletessl = async (row: any) => {
+    const isBatch = row == null;
+    const deleteLabel = i18n.global.t(
+        !isBatch && shouldRevokeSSL(row) ? 'ssl.deleteAndRevoke' : 'commons.button.delete',
+    );
     let names = [];
     let params = {};
-    if (row == null) {
+    if (isBatch) {
         names = selects.value.map((item: Website.SSLDTO) => item.primaryDomain);
         params = { ids: selects.value.map((item: Website.SSLDTO) => item.id) };
     } else {
@@ -541,12 +557,11 @@ const deletessl = async (row: any) => {
     }
 
     opRef.value.acceptParams({
-        title: i18n.global.t('commons.button.delete'),
+        title: deleteLabel,
         names: names,
-        msg: i18n.global.t('commons.msg.operatorHelper', [
-            i18n.global.t('website.ssl'),
-            i18n.global.t('commons.button.delete'),
-        ]),
+        msg: isBatch
+            ? i18n.global.t('ssl.deleteConfirm')
+            : i18n.global.t('commons.msg.operatorHelper', [i18n.global.t('website.ssl'), deleteLabel]),
         api: deleteSSL,
         params: params,
     });

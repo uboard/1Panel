@@ -4,11 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"mime"
-	"sort"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/1Panel-dev/1Panel/agent/app/dto"
 	"github.com/1Panel-dev/1Panel/agent/app/model"
@@ -17,11 +14,13 @@ import (
 	"github.com/1Panel-dev/1Panel/agent/constant"
 	"github.com/1Panel-dev/1Panel/agent/global"
 	"github.com/1Panel-dev/1Panel/agent/i18n"
-	"github.com/1Panel-dev/1Panel/agent/utils/cmd"
+	alertUtil "github.com/1Panel-dev/1Panel/agent/utils/alert"
+	alertconfig "github.com/1Panel-dev/1Panel/agent/utils/alert_config"
+	alertwebhook "github.com/1Panel-dev/1Panel/agent/utils/alert_webhook"
 	"github.com/1Panel-dev/1Panel/agent/utils/copier"
 	"github.com/1Panel-dev/1Panel/agent/utils/email"
 	"github.com/1Panel-dev/1Panel/agent/utils/xpack"
-	"github.com/shirou/gopsutil/v4/disk"
+	"github.com/1Panel-dev/1Panel/agent/utils/xpack/providers"
 )
 
 type AlertService struct{}
@@ -32,6 +31,28 @@ var communityAlertMethodTypeNames = map[string]string{
 	constant.DingTalk: "DingTalk",
 	constant.FeiShu:   "FeiShu",
 	constant.SMS:      "SMS",
+}
+
+var legacyAlertMethodTypeMap = map[string]string{
+	"mail":            constant.Email,
+	constant.Email:    constant.Email,
+	constant.SMS:      constant.SMS,
+	constant.Bark:     constant.Bark,
+	constant.WeChat:   constant.WeCom,
+	constant.WeCom:    constant.WeCom,
+	constant.DingTalk: constant.DingTalk,
+	constant.FeiShu:   constant.FeiShu,
+	constant.Custom:   constant.Custom,
+}
+
+var supportedAlertMethodTypes = map[string]struct{}{
+	constant.Email:    {},
+	constant.SMS:      {},
+	constant.Bark:     {},
+	constant.WeCom:    {},
+	constant.DingTalk: {},
+	constant.FeiShu:   {},
+	constant.Custom:   {},
 }
 
 type IAlertService interface {
@@ -53,8 +74,10 @@ type IAlertService interface {
 	GetAlertConfig(req dto.AlertConfigQuery) ([]model.AlertConfig, error)
 	PageAlertConfig(req dto.AlertConfigPageReq) (int64, []model.AlertConfig, error)
 	UpdateAlertConfig(req dto.AlertConfigUpdate, operator string) error
-	DeleteAlertConfig(id uint) error
+	UpdateAlertConfigStatus(req dto.AlertConfigStatusUpdate, operator string) (string, error)
+	DeleteAlertConfig(id uint) (string, error)
 	TestAlertConfig(req dto.AlertConfigTest) (bool, error)
+	TestCustomAlertConfig(req dto.AlertConfigTest, lang string) (dto.AlertConfigTestResult, error)
 }
 
 func NewIAlertService() IAlertService {
@@ -82,7 +105,38 @@ func (a AlertService) PageAlert(search dto.AlertSearch) (int64, []dto.AlertDTO, 
 		return 0, nil, err
 	}
 
+	cronjobProjects := make(map[string]uint)
+	var cronjobIDs []uint
 	for _, item := range alerts {
+		if alertUtil.GetCronJobType(item.Type) != "cronJob" {
+			continue
+		}
+		if _, exists := cronjobProjects[item.Project]; exists {
+			continue
+		}
+		id, parseErr := strconv.ParseUint(item.Project, 10, strconv.IntSize)
+		if parseErr != nil || id == 0 {
+			continue
+		}
+		cronjobProjects[item.Project] = uint(id)
+		cronjobIDs = append(cronjobIDs, uint(id))
+	}
+	cronjobsByID := make(map[uint]model.Cronjob)
+	if len(cronjobIDs) > 0 {
+		cronjobs, err := cronjobRepo.List(repo.WithByIDs(cronjobIDs))
+		if err != nil {
+			return 0, nil, err
+		}
+		for _, cronjob := range cronjobs {
+			cronjobsByID[cronjob.ID] = cronjob
+		}
+	}
+
+	for _, item := range alerts {
+		var taskName string
+		if cronjob, exists := cronjobsByID[cronjobProjects[item.Project]]; exists && cronjob.Type == item.Type {
+			taskName = cronjob.Name
+		}
 
 		result = append(result, dto.AlertDTO{
 			ID:             item.ID,
@@ -92,6 +146,7 @@ func (a AlertService) PageAlert(search dto.AlertSearch) (int64, []dto.AlertDTO, 
 			Method:         item.Method,
 			Title:          item.Title,
 			Project:        item.Project,
+			TaskName:       taskName,
 			Status:         item.Status,
 			SendCount:      item.SendCount,
 			AdvancedParams: item.AdvancedParams,
@@ -163,6 +218,16 @@ func (a AlertService) CreateAlert(create dto.AlertCreate, operator string) error
 			return err
 		}
 	} else {
+		advanced, err := prepareCronJobAlertParams(create.Type, "", create.AdvancedParams)
+		if err != nil {
+			return err
+		}
+		create.AdvancedParams = advanced
+		if create.Status != constant.AlertDisable {
+			if err := a.validateCronJobAlertChannels(create.Type, advanced, create.Method); err != nil {
+				return err
+			}
+		}
 		alertInfo.Status = constant.AlertEnable
 		if err := copier.Copy(&alertInfo, &create); err != nil {
 			return buserr.WithErr("ErrStructTransform", err)
@@ -180,8 +245,27 @@ func (a AlertService) CreateAlert(create dto.AlertCreate, operator string) error
 }
 
 func (a AlertService) UpdateAlert(req dto.AlertUpdate, operator string) error {
-	if err := a.validateCommunityAlertMethod(req.Method); err != nil {
+	if alertUtil.GetCronJobType(req.Type) == "cronJob" {
+		previous, err := alertRepo.Get(repo.WithByID(req.ID))
+		if err != nil {
+			return err
+		}
+		req.AdvancedParams, err = prepareCronJobAlertParams(req.Type, previous.AdvancedParams, req.AdvancedParams)
+		if err != nil {
+			return err
+		}
+	}
+	methodTypes, err := a.validateAlertMethodReferences(req.Method)
+	if err != nil {
 		return err
+	}
+	if req.Status != constant.AlertDisable {
+		if err := a.validateCronJobAlertChannels(req.Type, req.AdvancedParams, req.Method); err != nil {
+			return err
+		}
+		if err := a.validateAlertMethodEntitlement(methodTypes); err != nil {
+			return err
+		}
 	}
 
 	upMap := make(map[string]interface{})
@@ -240,7 +324,19 @@ func (a AlertService) UpdateStatus(id uint, status string) error {
 	if alertInfo.ID == 0 {
 		return buserr.New("ErrRecordNotFound")
 	}
-	err := alertRepo.Update(map[string]interface{}{"status": status}, repo.WithByID(alertInfo.ID))
+	methodTypes, err := a.validateAlertMethodReferences(alertInfo.Method)
+	if err != nil {
+		return err
+	}
+	if status == constant.AlertEnable {
+		if err := a.validateCronJobAlertChannels(alertInfo.Type, alertInfo.AdvancedParams, alertInfo.Method); err != nil {
+			return err
+		}
+		if err := a.validateAlertMethodEntitlement(methodTypes); err != nil {
+			return err
+		}
+	}
+	err = alertRepo.Update(map[string]interface{}{"status": status}, repo.WithByID(alertInfo.ID))
 	if err != nil {
 		return err
 	}
@@ -257,120 +353,12 @@ func (a AlertService) UpdateStatus(id uint, status string) error {
 }
 
 func (a AlertService) GetDisks() ([]dto.DiskDTO, error) {
-	var disks []dto.DiskDTO
-	excludes := map[string]struct{}{
-		"/mnt/cdrom": {}, "/boot": {}, "/boot/efi": {}, "/dev": {}, "/dev/shm": {},
-		"/run/lock": {}, "/run": {}, "/run/shm": {}, "/run/user": {},
+	infos := loadDiskInfo(true)
+	disks := make([]dto.DiskDTO, 0, len(infos))
+	for _, item := range infos {
+		disks = append(disks, dto.DiskDTO(item))
 	}
-	stdout, err := executeDiskCommand()
-	if err != nil {
-		return disks, nil
-	}
-
-	lines := strings.Split(stdout, "\n")
-	var mounts []dto.AlertDiskInfo
-
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) < 7 {
-			continue
-		}
-		mountPoint := strings.Join(fields[6:], " ")
-		if shouldExclude(fields, mountPoint, excludes) {
-			continue
-		}
-		mounts = append(mounts, dto.AlertDiskInfo{Type: fields[1], Device: fields[0], Mount: mountPoint})
-
-	}
-
-	var (
-		wg sync.WaitGroup
-		mu sync.Mutex
-	)
-	wg.Add(len(mounts))
-	for i := 0; i < len(mounts); i++ {
-		go func(timeoutCh <-chan time.Time, mount dto.AlertDiskInfo) {
-			defer wg.Done()
-
-			var itemData dto.DiskDTO
-			itemData.Path = mount.Mount
-			itemData.Type = mount.Type
-			itemData.Device = mount.Device
-			select {
-			case <-timeoutCh:
-				mu.Lock()
-				disks = append(disks, itemData)
-				mu.Unlock()
-				global.LOG.Errorf("load disk info from %s failed, err: timeout", mount.Mount)
-			default:
-				state, err := disk.Usage(mount.Mount)
-				if err != nil {
-					mu.Lock()
-					disks = append(disks, itemData)
-					mu.Unlock()
-					global.LOG.Errorf("load disk info from %s failed, err: %v", mount.Mount, err)
-					return
-				}
-				itemData.Total = state.Total
-				itemData.Free = state.Free
-				itemData.Used = state.Used
-				itemData.UsedPercent = state.UsedPercent
-				itemData.InodesTotal = state.InodesTotal
-				itemData.InodesUsed = state.InodesUsed
-				itemData.InodesFree = state.InodesFree
-				itemData.InodesUsedPercent = state.InodesUsedPercent
-				mu.Lock()
-				disks = append(disks, itemData)
-				mu.Unlock()
-			}
-		}(time.After(5*time.Second), mounts[i])
-	}
-	wg.Wait()
-
-	sort.Slice(disks, func(i, j int) bool {
-		return disks[i].Path < disks[j].Path
-	})
 	return disks, nil
-}
-
-func executeDiskCommand() (string, error) {
-	cmdMgr := cmd.NewCommandMgr(cmd.WithTimeout(2 * time.Second))
-	stdout, err := cmdMgr.RunWithStdout("df", "-hT", "-P")
-	if err != nil {
-		cmdMgr2 := cmd.NewCommandMgr(cmd.WithTimeout(1 * time.Second))
-		stdout, err = cmdMgr2.RunWithStdout("df", "-lhT", "-P")
-	}
-	if err != nil {
-		return stdout, err
-	}
-	var lines []string
-	for _, line := range strings.Split(stdout, "\n") {
-		if !strings.Contains(line, "/") || strings.Contains(line, "tmpfs") || strings.Contains(line, "snap/core") || strings.Contains(line, "udev") {
-			continue
-		}
-		lines = append(lines, line)
-	}
-	if len(lines) == 0 {
-		return "", nil
-	}
-	return strings.Join(lines, "\n"), nil
-}
-
-func shouldExclude(fields []string, mountPoint string, excludes map[string]struct{}) bool {
-	if strings.HasPrefix(mountPoint, "/snap") || len(strings.Split(mountPoint, "/")) > 10 {
-		return true
-	}
-	if strings.TrimSpace(fields[1]) == "tmpfs" {
-		return true
-	}
-	if strings.Contains(fields[2], "K") {
-		return true
-	}
-	if strings.Contains(mountPoint, "docker") {
-		return true
-	}
-	_, excluded := excludes[mountPoint]
-	return excluded
 }
 
 func (a AlertService) PageAlertLogs(search dto.AlertLogSearch) (int64, []dto.AlertLogDTO, error) {
@@ -383,6 +371,9 @@ func (a AlertService) PageAlertLogs(search dto.AlertLogSearch) (int64, []dto.Ale
 	}
 	if search.Count != 0 {
 		opts = append(opts, alertRepo.WithByCount(search.Count))
+	}
+	if !search.StartTime.IsZero() && !search.EndTime.IsZero() {
+		opts = append(opts, repo.WithByCreatedAt(search.StartTime, search.EndTime))
 	}
 	opts = append(opts, repo.WithOrderDesc("created_at"))
 
@@ -409,6 +400,7 @@ func (a AlertService) parseAlertLog(item model.AlertLog) (dto.AlertLogDTO, error
 	if err := unmarshalAlertInfo(item.AlertDetail, &alertDetail); err != nil {
 		return dto.AlertLogDTO{}, err
 	}
+	alertDetail.Task = nil
 	if err := unmarshalAlertInfo(item.AlertRule, &alertRule); err != nil {
 		return dto.AlertLogDTO{}, err
 	}
@@ -491,7 +483,13 @@ func (a AlertService) GetAlertConfig(req dto.AlertConfigQuery) ([]model.AlertCon
 	}
 	opts = append(opts, repo.WithByStatus(constant.AlertEnable))
 	configs, err := alertRepo.AlertConfigList(opts...)
-	return configs, err
+	if err != nil {
+		return nil, err
+	}
+	if err := exposeCustomAlertConfigSecrets(configs); err != nil {
+		return nil, err
+	}
+	return configs, nil
 }
 
 func (a AlertService) PageAlertConfig(req dto.AlertConfigPageReq) (int64, []model.AlertConfig, error) {
@@ -502,13 +500,49 @@ func (a AlertService) PageAlertConfig(req dto.AlertConfigPageReq) (int64, []mode
 	if len(req.ExcludeTypes) > 0 {
 		opts = append(opts, alertRepo.WithByTypeNotIn(req.ExcludeTypes))
 	}
-	return alertRepo.PageAlertConfig(req.Page, req.PageSize, opts...)
+	total, configs, err := alertRepo.PageAlertConfig(req.Page, req.PageSize, opts...)
+	if err != nil {
+		return 0, nil, err
+	}
+	if err := exposeCustomAlertConfigSecrets(configs); err != nil {
+		return 0, nil, err
+	}
+	return total, configs, nil
 }
 
 func (a AlertService) UpdateAlertConfig(req dto.AlertConfigUpdate, operator string) error {
+	if req.Type == constant.Custom {
+		if req.ID != 0 && req.Revision == nil {
+			return repo.ErrAlertConfigRevisionRequired
+		}
+		return a.updateCustomAlertConfig(req, operator)
+	}
+	usesMutation, err := alertconfig.UsesMutation(req.Type, req.Config)
+	if err != nil {
+		return err
+	}
+	if req.ID != 0 && usesMutation && req.Revision == nil {
+		return repo.ErrAlertConfigRevisionRequired
+	}
+	var existing *model.AlertConfig
+	if req.ID != 0 {
+		stored, err := alertRepo.GetConfigById(req.ID)
+		if err != nil {
+			return err
+		}
+		if stored.Type != req.Type {
+			return fmt.Errorf("alert config %d has type %s, not %s", req.ID, stored.Type, req.Type)
+		}
+		existing = &stored
+	}
 	if err := a.validateCommunityAlertConfigType(req.Type); err != nil {
 		return err
 	}
+	prepared, err := alertconfig.Prepare(req.Type, req.Config, req.Status, existing)
+	if err != nil {
+		return err
+	}
+	req.Config = prepared
 	if err := a.checkAlertConfigDisplayNameUnique(req); err != nil {
 		return err
 	}
@@ -523,7 +557,7 @@ func (a AlertService) UpdateAlertConfig(req dto.AlertConfigUpdate, operator stri
 		upMap["status"] = req.Status
 		upMap["config"] = req.Config
 		upMap["update_user"] = operator
-		if err := alertRepo.UpdateAlertConfig(upMap, repo.WithByID(req.ID)); err != nil {
+		if err := alertRepo.UpdateAlertConfigWithRevision(upMap, req.Revision, repo.WithByID(req.ID)); err != nil {
 			return err
 		}
 	} else {
@@ -538,6 +572,100 @@ func (a AlertService) UpdateAlertConfig(req dto.AlertConfigUpdate, operator stri
 		}
 	}
 
+	return nil
+}
+
+func (a AlertService) updateCustomAlertConfig(req dto.AlertConfigUpdate, operator string) error {
+	if err := validateAlertConfigStatus(req.Status); err != nil {
+		return err
+	}
+
+	var existing *model.AlertConfig
+	if req.ID != 0 {
+		config, err := alertRepo.GetConfigById(req.ID)
+		if err != nil {
+			return err
+		}
+		if config.Type != constant.Custom {
+			return fmt.Errorf("alert config %d is not a custom webhook", req.ID)
+		}
+		existing = &config
+	}
+	prepared, err := alertwebhook.Prepare(req.Config, req.Status, existing)
+	if err != nil {
+		return err
+	}
+	validatedReq := req
+	validatedReq.Config = prepared.Config
+	if err := a.checkAlertConfigDisplayNameUnique(validatedReq); err != nil {
+		return err
+	}
+
+	if existing != nil {
+		return alertRepo.UpdateAlertConfigWithRevision(map[string]interface{}{
+			"type":          constant.Custom,
+			"title":         req.Title,
+			"status":        req.Status,
+			"config":        prepared.Config,
+			"secret_config": prepared.SecretConfig,
+			"update_user":   operator,
+		}, req.Revision, repo.WithByID(req.ID))
+	}
+
+	return alertRepo.CreateAlertConfig(&model.AlertConfig{
+		Type:         constant.Custom,
+		Title:        req.Title,
+		Status:       req.Status,
+		Config:       prepared.Config,
+		SecretConfig: prepared.SecretConfig,
+		CreateUser:   operator,
+		UpdateUser:   operator,
+	})
+}
+
+func (a AlertService) UpdateAlertConfigStatus(req dto.AlertConfigStatusUpdate, operator string) (string, error) {
+	if err := validateAlertConfigStatus(req.Status); err != nil {
+		return "", err
+	}
+	config, err := alertRepo.GetConfigById(req.ID)
+	if err != nil {
+		return "", err
+	}
+	name := alertConfigLogName(config.Config, config.Title)
+	if req.Status == constant.AlertEnable {
+		if err := a.validateCommunityAlertConfigType(config.Type); err != nil {
+			return name, err
+		}
+		if config.Type == constant.Custom {
+			if _, err := alertwebhook.Resolve(config); err != nil {
+				return name, err
+			}
+		}
+	}
+	return name, alertRepo.UpdateAlertConfig(map[string]interface{}{
+		"status":      req.Status,
+		"update_user": operator,
+	}, repo.WithByID(req.ID))
+}
+
+func validateAlertConfigStatus(status string) error {
+	if status != constant.AlertEnable && status != constant.AlertDisable {
+		return fmt.Errorf("alert config status must be Enable or Disable")
+	}
+	return nil
+}
+
+func exposeCustomAlertConfigSecrets(configs []model.AlertConfig) error {
+	for index := range configs {
+		if configs[index].Type != constant.Custom {
+			continue
+		}
+		view, err := alertwebhook.PlainView(configs[index])
+		if err != nil {
+			return fmt.Errorf("build editable custom alert config %d: %w", configs[index].ID, err)
+		}
+		configs[index].Config = view
+	}
 	return nil
 }
 
@@ -565,6 +693,9 @@ func (a AlertService) checkAlertConfigSMSPhoneUnique(req dto.AlertConfigUpdate) 
 }
 
 func (a AlertService) checkAlertConfigDisplayNameUnique(req dto.AlertConfigUpdate) error {
+	if req.Type != constant.Custom && (global.CONF.Base.IsEnterprise || global.CONF.Base.Edition == "cn") {
+		return nil
+	}
 	displayName := alertConfigDisplayName(req.Type, req.Config)
 	if displayName == "" {
 		return nil
@@ -588,37 +719,67 @@ func (a AlertService) checkAlertConfigDisplayNameUnique(req dto.AlertConfigUpdat
 }
 
 func (a AlertService) validateCommunityAlertMethod(method string) error {
-	if global.CONF.Base.IsEnterprise || global.CONF.Base.Edition == "cn" {
-		return nil
+	methodTypes, err := a.validateAlertMethodReferences(method)
+	if err != nil {
+		return err
 	}
-	if strings.TrimSpace(method) == "" {
-		return nil
-	}
+	return a.validateAlertMethodEntitlement(methodTypes)
+}
 
+func (a AlertService) validateAlertMethodReferences(method string) ([]string, error) {
+	if strings.TrimSpace(method) == "" {
+		return nil, buserr.WithErr("ErrAlertMethodNotSupported", nil)
+	}
+	methodTypes := make([]string, 0)
 	for _, item := range strings.Split(method, ",") {
 		item = strings.TrimSpace(item)
 		if item == "" {
 			continue
 		}
+		configType := ""
 		if configID, err := strconv.ParseUint(item, 10, 64); err == nil {
 			config, err := alertRepo.GetConfigById(uint(configID))
 			if err != nil {
-				return err
+				return nil, err
 			}
-			if _, ok := communityAlertMethodTypeNames[config.Type]; ok {
-				return buserr.WithErr("ErrAlertMethodNotSupported", nil)
+			configType = config.Type
+		} else {
+			var ok bool
+			configType, ok = legacyAlertMethodTypeMap[item]
+			if !ok {
+				return nil, buserr.WithErr("ErrAlertMethodNotSupported", nil)
 			}
+		}
+		if _, ok := supportedAlertMethodTypes[configType]; !ok {
+			return nil, buserr.WithErr("ErrAlertMethodNotSupported", nil)
+		}
+		methodTypes = append(methodTypes, configType)
+	}
+	if len(methodTypes) == 0 {
+		return nil, buserr.WithErr("ErrAlertMethodNotSupported", nil)
+	}
+	return methodTypes, nil
+}
+
+func (a AlertService) validateAlertMethodEntitlement(methodTypes []string) error {
+	for _, configType := range methodTypes {
+		if configType == constant.Custom {
 			continue
 		}
-		if _, ok := communityAlertMethodTypeNames[item]; ok {
+		if global.CONF.Base.IsEnterprise || global.CONF.Base.Edition == "cn" {
+			continue
+		}
+		if _, ok := communityAlertMethodTypeNames[configType]; ok {
 			return buserr.WithErr("ErrAlertMethodNotSupported", nil)
 		}
 	}
-
 	return nil
 }
 
 func (a AlertService) validateCommunityAlertConfigType(configType string) error {
+	if configType == constant.Custom {
+		return nil
+	}
 	if global.CONF.Base.IsEnterprise || global.CONF.Base.Edition == "cn" {
 		return nil
 	}
@@ -630,7 +791,7 @@ func (a AlertService) validateCommunityAlertConfigType(configType string) error 
 
 func alertConfigDisplayName(configType, configData string) string {
 	switch configType {
-	case constant.Email, constant.WeCom, constant.DingTalk, constant.FeiShu, constant.Bark, constant.SMS:
+	case constant.Email, constant.WeCom, constant.DingTalk, constant.FeiShu, constant.Bark, constant.SMS, constant.Custom:
 		var cfg struct {
 			DisplayName string `json:"displayName"`
 		}
@@ -653,41 +814,46 @@ func alertConfigSMSPhone(configData string) string {
 	return strings.TrimSpace(cfg.Phone)
 }
 
-func (a AlertService) DeleteAlertConfig(id uint) error {
-	_, err := alertRepo.GetConfigById(id)
+func (a AlertService) DeleteAlertConfig(id uint) (string, error) {
+	config, err := alertRepo.GetConfigById(id)
 	if err != nil {
-		return err
+		return "", err
 	}
+	name := alertConfigLogName(config.Config, config.Title)
 	usedAlerts, err := alertRepo.List(alertRepo.WithByAlertMethodContainsConfigID(id))
 	if err != nil {
-		return err
+		return name, err
 	}
 	if len(usedAlerts) > 0 {
-		return buserr.New("ErrAlertConfigInUse")
+		return name, buserr.New("ErrAlertConfigInUse")
 	}
-	return alertRepo.DeleteAlertConfig(repo.WithByID(id))
+	return name, alertRepo.DeleteAlertConfig(repo.WithByID(id))
 }
 
 func (a AlertService) TestAlertConfig(req dto.AlertConfigTest) (bool, error) {
-	username := req.UserName
-	if username == "" {
-		username = req.Sender
+	emailConfig, err := resolveEmailTestConfig(req)
+	if err != nil {
+		return false, err
 	}
-	encodedDisplayName := mime.BEncoding.Encode("UTF-8", req.DisplayName)
+	username := emailConfig.UserName
+	if username == "" {
+		username = emailConfig.Sender
+	}
+	encodedDisplayName := mime.BEncoding.Encode("UTF-8", emailConfig.DisplayName)
 	cfg := email.SMTPConfig{
-		Host:       req.Host,
-		Port:       req.Port,
-		Sender:     req.Sender,
+		Host:       emailConfig.Host,
+		Port:       emailConfig.Port,
+		Sender:     emailConfig.Sender,
 		Username:   username,
-		Password:   req.Password,
-		From:       fmt.Sprintf(`"%s" <%s>`, encodedDisplayName, req.Sender),
-		Encryption: req.Encryption,
-		Recipient:  req.Recipient,
+		Password:   emailConfig.Password,
+		From:       fmt.Sprintf(`"%s" <%s>`, encodedDisplayName, emailConfig.Sender),
+		Encryption: emailConfig.Encryption,
+		Recipient:  emailConfig.Recipient,
 	}
 
 	msg := email.EmailMessage{
 		Subject: i18n.GetMsgByKey("TestAlertTitle"),
-		Body:    i18n.GetMsgByKey("TestAlert"),
+		Body:    i18n.GetMsgByKey("TestAlertMessage"),
 		IsHTML:  false,
 	}
 	transport := xpack.MultiNodeProvider.LoadRequestTransport()
@@ -697,9 +863,97 @@ func (a AlertService) TestAlertConfig(req dto.AlertConfigTest) (bool, error) {
 	return true, nil
 }
 
+func resolveEmailTestConfig(req dto.AlertConfigTest) (dto.AlertEmailConfig, error) {
+	emailConfig := dto.AlertEmailConfig{
+		Host:        req.Host,
+		Port:        req.Port,
+		Sender:      req.Sender,
+		UserName:    req.UserName,
+		Password:    req.Password,
+		DisplayName: req.DisplayName,
+		Encryption:  req.Encryption,
+		Recipient:   req.Recipient,
+	}
+	if strings.TrimSpace(req.Config) != "" {
+		configType := req.Type
+		if configType == "" {
+			configType = constant.EmailConfig
+		}
+		if configType != constant.EmailConfig {
+			return dto.AlertEmailConfig{}, fmt.Errorf("alert config test type must be email")
+		}
+		var existing *model.AlertConfig
+		if req.ID != 0 {
+			stored, err := alertRepo.GetConfigById(req.ID)
+			if err != nil {
+				return dto.AlertEmailConfig{}, err
+			}
+			existing = &stored
+		}
+		prepared, err := alertconfig.Prepare(configType, req.Config, constant.AlertEnable, existing)
+		if err != nil {
+			return dto.AlertEmailConfig{}, err
+		}
+		if err := json.Unmarshal([]byte(prepared), &emailConfig); err != nil {
+			return dto.AlertEmailConfig{}, fmt.Errorf("decode email alert config: %w", err)
+		}
+	}
+	return emailConfig, nil
+}
+
+func (a AlertService) TestCustomAlertConfig(req dto.AlertConfigTest, lang string) (dto.AlertConfigTestResult, error) {
+	if req.Type != constant.Custom {
+		return dto.AlertConfigTestResult{}, fmt.Errorf("alert config test type must be custom")
+	}
+	var existing *model.AlertConfig
+	if req.ID != 0 {
+		config, err := alertRepo.GetConfigById(req.ID)
+		if err != nil {
+			return dto.AlertConfigTestResult{}, err
+		}
+		if config.Type != constant.Custom {
+			return dto.AlertConfigTestResult{}, fmt.Errorf("alert config %d is not a custom webhook", req.ID)
+		}
+		existing = &config
+	}
+	prepared, err := alertwebhook.Prepare(req.Config, constant.AlertEnable, existing)
+	if err != nil {
+		return dto.AlertConfigTestResult{}, err
+	}
+	resolved, err := alertwebhook.Resolve(model.AlertConfig{
+		Type:         constant.Custom,
+		Config:       prepared.Config,
+		SecretConfig: prepared.SecretConfig,
+	})
+	if err != nil {
+		return dto.AlertConfigTestResult{}, err
+	}
+	tester, ok := xpack.AlertProvider.(providers.CustomWebhookTester)
+	if !ok {
+		if global.LOG != nil {
+			global.LOG.Warnf("webhook test failed: %v", providers.ErrCustomWebhookUnsupported)
+		}
+		return dto.AlertConfigTestResult{
+			Success: false,
+			Message: providers.ErrCustomWebhookUnsupported.Error(),
+		}, nil
+	}
+	return tester.TestCustomWebhook(resolved, lang)
+}
+
 func (a AlertService) ExternalUpdateAlert(updateAlert dto.AlertCreate, operator string) error {
-	if err := a.validateCommunityAlertMethod(updateAlert.Method); err != nil {
-		return err
+	var methodTypes []string
+	if updateAlert.SendCount != 0 || strings.TrimSpace(updateAlert.Method) != "" {
+		var err error
+		methodTypes, err = a.validateAlertMethodReferences(updateAlert.Method)
+		if err != nil {
+			return err
+		}
+	}
+	if updateAlert.SendCount != 0 {
+		if err := a.validateAlertMethodEntitlement(methodTypes); err != nil {
+			return err
+		}
 	}
 	upMap := make(map[string]interface{})
 	var newStatus string
@@ -718,6 +972,23 @@ func (a AlertService) ExternalUpdateAlert(updateAlert dto.AlertCreate, operator 
 		alertRepo.WithByType(updateAlert.Type),
 		alertRepo.WithByProject(updateAlert.Project),
 	)
+	advanced, err := prepareCronJobAlertParams(updateAlert.Type, alertInfo.AdvancedParams, updateAlert.AdvancedParams)
+	if err != nil {
+		return err
+	}
+	updateAlert.AdvancedParams = advanced
+	if alertUtil.GetCronJobType(updateAlert.Type) == "cronJob" {
+		upMap["advanced_params"] = advanced
+	}
+	if newStatus == constant.AlertEnable {
+		method := updateAlert.Method
+		if method == "" {
+			method = alertInfo.Method
+		}
+		if err := a.validateCronJobAlertChannels(updateAlert.Type, advanced, method); err != nil {
+			return err
+		}
+	}
 
 	if alertInfo.ID > 0 {
 		shouldUpdate := false
@@ -729,6 +1000,9 @@ func (a AlertService) ExternalUpdateAlert(updateAlert dto.AlertCreate, operator 
 			shouldUpdate = true
 		}
 		if val, ok := upMap["method"]; ok && val != "" && val != alertInfo.Method {
+			shouldUpdate = true
+		}
+		if val, ok := upMap["advanced_params"]; ok && val != alertInfo.AdvancedParams {
 			shouldUpdate = true
 		}
 
@@ -751,4 +1025,33 @@ func (a AlertService) ExternalUpdateAlert(updateAlert dto.AlertCreate, operator 
 	}
 
 	return nil
+}
+
+func prepareCronJobAlertParams(alertType, previous, incoming string) (string, error) {
+	if alertUtil.GetCronJobType(alertType) != "cronJob" {
+		return incoming, nil
+	}
+	return alertUtil.MergeCronJobAlertParams(previous, incoming)
+}
+
+func (a AlertService) validateCronJobAlertChannels(alertType, advanced, method string) error {
+	if alertUtil.GetCronJobType(alertType) != "cronJob" {
+		return nil
+	}
+	mode, err := alertUtil.CronJobAlertTriggerMode(advanced)
+	if err != nil || mode != alertUtil.CronJobAlertSuccess {
+		return err
+	}
+	_, err = a.validateAlertMethodReferences(method)
+	return err
+}
+
+func alertConfigLogName(config, title string) string {
+	var value struct {
+		DisplayName string `json:"displayName"`
+	}
+	if json.Unmarshal([]byte(config), &value) == nil && strings.TrimSpace(value.DisplayName) != "" {
+		return strings.TrimSpace(value.DisplayName)
+	}
+	return title
 }

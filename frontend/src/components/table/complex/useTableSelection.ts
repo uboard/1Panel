@@ -1,4 +1,4 @@
-import { shallowRef, ref, type Ref } from 'vue';
+import { shallowRef, ref, toRaw, watch, type Ref } from 'vue';
 
 type TableRef = { refElTable?: any } | undefined;
 
@@ -7,6 +7,7 @@ export const useTableSelection = (
     getTableData: () => any[],
     onSelectionChange: (rows: any[]) => void,
     isRowSelectable: (row: any) => boolean = () => true,
+    getRowKey: (row: any) => unknown = (row) => row?.id,
 ) => {
     const selectedRows = shallowRef<any[]>([]);
     const shiftPressed = ref(false);
@@ -15,6 +16,15 @@ export const useTableSelection = (
     let isSyncingTableSelection = false;
     let skipNextSelectionChange = false;
 
+    let isRefreshingData = false;
+    const sameRow = (left: any, right: any) => {
+        if (left == null || right == null) return left === right;
+        const leftKey = getRowKey(left);
+        const rightKey = getRowKey(right);
+        return leftKey != null && rightKey != null ? leftKey === rightKey : toRaw(left) === toRaw(right);
+    };
+    const hasRow = (rows: any[], row: any) => rows.some((item) => sameRow(item, row));
+    const isRowSelected = (row: any) => hasRow(selectedRows.value, row);
     const getTable = () => tableRef.value?.refElTable;
     const clearTextSelection = () => window.getSelection?.()?.removeAllRanges();
     const hasActiveTextSelection = () => {
@@ -32,43 +42,48 @@ export const useTableSelection = (
         }
         isSyncingTableSelection = true;
         try {
-            table.clearSelection();
-            selectedRows.value
-                .filter((row) => getTableData().includes(row) && isRowSelectable(row))
+            const tableData = getTableData();
+            const nextRows = selectedRows.value.filter((row) => hasRow(tableData, row) && isRowSelectable(row));
+            const currentRows = table.getSelectionRows();
+            currentRows
+                .filter((row) => !nextRows.some((item) => toRaw(item) === toRaw(row)))
+                .forEach((row) => table.toggleRowSelection(row, false));
+            nextRows
+                .filter((row) => !currentRows.some((item) => toRaw(item) === toRaw(row)))
                 .forEach((row) => table.toggleRowSelection(row, true));
         } finally {
             isSyncingTableSelection = false;
         }
     };
-    const selectRow = (row: any, selected = !selectedRows.value.includes(row)) => {
+    const selectRow = (row: any, selected = !isRowSelected(row)) => {
         if (!isRowSelectable(row)) {
             return;
         }
         const nextRows = selected
-            ? selectedRows.value.includes(row)
+            ? isRowSelected(row)
                 ? selectedRows.value
                 : [...selectedRows.value, row]
-            : selectedRows.value.filter((item) => item !== row);
+            : selectedRows.value.filter((item) => !sameRow(item, row));
         setSelectedRows(nextRows);
         syncTableSelection();
     };
     const applyRangeSelection = (targetRow: any) => {
         if (!lastSelectedRow.value) return false;
         const tableData = getTableData();
-        const startIndex = tableData.indexOf(lastSelectedRow.value);
-        const endIndex = tableData.indexOf(targetRow);
+        const startIndex = tableData.findIndex((row) => sameRow(row, lastSelectedRow.value));
+        const endIndex = tableData.findIndex((row) => sameRow(row, targetRow));
         if (startIndex === -1 || endIndex === -1) return false;
 
         const [start, end] = [startIndex, endIndex].sort((a, b) => a - b);
         const rangeRows = tableData.slice(start, end + 1).filter(isRowSelectable);
         const nextRows = [...rangeBaseRows.value];
-        rangeRows.forEach((row) => !nextRows.includes(row) && nextRows.push(row));
+        rangeRows.forEach((row) => !hasRow(nextRows, row) && nextRows.push(row));
         setSelectedRows(nextRows);
         syncTableSelection();
         return true;
     };
     const handleSelectionChange = (rows: any[]) => {
-        if (isSyncingTableSelection) {
+        if (isSyncingTableSelection || isRefreshingData) {
             return;
         }
         if (skipNextSelectionChange) {
@@ -89,7 +104,7 @@ export const useTableSelection = (
             return;
         }
         lastSelectedRow.value = row;
-        rangeBaseRows.value = selection.filter((item) => item !== row);
+        rangeBaseRows.value = selection.filter((item) => !sameRow(item, row));
         clearTextSelection();
     };
     const clearSelects = () => {
@@ -99,23 +114,41 @@ export const useTableSelection = (
         rangeBaseRows.value = [];
     };
     const pruneSelection = () => {
-        const nextRows = selectedRows.value.filter((row) => getTableData().includes(row));
-        if (nextRows.length !== selectedRows.value.length) {
+        const data = getTableData();
+        const nextRows = data.filter((row) => hasRow(selectedRows.value, row) && isRowSelectable(row));
+        if (nextRows.length !== selectedRows.value.length || nextRows.some((row, i) => row !== selectedRows.value[i])) {
             setSelectedRows(nextRows);
         }
-        if (lastSelectedRow.value && !nextRows.includes(lastSelectedRow.value)) {
-            lastSelectedRow.value = null;
-            rangeBaseRows.value = [];
-        }
-        syncTableSelection();
+        lastSelectedRow.value = nextRows.find((row) => sameRow(row, lastSelectedRow.value)) ?? null;
+        rangeBaseRows.value = lastSelectedRow.value ? nextRows.filter((row) => hasRow(rangeBaseRows.value, row)) : [];
     };
+    // Guard before the child table reacts to replacement data and emits an empty selection.
+    watch(
+        getTableData,
+        () => {
+            isRefreshingData = true;
+            skipNextSelectionChange = false;
+            pruneSelection();
+        },
+        { flush: 'sync' },
+    );
+    watch(
+        getTableData,
+        () => {
+            try {
+                syncTableSelection();
+            } finally {
+                isRefreshingData = false;
+            }
+        },
+        { flush: 'post' },
+    );
     const toggleSelection = () => {
         const selectableRows = getTableData().filter(isRowSelectable);
-        const allSelected =
-            selectableRows.length > 0 && selectableRows.every((row) => selectedRows.value.includes(row));
+        const allSelected = selectableRows.length > 0 && selectableRows.every(isRowSelected);
         const nextRows = allSelected
-            ? selectedRows.value.filter((row) => !selectableRows.includes(row))
-            : [...selectedRows.value, ...selectableRows.filter((row) => !selectedRows.value.includes(row))];
+            ? selectedRows.value.filter((row) => !hasRow(selectableRows, row))
+            : [...selectedRows.value, ...selectableRows.filter((row) => !isRowSelected(row))];
         setSelectedRows(nextRows);
         syncTableSelection();
     };
@@ -132,10 +165,12 @@ export const useTableSelection = (
             clearTextSelection();
             return;
         }
-        const selected = !selectedRows.value.includes(row);
-        selectRow(row, selected);
+        // Ordinary row clicks preserve existing selections; use the checkbox to deselect.
+        if (!isRowSelected(row)) {
+            selectRow(row, true);
+        }
         lastSelectedRow.value = row;
-        rangeBaseRows.value = selected ? selectedRows.value.filter((item) => item !== row) : selectedRows.value;
+        rangeBaseRows.value = selectedRows.value.filter((item) => !sameRow(item, row));
         clearTextSelection();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -147,8 +182,8 @@ export const useTableSelection = (
 
     return {
         selectedRows,
+        isRowSelected,
         clearSelects,
-        pruneSelection,
         toggleSelection,
         selectRow,
         syncTableSelection,

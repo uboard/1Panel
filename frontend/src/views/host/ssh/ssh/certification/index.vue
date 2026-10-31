@@ -18,7 +18,7 @@
                 v-model:selects="selects"
                 :data="data"
                 @search="search"
-                :heightDiff="370"
+                :heightDiff="320"
             >
                 <el-table-column type="selection" fix />
                 <el-table-column :label="$t('commons.table.name')" show-overflow-tooltip prop="name" />
@@ -93,6 +93,7 @@
     </div>
 </template>
 <script lang="ts" setup>
+import { readCachedPageSize } from '@/utils/panel-cache';
 import { Host } from '@/api/interface/host';
 import { deleteCert, searchCert, syncCert } from '@/api/modules/host';
 import i18n from '@/lang';
@@ -109,7 +110,7 @@ const selects = ref<any>([]);
 const paginationConfig = reactive({
     cacheSizeKey: 'login-log-page-size',
     currentPage: 1,
-    pageSize: Number(localStorage.getItem('login-log-page-size')) || 20,
+    pageSize: readCachedPageSize('login-log-page-size') || 20,
     total: 0,
     small: true,
 });

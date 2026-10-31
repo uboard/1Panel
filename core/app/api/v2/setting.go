@@ -17,9 +17,58 @@ import (
 	"github.com/1Panel-dev/1Panel/core/buserr"
 	"github.com/1Panel-dev/1Panel/core/constant"
 	"github.com/1Panel-dev/1Panel/core/global"
+	"github.com/1Panel-dev/1Panel/core/init/session/psession"
 	"github.com/1Panel-dev/1Panel/core/utils/common"
 	"github.com/gin-gonic/gin"
 )
+
+// @Tags System Setting
+// @Summary Load current user's file download preference
+// @Success 200 {object} dto.FileDownloadPreference
+// @Router /core/settings/file/download [get]
+func (b *BaseApi) GetFileDownloadPreference(c *gin.Context) {
+	user, ok := fileDownloadPreferenceUser(c)
+	if !ok {
+		return
+	}
+	preference, err := settingService.GetFileDownloadPreference(user.ID)
+	if err != nil {
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.SuccessWithData(c, preference)
+}
+
+// @Tags System Setting
+// @Summary Update current user's file download preference
+// @Accept json
+// @Param request body dto.FileDownloadPreference true "request"
+// @Success 200
+// @Router /core/settings/file/download [post]
+func (b *BaseApi) UpdateFileDownloadPreference(c *gin.Context) {
+	user, ok := fileDownloadPreferenceUser(c)
+	if !ok {
+		return
+	}
+	var req dto.FileDownloadPreference
+	if err := helper.CheckBindAndValidate(&req, c); err != nil {
+		return
+	}
+	if err := settingService.UpdateFileDownloadPreference(user.ID, req); err != nil {
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.Success(c)
+}
+
+func fileDownloadPreferenceUser(c *gin.Context) (psession.SessionUser, bool) {
+	user, err := global.SESSION.Get(c)
+	if err != nil || user.ID == "" {
+		helper.BadAuth(c, "ErrNotLogin", buserr.New("ErrNotLogin"))
+		return psession.SessionUser{}, false
+	}
+	return user, true
+}
 
 // @Tags System Setting
 // @Summary Load system setting info
@@ -87,7 +136,16 @@ func (b *BaseApi) GetSystemAvailable(c *gin.Context) {
 // @x-panel-log {"bodyKeys":["key","value"],"paramKeys":[],"BeforeFunctions":[],"formatZH":"修改系统配置 [key] => [value]","formatEN":"update system setting [key] => [value]"}
 func (b *BaseApi) UpdateSetting(c *gin.Context) {
 	var req dto.SettingUpdate
-	if err := helper.CheckBindAndValidate(&req, c); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
+		helper.BadRequest(c, err)
+		return
+	}
+	if appauth.IsAPICredentialSetting(req.Key) {
+		helper.BadRequest(c, buserr.New("ErrInvalidParams"))
+		return
+	}
+	if err := global.VALID.Struct(&req); err != nil {
+		helper.BadRequest(c, err)
 		return
 	}
 	if req.Key == "SecurityEntrance" {
@@ -102,6 +160,14 @@ func (b *BaseApi) UpdateSetting(c *gin.Context) {
 	}
 	if req.Key == "PasskeyTrustedProxies" {
 		value, err := normalizePasskeyTrustedProxies(req.Value)
+		if err != nil {
+			helper.BadRequest(c, err)
+			return
+		}
+		req.Value = value
+	}
+	if req.Key == "AllowIPTrustedProxies" {
+		value, err := common.NormalizeTrustedProxies(req.Value)
 		if err != nil {
 			helper.BadRequest(c, err)
 			return
@@ -141,14 +207,14 @@ func checkSettingValueRange(key, value string) bool {
 // @Tags System Setting
 // @Summary Update system terminal setting
 // @Accept json
-// @Param request body dto.TerminalInfo true "request"
+// @Param request body dto.TerminalUpdate true "request"
 // @Success 200
 // @Security ApiKeyAuth
 // @Security Timestamp
 // @Router /core/settings/terminal/update [post]
 // @x-panel-log {"bodyKeys":[],"paramKeys":[],"BeforeFunctions":[],"formatZH":"修改系统终端配置","formatEN":"update system terminal setting"}
 func (b *BaseApi) UpdateTerminalSetting(c *gin.Context) {
-	var req dto.TerminalInfo
+	var req dto.TerminalUpdate
 	if err := helper.CheckBindAndValidate(&req, c); err != nil {
 		return
 	}

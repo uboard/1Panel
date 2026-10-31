@@ -8,6 +8,12 @@ export namespace Dashboard {
 
         diskSize: number;
     }
+    export interface QuickDirectory {
+        id: number;
+        legacy?: boolean;
+        path: string;
+        alias: string;
+    }
     export interface QuickJump {
         id: number;
         name: string;
@@ -105,6 +111,7 @@ export namespace Dashboard {
         diskData: Array<DiskInfo>;
 
         gpuData: Array<GPUInfo>;
+        npuData: Array<NPUInfo>;
         xpuData: Array<XPUInfo>;
 
         topCPUItems?: Array<Process>;
@@ -144,21 +151,53 @@ export namespace Dashboard {
         inodesUsedPercent: number;
     }
     export interface GPUInfo {
+        sharedMemory?: boolean;
+        type: string;
         index: number;
+        npuIndex: number;
+        chipIndex: number;
         productName: string;
+        busID: string;
         gpuUtil: string;
         temperature: string;
         performanceState: string;
         powerUsage: string;
+        powerDraw: string;
+        maxPowerLimit: string;
         memoryUsage: string;
+        memUsed: string;
+        memTotal: string;
         fanSpeed: string;
+    }
+
+    export interface NPUInfo {
+        type: 'ascend';
+        index: number;
+        npuIndex: number;
+        chipIndex: number;
+        productName: string;
+        busID: string;
+        health: string;
+        temperature: string;
+        powerDraw: string;
+        aiCore: string;
+        memUsed: string;
+        memTotal: string;
+        memoryUsed: string;
+        memoryTotal: string;
+        hbmUsed: string;
+        hbmTotal: string;
+        hugepagesUsed: string;
+        hugepagesTotal: string;
     }
 
     export interface XPUInfo {
         deviceID: number;
         deviceName: string;
+        pciBdfAddress: string;
         memory: string;
         temperature: string;
+        gpuUtil: string;
         memoryUsed: string;
         power: string;
         memoryUtil: string;

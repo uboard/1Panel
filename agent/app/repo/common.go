@@ -49,6 +49,12 @@ func WithByName(name string) DBOption {
 	}
 }
 
+func WithByPath(path string) DBOption {
+	return func(g *gorm.DB) *gorm.DB {
+		return g.Where("path = ?", path)
+	}
+}
+
 func WithByAddr(addr string) DBOption {
 	return func(g *gorm.DB) *gorm.DB {
 		return g.Where("addr = ?", addr)
@@ -91,6 +97,18 @@ func WithByProvider(provider string) DBOption {
 			return g
 		}
 		return g.Where("provider = ?", provider)
+	}
+}
+
+func WithByAPIType(apiType string) DBOption {
+	return func(g *gorm.DB) *gorm.DB {
+		return g.Where("api_type = ?", apiType)
+	}
+}
+
+func WithTextAPIType() DBOption {
+	return func(g *gorm.DB) *gorm.DB {
+		return g.Where("api_type NOT LIKE ? AND api_type <> ?", "%-images", "openai-embeddings")
 	}
 }
 

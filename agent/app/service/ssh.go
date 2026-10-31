@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net"
@@ -22,6 +24,7 @@ import (
 	"github.com/1Panel-dev/1Panel/agent/utils/copier"
 	csvexport "github.com/1Panel-dev/1Panel/agent/utils/csv_export"
 	"github.com/1Panel-dev/1Panel/agent/utils/encrypt"
+	"github.com/1Panel-dev/1Panel/agent/utils/firewall"
 	"github.com/1Panel-dev/1Panel/agent/utils/geo"
 	"github.com/gin-gonic/gin"
 
@@ -35,11 +38,13 @@ import (
 	"github.com/1Panel-dev/1Panel/agent/utils/common"
 	"github.com/1Panel-dev/1Panel/agent/utils/re"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/ssh"
 )
 
 const sshPath = "/etc/ssh/sshd_config"
 const defaultSSHPort = "22"
 const sshManagedMarker = "# config by 1panel"
+const defaultSSHLogDir = "/var/log"
 
 type SSHService struct{}
 
@@ -216,10 +221,21 @@ func (u *SSHService) Update(req dto.SSHUpdate) error {
 		return err
 	}
 	oldPortValue := strings.Join(loadSSHPortValues(directives), ",")
+	if req.Key == "Port" {
+		if err := checkSSHPortAvailability(splitSSHPorts(oldPortValue), splitSSHPorts(req.NewValue)); err != nil {
+			return err
+		}
+	}
 	if err := updateSSHDirectiveValue(req.Key, req.NewValue, directives); err != nil {
 		return err
 	}
 	if req.Key == "Port" {
+		if err := newFirewallService().updateSystemAccessPortWhitelist(context.Background(), firewall.PortWhitelistTypeSSH, splitSSHPorts(req.NewValue)); err != nil {
+			if restoreErr := rewriteSSHManagedDirectives(sshPath, "Port", buildSSHDirectiveLines("Port", oldPortValue)); restoreErr != nil {
+				return fmt.Errorf("save SSH whitelist: %w; restore SSH configuration: %v", err, restoreErr)
+			}
+			return err
+		}
 		handleSSHPortUpdate(oldPortValue, req.NewValue)
 	}
 
@@ -319,18 +335,6 @@ func handleSSHPortUpdate(oldValue, newValue string) {
 		}
 	}
 
-	removedPorts, err := parseSSHPortsToInts(diffSSHPorts(oldPorts, newPorts))
-	if err != nil {
-		global.LOG.Errorf("parse removed ssh ports failed, err: %v", err)
-	} else {
-		addedPorts, err := parseSSHPortsToInts(diffSSHPorts(newPorts, oldPorts))
-		if err != nil {
-			global.LOG.Errorf("parse added ssh ports failed, err: %v", err)
-		} else if err := OperateFirewallPort(removedPorts, addedPorts); err != nil {
-			global.LOG.Errorf("reset firewall rules %s -> %s failed, err: %v", oldValue, newValue, err)
-		}
-	}
-
 	primaryPort, err := loadPrimarySSHPort(newValue)
 	if err != nil {
 		global.LOG.Errorf("load primary ssh port from %s failed, err: %v", newValue, err)
@@ -370,24 +374,30 @@ func diffSSHPorts(left, right []string) []string {
 	return diff
 }
 
+func checkSSHPortAvailability(oldPorts, newPorts []string) error {
+	for _, port := range diffSSHPorts(newPorts, oldPorts) {
+		value, err := strconv.Atoi(port)
+		if err != nil || value < 1 || value > 65535 {
+			return fmt.Errorf("invalid SSH port %q", port)
+		}
+		if common.ScanPort(value) {
+			return buserr.WithDetail("ErrPortInUsed", value, nil)
+		}
+		listener, err := net.Listen("tcp4", ":"+strconv.Itoa(value))
+		if err != nil {
+			return buserr.WithDetail("ErrPortInUsed", value, nil)
+		}
+		_ = listener.Close()
+	}
+	return nil
+}
+
 func loadPrimarySSHPort(value string) (int, error) {
 	ports := splitSSHPorts(value)
 	if len(ports) == 0 {
 		return 0, fmt.Errorf("ssh port is empty")
 	}
 	return strconv.Atoi(ports[0])
-}
-
-func parseSSHPortsToInts(ports []string) ([]int, error) {
-	var values []int
-	for _, port := range ports {
-		value, err := strconv.Atoi(port)
-		if err != nil {
-			return nil, err
-		}
-		values = append(values, value)
-	}
-	return values, nil
 }
 
 func runWithOptionalSudo(sudo, name string, args ...string) (string, error) {
@@ -430,15 +440,33 @@ func (u *SSHService) SyncRootCert() error {
 			global.LOG.Errorf("read pubic key of %s for sync failed, err: %v", item, err)
 			continue
 		}
-		cert.EncryptionMode = loadEncryptioMode(string(pubItem))
+		publicKey, _, _, rest, err := ssh.ParseAuthorizedKey(pubItem)
+		if err != nil || len(bytes.TrimSpace(rest)) != 0 {
+			continue
+		}
+		cert.EncryptionMode = loadSSHKeyType(publicKey)
+		if cert.EncryptionMode == "" {
+			continue
+		}
 		rootCerts = append(rootCerts, cert)
 	}
 	return hostRepo.SyncCert(rootCerts)
 }
 
 func (u *SSHService) CreateRootCert(req dto.RootCertOperate) error {
-	if cmd.CheckIllegal(req.EncryptionMode, req.PassPhrase) {
-		return buserr.New("ErrCmdIllegal")
+	switch req.Mode {
+	case "generate":
+		switch req.EncryptionMode {
+		case "rsa", "ed25519", "ecdsa", "dsa":
+		default:
+			return buserr.WithName("ErrNotSupportType", req.EncryptionMode)
+		}
+	case "input", "import":
+		if err := validateSSHKeyPair(&req); err != nil {
+			return err
+		}
+	default:
+		return buserr.WithName("ErrNotSupportType", req.Mode)
 	}
 	certItem, _ := hostRepo.GetCert(repo.WithByName(req.Name))
 	if certItem.ID != 0 {
@@ -535,6 +563,9 @@ func (u *SSHService) CreateRootCert(req dto.RootCertOperate) error {
 }
 
 func (u *SSHService) EditRootCert(req dto.RootCertOperate) error {
+	if err := validateSSHKeyPair(&req); err != nil {
+		return err
+	}
 	currentUser, err := user.Current()
 	if err != nil {
 		return fmt.Errorf("load current user failed, err: %v", err)
@@ -668,13 +699,11 @@ func isSSHLogFileName(name string) bool {
 	return false
 }
 
-func (u *SSHService) LoadLog(ctx *gin.Context, req dto.SearchSSHLog) (int64, []dto.SSHHistory, error) {
+func listSSHLogFiles(baseDir string) ([]sshFileItem, error) {
 	var fileList []sshFileItem
-	var data []dto.SSHHistory
-	baseDir := "/var/log"
 	fileItems, err := os.ReadDir(baseDir)
 	if err != nil {
-		return 0, data, err
+		return nil, err
 	}
 	for _, item := range fileItems {
 		if item.IsDir() || !isSSHLogFileName(item.Name()) {
@@ -682,7 +711,7 @@ func (u *SSHService) LoadLog(ctx *gin.Context, req dto.SearchSSHLog) (int64, []d
 		}
 		info, err := item.Info()
 		if err != nil {
-			return 0, data, err
+			return nil, err
 		}
 		if !info.Mode().IsRegular() {
 			continue
@@ -695,7 +724,15 @@ func (u *SSHService) LoadLog(ctx *gin.Context, req dto.SearchSSHLog) (int64, []d
 		}
 		fileList = append(fileList, sshFileItem{Name: itemPath, Year: info.ModTime().Year()})
 	}
-	fileList = sortFileList(fileList)
+	return sortFileList(fileList), nil
+}
+
+func (u *SSHService) LoadLog(ctx *gin.Context, req dto.SearchSSHLog) (int64, []dto.SSHHistory, error) {
+	var data []dto.SSHHistory
+	fileList, err := listSSHLogFiles(defaultSSHLogDir)
+	if err != nil {
+		return 0, data, err
+	}
 
 	filter := ""
 	if len(req.Info) != 0 {
@@ -742,7 +779,7 @@ func (u *SSHService) LoadLog(ctx *gin.Context, req dto.SearchSSHLog) (int64, []d
 }
 
 func (u *SSHService) CleanLog() error {
-	return cleanSSHLogFiles("/var/log")
+	return cleanSSHLogFiles(defaultSSHLogDir)
 }
 
 func cleanSSHLogFiles(baseDir string) error {
@@ -1290,20 +1327,11 @@ func loadSSHData(
 	if err != nil {
 		return datas, 0, 0
 	}
-	lines, err := loadSSHLogLines(filePath)
+	histories, err := loadSSHHistoriesFromFile(filePath, status, filter, startTime, endTime, currentYear, nyc)
 	if err != nil {
 		return datas, 0, 0
 	}
-	items := collectSSHLogItems(lines, filter, status)
-	for i := len(items) - 1; i >= 0; i-- {
-		itemData := items[i].History
-		if !matchSSHLogStatus(status, itemData.Status) || !checkIsStandard(itemData) {
-			continue
-		}
-		itemData.Date = loadDate(currentYear, itemData.DateStr, nyc)
-		if !isSSHLogWithinTimeRange(itemData.Date, startTime, endTime) {
-			continue
-		}
+	for _, itemData := range histories {
 		if successCount+failedCount >= showCountFrom && (showCountTo == -1 || successCount+failedCount < showCountTo) {
 			itemData.Area, _ = geo.GetIPLocation(getLoc, itemData.Address, common.GetLang(ctx))
 			datas = append(datas, itemData)
@@ -1317,6 +1345,32 @@ func loadSSHData(
 	return datas, successCount, failedCount
 }
 
+func loadSSHHistoriesFromFile(
+	filePath, status, filter string,
+	startTime, endTime time.Time,
+	currentYear int,
+	location *time.Location,
+) ([]dto.SSHHistory, error) {
+	lines, err := loadSSHLogLines(filePath)
+	if err != nil {
+		return nil, err
+	}
+	items := collectSSHLogItems(lines, filter, status)
+	histories := make([]dto.SSHHistory, 0, len(items))
+	for i := len(items) - 1; i >= 0; i-- {
+		itemData := items[i].History
+		if !matchSSHLogStatus(status, itemData.Status) || !checkIsStandard(itemData) {
+			continue
+		}
+		itemData.Date = loadDate(currentYear, itemData.DateStr, location)
+		if !isSSHLogWithinTimeRange(itemData.Date, startTime, endTime) {
+			continue
+		}
+		histories = append(histories, itemData)
+	}
+	return histories, nil
+}
+
 func isSSHLogWithinTimeRange(itemTime, startTime, endTime time.Time) bool {
 	if startTime.IsZero() || endTime.IsZero() {
 		return true
@@ -1328,6 +1382,8 @@ func collectSSHLogItems(lines []string, filter, status string) []sshParsedLog {
 	var items []sshParsedLog
 	auxiliaryIndex := make(map[string]int)
 	sessionHasAuthEvent := make(map[string]bool)
+	authenticatedEndpoints := make(map[string]bool)
+	matchedTerminalSessions := make(map[string]bool)
 	for lineIndex, line := range lines {
 		if !shouldParseSSHLogLine(line, status, filter) {
 			continue
@@ -1338,11 +1394,32 @@ func collectSSHLogItems(lines []string, filter, status string) []sshParsedLog {
 		}
 		item.Index = lineIndex
 		item.Search = line
+		endpointKey := loadSSHLogEndpointKey(item.History)
 		if isSSHAuthEvent(item) && item.SessionKey != "" {
 			sessionHasAuthEvent[item.SessionKey] = true
+			delete(matchedTerminalSessions, item.SessionKey)
+			if endpointKey != "" {
+				if item.History.Status == constant.StatusSuccess {
+					authenticatedEndpoints[endpointKey] = true
+				} else {
+					delete(authenticatedEndpoints, endpointKey)
+				}
+			}
 			items = append(items, item)
 			continue
 		}
+		if endpointKey != "" && isSSHTerminalEvent(item) && authenticatedEndpoints[endpointKey] {
+			// A successful authentication and its terminal log can be emitted by
+			// different sshd processes. Associate only this active connection by
+			// endpoint, then clear it so a reused client port starts a new session.
+			delete(authenticatedEndpoints, endpointKey)
+			matchedTerminalSessions[item.SessionKey] = true
+			continue
+		}
+		if isSSHTerminalEvent(item) && matchedTerminalSessions[item.SessionKey] {
+			continue
+		}
+		delete(matchedTerminalSessions, item.SessionKey)
 		if index, ok := auxiliaryIndex[item.SessionKey]; ok {
 			items[index].Search += "\n" + line
 			continue
@@ -1379,6 +1456,13 @@ func filterRedundantSSHSessionItems(items []sshParsedLog, sessionHasAuthEvent ma
 
 func isSSHAuthEvent(item sshParsedLog) bool {
 	return item.History.Status == constant.StatusSuccess || item.History.AuthMode != ""
+}
+
+func isSSHTerminalEvent(item sshParsedLog) bool {
+	message := item.History.Message
+	return strings.HasPrefix(message, "Connection closed by ") ||
+		strings.HasPrefix(message, "Disconnected from ") ||
+		strings.HasPrefix(message, "Received disconnect from ")
 }
 
 func shouldParseSSHLogLine(line, status, filter string) bool {
@@ -1482,16 +1566,25 @@ func parseSSHLogHeader(line string) (sshLogHeader, bool) {
 }
 
 func loadSSHLogSessionKey(header sshLogHeader, data dto.SSHHistory, line string) string {
-	if header.Process == "sshd-session" && data.Address != "" && data.Port != "" {
-		return data.Address + ":" + data.Port
+	if header.Process == "sshd-session" {
+		if endpointKey := loadSSHLogEndpointKey(data); endpointKey != "" {
+			return endpointKey
+		}
 	}
 	if header.PID != "" {
 		return "pid:" + header.PID
 	}
-	if data.Address != "" && data.Port != "" {
-		return data.Address + ":" + data.Port
+	if endpointKey := loadSSHLogEndpointKey(data); endpointKey != "" {
+		return endpointKey
 	}
 	return line
+}
+
+func loadSSHLogEndpointKey(data dto.SSHHistory) string {
+	if data.Address == "" || data.Port == "" {
+		return ""
+	}
+	return net.JoinHostPort(data.Address, data.Port)
 }
 
 func normalizeSSHLogDate(dateStr string) string {
@@ -1611,20 +1704,58 @@ func loadDate(currentYear int, DateStr string, nyc *time.Location) time.Time {
 	return itemDate
 }
 
-func loadEncryptioMode(content string) string {
-	if strings.HasPrefix(content, "ssh-rsa") {
+func loadSSHKeyType(publicKey ssh.PublicKey) string {
+	switch publicKey.Type() {
+	case ssh.KeyAlgoRSA:
 		return "rsa"
-	}
-	if strings.HasPrefix(content, "ssh-ed25519") {
+	case ssh.KeyAlgoED25519:
 		return "ed25519"
-	}
-	if strings.HasPrefix(content, "ssh-ecdsa") {
+	case ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521:
 		return "ecdsa"
-	}
-	if strings.HasPrefix(content, "ssh-dsa") {
+	case ssh.KeyAlgoDSA:
 		return "dsa"
 	}
 	return ""
+}
+
+func validateSSHKeyPair(req *dto.RootCertOperate) error {
+	req.PublicKey = strings.TrimSpace(req.PublicKey)
+	req.PrivateKey = strings.TrimSpace(req.PrivateKey)
+	if req.PublicKey == "" || strings.ContainsAny(req.PublicKey, "\r\n") {
+		return buserr.New("ErrSSHPublicKey")
+	}
+	publicKey, comment, options, rest, err := ssh.ParseAuthorizedKey([]byte(req.PublicKey))
+	if err != nil || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 {
+		return buserr.New("ErrSSHPublicKey")
+	}
+	req.EncryptionMode = loadSSHKeyType(publicKey)
+	if req.EncryptionMode == "" {
+		return buserr.WithName("ErrNotSupportType", publicKey.Type())
+	}
+	block, rest := pem.Decode([]byte(req.PrivateKey))
+	if !strings.HasPrefix(req.PrivateKey, "-----BEGIN ") || block == nil || len(bytes.TrimSpace(rest)) != 0 {
+		return buserr.New("ErrSSHPrivateKey")
+	}
+	signer, err := ssh.ParsePrivateKey([]byte(req.PrivateKey))
+	var missingPassphrase *ssh.PassphraseMissingError
+	if errors.As(err, &missingPassphrase) {
+		signer, err = ssh.ParsePrivateKeyWithPassphrase([]byte(req.PrivateKey), []byte(req.PassPhrase))
+	} else if err == nil {
+		req.PassPhrase = ""
+	}
+	if err != nil {
+		return buserr.New("ErrSSHPrivateKey")
+	}
+	if !bytes.Equal(signer.PublicKey().Marshal(), publicKey.Marshal()) {
+		return buserr.New("ErrSSHKeyMismatch")
+	}
+	req.PublicKey = strings.TrimSpace(string(ssh.MarshalAuthorizedKey(publicKey)))
+	if comment != "" {
+		req.PublicKey += " " + comment
+	}
+	req.PublicKey += "\n"
+	req.PrivateKey += "\n"
+	return nil
 }
 
 func updateLocalConn(newPort uint) error {
@@ -1687,23 +1818,4 @@ func updateSSHSocketFile(newPort string) error {
 	_ = controller.Reload()
 	_ = controller.HandleRestart("ssh.socket")
 	return nil
-}
-
-func loadSSHPort() string {
-	port := "22"
-	sshConf, err := os.ReadFile(sshPath)
-	if err != nil {
-		return port
-	}
-	lines := strings.Split(string(sshConf), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "Port ") {
-			portStr := strings.ReplaceAll(line, "Port ", "")
-			portItem, _ := strconv.Atoi(portStr)
-			if portItem > 0 && portItem < 65535 {
-				return portStr
-			}
-		}
-	}
-	return port
 }

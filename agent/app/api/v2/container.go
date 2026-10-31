@@ -28,7 +28,7 @@ func (b *BaseApi) SearchContainer(c *gin.Context) {
 		return
 	}
 
-	total, list, err := containerService.Page(req)
+	total, list, err := containerService.Page(c.Request.Context(), req)
 	if err != nil {
 		helper.InternalServer(c, err)
 		return
@@ -249,9 +249,10 @@ func (b *BaseApi) ListContainerByImage(c *gin.Context) {
 // @Success 200 {object} dto.ContainerStatus
 // @Security ApiKeyAuth
 // @Security Timestamp
+// @Param containersOnly query boolean false "Only count containers"
 // @Router /containers/status [get]
 func (b *BaseApi) LoadContainerStatus(c *gin.Context) {
-	data, err := containerService.LoadStatus()
+	data, err := containerService.LoadStatus(c.Request.Context(), c.Query("containersOnly") == "true")
 	if err != nil {
 		helper.InternalServer(c, err)
 		return
@@ -415,9 +416,14 @@ func (b *BaseApi) LoadResourceLimit(c *gin.Context) {
 // @Success 200 {array} dto.ContainerListStats
 // @Security ApiKeyAuth
 // @Security Timestamp
+// @Param ids query string false "Comma-separated container IDs; omitted selects all containers"
 // @Router /containers/list/stats [get]
 func (b *BaseApi) ContainerListStats(c *gin.Context) {
-	data, err := containerService.ContainerListStats()
+	var ids []string
+	if _, supplied := c.Request.URL.Query()["ids"]; supplied {
+		ids = strings.FieldsFunc(c.Query("ids"), func(r rune) bool { return r == ',' })
+	}
+	data, err := containerService.ContainerListStats(c.Request.Context(), ids)
 	if err != nil {
 		helper.InternalServer(c, err)
 		return
@@ -439,7 +445,7 @@ func (b *BaseApi) ContainerItemStats(c *gin.Context) {
 		return
 	}
 
-	data, err := containerService.ContainerItemStats(req)
+	data, err := containerService.ContainerItemStats(c.Request.Context(), req)
 	if err != nil {
 		helper.InternalServer(c, err)
 		return
@@ -875,6 +881,26 @@ func (b *BaseApi) ComposeUpdate(c *gin.Context) {
 	}
 
 	if err := containerService.ComposeUpdate(req); err != nil {
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.Success(c)
+}
+
+// @Tags Container Compose
+// @Summary Pin compose
+// @Accept json
+// @Param request body dto.ComposePin true "request"
+// @Success 200
+// @Security ApiKeyAuth
+// @Security Timestamp
+// @Router /containers/compose/pin [post]
+func (b *BaseApi) ComposePin(c *gin.Context) {
+	var req dto.ComposePin
+	if err := helper.CheckBindAndValidate(&req, c); err != nil {
+		return
+	}
+	if err := containerService.ComposePin(req); err != nil {
 		helper.InternalServer(c, err)
 		return
 	}

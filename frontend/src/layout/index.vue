@@ -37,23 +37,28 @@
             <div class="main-container">
                 <mobile-header v-if="classObj.mobile" />
                 <Tabs v-if="classObj.openMenuTabs" />
-                <app-main :keep-alive="classObj.openMenuTabs ? tabsStore.cachedTabs : null" class="app-main" />
+                <app-main :keep-alive="classObj.openMenuTabs ? tabsStore.keepAliveTabs : null" class="app-main" />
                 <Footer class="app-footer" v-if="!isFullScreen" />
             </div>
         </el-watermark>
         <div class="main-container" v-else>
             <mobile-header v-if="classObj.mobile" />
             <Tabs v-if="classObj.openMenuTabs" />
-            <app-main :keep-alive="classObj.openMenuTabs ? tabsStore.cachedTabs : null" class="app-main" />
+            <app-main :keep-alive="classObj.openMenuTabs ? tabsStore.keepAliveTabs : null" class="app-main" />
             <Footer class="app-footer" v-if="!isFullScreen" />
         </div>
         <TaskList ref="taskListRef" />
+        <TerminalHost />
+        <TerminalDock />
     </div>
 </template>
 
 <script setup lang="ts">
+import { prunePanelCache } from '@/utils/panel-cache';
 import { onMounted, computed, ref, watch, onBeforeUnmount } from 'vue';
 import { Sidebar, Footer, AppMain, MobileHeader, Tabs } from './components';
+import TerminalHost from '@/components/terminal/host.vue';
+import TerminalDock from '@/components/terminal/dock/index.vue';
 import useResize from './hooks/useResize';
 import { MenuStore, TabsStore } from '@/store';
 import { getSystemAvailable } from '@/api/modules/setting';
@@ -102,6 +107,7 @@ const loadingText = computed(() =>
 );
 
 let timer: NodeJS.Timer | null = null;
+let cacheCleanupTimer: ReturnType<typeof setInterval> | undefined;
 
 const classObj = computed(() => {
     return {
@@ -182,10 +188,12 @@ const loadStatus = async () => {
     }
 };
 onBeforeUnmount(() => {
+    clearInterval(cacheCleanupTimer);
     clearInterval(Number(timer));
     timer = null;
 });
 onMounted(() => {
+    cacheCleanupTimer = setInterval(() => prunePanelCache(), 300000);
     if (openMenuTabs.value && !tabsStore.activeTabPath) {
         handleMenuClick('/');
     }
@@ -229,6 +237,8 @@ onMounted(() => {
     flex-direction: column;
     position: relative;
     height: 100vh;
+    height: 100dvh;
+    min-width: 0;
     transition: margin-left 0.3s;
     margin-left: var(--panel-menu-width);
     background-color: var(--panel-main-bg-color-9);
@@ -237,6 +247,8 @@ onMounted(() => {
 .app-main {
     padding: 7px 20px;
     flex: 1;
+    min-width: 0;
+    min-height: 0;
     overflow: auto;
 }
 .app-sidebar {
@@ -303,6 +315,13 @@ onMounted(() => {
     .main-container,
     .sidebar-container {
         transition: none;
+    }
+}
+
+@media (max-width: 767px) {
+    .app-main {
+        padding-right: 12px;
+        padding-left: 12px;
     }
 }
 </style>

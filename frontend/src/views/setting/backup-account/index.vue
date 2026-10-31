@@ -27,10 +27,16 @@
                         </span>
                     </template>
                 </el-alert>
-                <ComplexTable :pagination-config="paginationConfig" @sort-change="search" @search="search" :data="data">
+                <ComplexTable
+                    :pagination-config="paginationConfig"
+                    @sort-change="search"
+                    @search="search"
+                    :data="data"
+                    :scrollbar-always-on="isMobile"
+                >
                     <el-table-column
                         :label="$t('commons.table.name')"
-                        :min-width="80"
+                        :min-width="isMobile ? 140 : 80"
                         prop="name"
                         show-overflow-tooltip
                     >
@@ -98,9 +104,9 @@
                         show-overflow-tooltip
                     />
                     <fu-table-operations
-                        width="300px"
+                        :width="isMobile ? 100 : 300"
                         :buttons="buttons"
-                        :ellipsis="10"
+                        :ellipsis="isMobile ? 0 : 10"
                         :label="$t('commons.table.operate')"
                         fix
                     />
@@ -114,8 +120,9 @@
     </div>
 </template>
 <script setup lang="ts">
+import { useSearchState } from '@/utils/search-reset';
 import { dateFormat } from '@/utils/date';
-import { onMounted, ref } from 'vue';
+import { toRef, onMounted, ref } from 'vue';
 import { searchBackup, deleteBackup, refreshToken } from '@/api/modules/backup';
 import Operate from '@/views/setting/backup-account/operate/index.vue';
 import DetailShow from '@/components/detail-show/index.vue';
@@ -125,17 +132,25 @@ import { MsgSuccess } from '@/utils/message';
 import { Base64 } from 'js-base64';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 
-const { isProductPro, isFxplay, docsUrl } = useGlobalStore();
+const { isProductPro, isFxplay, docsUrl, isMobile } = useGlobalStore();
 const loading = ref();
 const data = ref();
 const paginationConfig = reactive({
-    cacheSizeKey: 'backup-account-size',
     currentPage: 1,
-    pageSize: Number(localStorage.getItem('backup-account-size')) || 20,
+    pageSize: 20,
     total: 0,
     type: '',
     name: '',
 });
+useSearchState(
+    'setting/backup-account/index',
+    {
+        search: toRef(paginationConfig, 'name'),
+        page: toRef(paginationConfig, 'currentPage'),
+        pageSize: toRef(paginationConfig, 'pageSize'),
+    },
+    { onRevisit: () => search() },
+);
 const opRef = ref();
 const dialogRef = ref();
 const detailRef = ref();

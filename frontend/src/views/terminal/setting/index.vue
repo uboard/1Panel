@@ -126,6 +126,13 @@
                                     </template>
                                 </el-input>
                             </el-form-item>
+
+                            <el-divider border-style="dashed" />
+
+                            <el-form-item :label="$t('terminal.showTerminalButton')">
+                                <el-switch v-model="form.showTerminalButton" @change="changeTerminalButton" />
+                                <span class="input-help">{{ $t('terminal.showTerminalButtonHelper') }}</span>
+                            </el-form-item>
                         </el-col>
                     </el-row>
                 </el-form>
@@ -154,11 +161,13 @@ import '@xterm/xterm/css/xterm.css';
 import { FitAddon } from '@xterm/addon-fit';
 import i18n from '@/lang';
 import { MsgSuccess } from '@/utils/message';
-import { TerminalStore } from '@/store';
+import { TerminalDockSessionStore, TerminalStore } from '@/store';
 import { loadLocalConn, updateLocalConn } from '@/api/modules/terminal';
+import { ElMessageBox } from 'element-plus';
 
 const loading = ref(false);
 const terminalStore = TerminalStore();
+const dockSessions = TerminalDockSessionStore();
 const dialogRef = ref();
 
 const terminalElement = ref<HTMLDivElement | null>(null);
@@ -182,6 +191,7 @@ const fontFamilyOptions = [
 ];
 
 const form = reactive({
+    showTerminalButton: true,
     lineHeight: 1.2,
     letterSpacing: 1.2,
     fontSize: 12,
@@ -254,6 +264,7 @@ const search = async (withReset?: boolean) => {
     await getTerminalInfo()
         .then((res) => {
             loading.value = false;
+            form.showTerminalButton = res.data.showTerminalButton !== 'Disable';
             form.lineHeight = Number(res.data.lineHeight);
             form.letterSpacing = Number(res.data.letterSpacing);
             form.fontSize = Number(res.data.fontSize);
@@ -274,6 +285,34 @@ const search = async (withReset?: boolean) => {
         .catch(() => {
             loading.value = false;
         });
+};
+
+const changeTerminalButton = async () => {
+    const showTerminalButton = form.showTerminalButton;
+    loading.value = true;
+    try {
+        if (!showTerminalButton && dockSessions.entries.length > 0) {
+            await ElMessageBox.confirm(
+                i18n.global.t('terminal.disableShortcutConfirm'),
+                i18n.global.t('terminal.showTerminalButton'),
+                {
+                    confirmButtonText: i18n.global.t('commons.button.confirm'),
+                    cancelButtonText: i18n.global.t('commons.button.cancel'),
+                    type: 'warning',
+                },
+            );
+        }
+        await UpdateTerminalInfo({
+            showTerminalButton: showTerminalButton ? 'Enable' : 'Disable',
+        });
+        terminalStore.showTerminalButton = showTerminalButton;
+        if (!showTerminalButton) dockSessions.closeAll();
+        MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
+    } catch {
+        form.showTerminalButton = !showTerminalButton;
+    } finally {
+        loading.value = false;
+    }
 };
 
 const loadConnShow = async () => {

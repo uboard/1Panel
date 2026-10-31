@@ -1,9 +1,13 @@
 <template>
     <DrawerPro v-model="drawerVisible" :header="title" @close="handleClose" size="large">
-        <div class="mb-2">
-            <el-alert :closable="false" :title="$t('firewall.ipv4Limit')" />
-        </div>
         <el-form ref="formRef" label-position="top" :model="dialogData.rowData" :rules="rules" v-loading="loading">
+            <el-form-item label="IP" prop="family">
+                <el-select class="w-full" v-model="dialogData.rowData!.family">
+                    <el-option value="ipv4" label="IPv4" />
+                    <el-option value="ipv6" label="IPv6" />
+                </el-select>
+            </el-form-item>
+
             <el-form-item :label="$t('commons.table.protocol')" prop="protocol">
                 <el-select class="w-full" v-model="dialogData.rowData!.protocol">
                     <el-option value="tcp" label="tcp" />
@@ -28,11 +32,7 @@
                 <span class="input-help">{{ $t('firewall.forwardPortHelper') }}</span>
             </el-form-item>
 
-            <el-form-item
-                v-if="dialogData.fireName !== 'firewalld'"
-                :label="$t('firewall.forwardInboundInterface')"
-                prop="interface"
-            >
+            <el-form-item :label="$t('firewall.forwardInboundInterface')" prop="interface">
                 <el-select class="w-full" v-model="dialogData.rowData!.interface">
                     <el-option
                         v-for="item in interfaceOptions"
@@ -58,21 +58,23 @@
 import { reactive, ref } from 'vue';
 import { Rules } from '@/global/form-rules';
 import i18n from '@/lang';
+import { getErrorMessage } from '@/utils/misc';
+import { isAxiosError } from 'axios';
 import { ElForm } from 'element-plus';
-import { MsgSuccess } from '@/utils/message';
-import { Host } from '@/api/interface/host';
-import { operateForwardRule, getNetworkOptions } from '@/api/modules/host';
-import { checkCidr, checkCidrV6, checkIp, checkPort } from '@/utils/validate';
+import { MsgError } from '@/utils/message';
+import { Firewall } from '@/api/interface/firewall';
+import { getNetworkOptions } from '@/api/modules/host';
+import { operateForwardRule } from '@/api/modules/firewall';
 import { deepCopy } from '@/utils/misc';
+import { isValidAddressForFamily, isValidPortRange, normalizePortRange } from '@/views/host/firewall/utils/validation';
 const loading = ref();
-const oldRule = ref<Host.RuleForward>();
+const oldRule = ref<Firewall.RuleForward>();
 
 const interfaceOptions = ref<Array<{ label: string; value: string }>>([]);
 
 interface DialogProps {
     title: string;
-    rowData?: Host.RuleForward;
-    fireName?: string;
+    rowData?: Firewall.RuleForward;
     getTableList?: () => Promise<any>;
 }
 const title = ref<string>('');
@@ -92,13 +94,14 @@ const acceptParams = (params: DialogProps): void => {
     title.value = i18n.global.t('firewall.' + dialogData.value.title);
     drawerVisible.value = true;
 };
-const emit = defineEmits<{ (e: 'search'): void }>();
+const emit = defineEmits<{ (e: 'created', taskID: string): void }>();
 
 const handleClose = () => {
     drawerVisible.value = false;
 };
 
 const rules = reactive({
+    family: [Rules.requiredSelect],
     protocol: [Rules.requiredSelect],
     port: [{ validator: checkPortRule, trigger: 'blur', required: true }],
     targetPort: [{ validator: checkPortRule, trigger: 'blur', required: true }],
@@ -106,48 +109,19 @@ const rules = reactive({
 });
 
 function checkPortRule(rule: any, value: string, callback: any) {
-    if (!value) {
+    if (!isValidPortRange(value)) {
         return callback(new Error(i18n.global.t('firewall.portFormatError')));
-    }
-    if (value.indexOf('-') !== -1) {
-        const ports = value.split('-');
-        if (ports.length !== 2) {
-            return callback(new Error(i18n.global.t('firewall.portFormatError')));
-        }
-        if (checkPort(ports[0]) || checkPort(ports[1])) {
-            return callback(new Error(i18n.global.t('firewall.portFormatError')));
-        }
-        if (Number(ports[0]) > Number(ports[1])) {
-            return callback(new Error(i18n.global.t('firewall.portFormatError')));
-        }
-    } else {
-        if (checkPort(value)) {
-            return callback(new Error(i18n.global.t('firewall.portFormatError')));
-        }
     }
     callback();
 }
+
 function checkAddress(rule: any, value: string, callback: any) {
     if (!value) {
         return callback();
     }
-    let addrs = value.split(',');
-    for (const item of addrs) {
-        if (item.indexOf('/') !== -1) {
-            if (item.indexOf(':') !== -1) {
-                if (checkCidrV6(item)) {
-                    return callback(new Error(i18n.global.t('firewall.addressFormatError')));
-                }
-            } else {
-                if (checkCidr(item)) {
-                    return callback(new Error(i18n.global.t('firewall.addressFormatError')));
-                }
-            }
-        } else {
-            if (checkIp(item)) {
-                return callback(new Error(i18n.global.t('firewall.addressFormatError')));
-            }
-        }
+    const family = dialogData.value.rowData?.family || 'ipv4';
+    if (!isValidAddressForFamily(family, value, false)) {
+        return callback(new Error(i18n.global.t('firewall.addressFormatError')));
     }
     callback();
 }
@@ -156,50 +130,48 @@ type FormInstance = InstanceType<typeof ElForm>;
 const formRef = ref<FormInstance>();
 
 const onSubmit = async (formEl: FormInstance | undefined) => {
-    if (!formEl) return;
-    formEl.validate(async (valid) => {
-        if (!valid) return;
-        const { rowData } = dialogData.value;
-        let rules = [];
-        if (!rowData) return;
-        rowData.operation = 'add';
-        if (rowData.targetIP === '') {
-            rowData.targetIP = '127.0.0.1';
-        }
-        if (rowData.interface === 'all') {
-            rowData.interface = '';
-        }
-        rules.push(rowData);
-        loading.value = true;
-        if (dialogData.value.title === 'create') {
-            await operateForwardRule({ rules: rules })
-                .then(() => {
-                    loading.value = false;
-                    MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-                    emit('search');
-                    drawerVisible.value = false;
-                })
-                .catch(() => {
-                    loading.value = false;
-                });
+    if (!formEl || loading.value) return;
+    const { rowData } = dialogData.value;
+    if (!rowData) return;
+    if (!isValidPortRange(rowData.port) || !isValidPortRange(rowData.targetPort)) {
+        await formEl.validateField(['port', 'targetPort']).catch(() => undefined);
+        MsgError(i18n.global.t('commons.rule.port'));
+        return;
+    }
+    const valid = await formEl.validate().catch(() => false);
+    if (!valid) return;
+    rowData.port = normalizePortRange(rowData.port);
+    rowData.targetPort = normalizePortRange(rowData.targetPort);
+    rowData.operation = 'add';
+    if (rowData.targetIP === '') {
+        rowData.targetIP = rowData.family === 'ipv6' ? '::1' : '127.0.0.1';
+    }
+    if (rowData.interface === 'all') {
+        rowData.interface = '';
+    }
+    const operations: Firewall.RuleForward[] = [];
+    if (dialogData.value.title !== 'create') {
+        operations.push({ ...oldRule.value, operation: 'remove' });
+    }
+    operations.push(rowData);
+    loading.value = true;
+    try {
+        const result = (await operateForwardRule({ rules: operations })).data;
+        if (!result.taskID || !result.queued) {
+            MsgError(i18n.global.t('commons.msg.operationFailed'));
             return;
         }
-        rules = [];
-        oldRule.value.operation = 'remove';
-        dialogData.value.rowData.operation = 'add';
-        rules.push(oldRule.value);
-        rules.push(dialogData.value.rowData);
-        await operateForwardRule({ rules: rules })
-            .then(() => {
-                loading.value = false;
-                MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-                emit('search');
-                drawerVisible.value = false;
-            })
-            .catch(() => {
-                loading.value = false;
-            });
-    });
+        drawerVisible.value = false;
+        emit('created', result.taskID);
+    } catch (error) {
+        MsgError(
+            (isAxiosError(error) && error.response?.data?.message) ||
+                (error && getErrorMessage(error)) ||
+                i18n.global.t('commons.res.commonError'),
+        );
+    } finally {
+        loading.value = false;
+    }
 };
 
 defineExpose({

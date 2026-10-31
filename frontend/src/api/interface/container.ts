@@ -177,6 +177,7 @@ export namespace Container {
     }
     export interface ContainerListStats {
         containerID: string;
+        containerName: string;
         cpuTotalUsage: number;
         systemUsage: number;
         cpuPercent: number;
@@ -337,6 +338,7 @@ export namespace Container {
         configFile: string;
         workdir: string;
         composeFileExists: boolean;
+        isPinned: boolean;
         path: string;
         containers: Array<ComposeContainer>;
         expand: boolean;
@@ -351,6 +353,7 @@ export namespace Container {
     export interface ComposeCreate {
         taskID: string;
         name: string;
+        dirName: string;
         from: string;
         file: string;
         path: string;
@@ -373,6 +376,10 @@ export namespace Container {
         env: string;
         forcePull: boolean;
         createdBy: string;
+    }
+    export interface ComposePin {
+        name: string;
+        isPinned: boolean;
     }
 
     export interface TemplateCreate {

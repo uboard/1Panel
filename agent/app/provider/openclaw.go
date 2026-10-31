@@ -23,6 +23,9 @@ func BuildOpenClawProviderPatch(provider, modelName, apiType, authMode, baseURL,
 	if _, ok := FindAPIConfig(provider, resolvedAPIType); !ok {
 		resolvedAPIType = DefaultAPIType(provider)
 	}
+	if IsImageAPIType(resolvedAPIType) || IsEmbeddingAPIType(resolvedAPIType) {
+		return nil, fmt.Errorf("api type %s does not support text generation", resolvedAPIType)
+	}
 	resolvedAuthMode, err := ResolveAuthMode(provider, resolvedAPIType, authMode)
 	if err != nil {
 		return nil, err
@@ -40,8 +43,8 @@ func BuildOpenClawProviderPatch(provider, modelName, apiType, authMode, baseURL,
 		providerKey = "moonshot"
 		resolvedAPIType = "openai-completions"
 		usesBearer = false
-	case "ollama":
-		apiKey = "ollama"
+	case "ollama", "llmman":
+		apiKey = provider
 		usesBearer = false
 	case "openai", "openrouter", "anthropic":
 		preserveQualifiedModel = strings.Contains(modelName, "/")

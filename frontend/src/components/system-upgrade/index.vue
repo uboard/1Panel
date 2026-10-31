@@ -65,7 +65,7 @@ import { MsgSuccess } from '@/utils/message';
 import { onMounted, ref } from 'vue';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 
-const { docsUrl, isOffline, isFxplay, isMasterPro, isEE, isIntl, isAdmin, hasNewVersion } = useGlobalStore();
+const { isOffline, isMasterPro, isEE, isIntl, isAdmin, hasNewVersion } = useGlobalStore();
 const upgradeRef = ref();
 const releasesRef = ref();
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -29,9 +30,11 @@ import (
 )
 
 const (
-	ResourceAlertInterval = 30
-	CheckIntervalSec      = 3
-	LoadCheckIntervalMin  = 5
+	ResourceAlertInterval     = 30
+	CheckIntervalSec          = 3
+	LoadCheckIntervalMin      = 5
+	sshIPLoginWindow          = 30 * time.Minute
+	sslAutoRenewAlertSkipDays = 31
 )
 
 type AlertTaskHelper struct {
@@ -512,10 +515,32 @@ func loadPanelLogin(alert dto.AlertDTO) {
 }
 
 func loadSSHLogin(alert dto.AlertDTO) {
-	count, isAlert, err := alertUtil.CountRecentFailedSSHLog(alert.Cycle, alert.Count)
-	if err != nil {
-		global.LOG.Errorf("Failed to count recent failed ssh login logs: %v", err)
+	now := time.Now()
+	failedWindow := time.Duration(alert.Cycle) * time.Minute
+	loadWindow := failedWindow
+	if loadWindow < sshIPLoginWindow {
+		loadWindow = sshIPLoginWindow
 	}
+	location, err := time.LoadLocation(common.LoadTimeZoneByCmd())
+	if err != nil {
+		global.LOG.Errorf("Failed to load timezone for ssh login logs: %v", err)
+		location = time.Local
+	}
+	histories, err := loadSSHAlertHistories(defaultSSHLogDir, now.Add(-loadWindow), now, location)
+	if err != nil {
+		global.LOG.Errorf("Failed to load ssh login logs: %v", err)
+	}
+	interfaceAddrs, err := net.InterfaceAddrs()
+	if err != nil {
+		global.LOG.Warnf("Failed to load local IP addresses for ssh login alert: %v", err)
+	}
+	count, records := summarizeSSHLoginHistories(
+		histories,
+		now,
+		failedWindow,
+		sshSuccessLoginWhitelist(alert.AdvancedParams, interfaceAddrs),
+	)
+	isAlert := count >= int(alert.Count)
 	if isAlert {
 		params := []dto.Param{
 			{
@@ -531,12 +556,6 @@ func loadSSHLogin(alert dto.AlertDTO) {
 		}
 		sendAlerts(alert, "sshLogin", strconv.Itoa(count), "sshLogin", params)
 	}
-	whitelist := strings.Split(strings.TrimSpace(alert.AdvancedParams), "\n")
-	records, err := alertUtil.FindRecentSuccessLoginNotInWhitelist(30, whitelist)
-	if err != nil {
-		global.LOG.Errorf("Failed to check recent failed ip ssh login logs: %v", err)
-	}
-	records = filterSSHLoginEntriesNotInWhitelist(records, whitelist)
 	if len(records) > 0 {
 		quota := strings.Join(records, "\n")
 		params := []dto.Param{
@@ -555,24 +574,23 @@ func loadSSHLogin(alert dto.AlertDTO) {
 	}
 }
 
+func sshSuccessLoginWhitelist(configured string, interfaceAddrs []net.Addr) []string {
+	whitelist := strings.Split(strings.TrimSpace(configured), "\n")
+	whitelist = append(whitelist, "127.0.0.0/8", "::1")
+	for _, addr := range interfaceAddrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok || ipNet.IP == nil || ipNet.IP.IsUnspecified() {
+			continue
+		}
+		whitelist = append(whitelist, ipNet.IP.String())
+	}
+	return whitelist
+}
+
 func filterLoginLogsNotInWhitelist(records []model.LoginLog, whitelist []string) []model.LoginLog {
 	filtered := make([]model.LoginLog, 0, len(records))
 	for _, record := range records {
 		if !isIPInWhitelist(record.IP, whitelist) {
-			filtered = append(filtered, record)
-		}
-	}
-	return filtered
-}
-
-func filterSSHLoginEntriesNotInWhitelist(records []string, whitelist []string) []string {
-	filtered := make([]string, 0, len(records))
-	for _, record := range records {
-		ip := record
-		if idx := strings.Index(record, "-"); idx >= 0 {
-			ip = record[:idx]
-		}
-		if !isIPInWhitelist(ip, whitelist) {
 			filtered = append(filtered, record)
 		}
 	}
@@ -695,9 +713,10 @@ func sendAlertsByConfigId(alert dto.AlertDTO, alertType, quota, quotaType string
 
 func sendAlertsByLegacyMethod(alert dto.AlertDTO, alertType, quota, quotaType string, params []dto.Param, method string) {
 	typeMap := map[string]string{
-		"mail":        constant.Email,
-		constant.Bark: constant.Bark,
-		constant.SMS:  constant.SMS,
+		"mail":          constant.Email,
+		constant.Bark:   constant.Bark,
+		constant.SMS:    constant.SMS,
+		constant.Custom: constant.Custom,
 	}
 	configType, ok := typeMap[method]
 	if !ok {
@@ -785,7 +804,7 @@ func doSendAlert(alert dto.AlertDTO, alertType, quota, quotaType string, params 
 		}
 		alertUtil.CreateNewAlertTask(quota, alertType, quotaType, methodStr)
 
-	case constant.WeCom, constant.DingTalk, constant.FeiShu:
+	case constant.WeCom, constant.DingTalk, constant.FeiShu, constant.Custom:
 		todayCount, isValid := canSendAlertToday(alertType, quotaType, alert.SendCount, methodStr)
 		if !isValid {
 			return
@@ -798,12 +817,31 @@ func doSendAlert(alert dto.AlertDTO, alertType, quota, quotaType string, params 
 		}
 		transport := xpack.MultiNodeProvider.LoadRequestTransport()
 		agentInfo, _ := xpack.MultiNodeProvider.GetAgentInfo()
-		alertErr := xpack.AlertProvider.CreateWebhookAlertLog(alertType, alert, create, quotaType, params, config, transport, agentInfo)
+		queued := false
+		var alertErr error
+		if config.Type == constant.Custom {
+			task := dto.AlertTaskMetadata{
+				AlertID:   alert.ID,
+				Type:      alertType,
+				Quota:     quota,
+				QuotaType: quotaType,
+				Method:    methodStr,
+			}
+			result, deliveryErr := xpack.DeliverCustomWebhookAlertLog(alertType, alert, create, quotaType, params, config, transport, agentInfo, task)
+			queued, alertErr = result.Queued, deliveryErr
+			if alertErr == nil && result.Queued {
+				_, alertErr = alertUtil.RecordQueuedAlertTask(result.LogID, task)
+			}
+		} else {
+			alertErr = xpack.AlertProvider.CreateWebhookAlertLog(alertType, alert, create, quotaType, params, config, transport, agentInfo)
+		}
 		if alertErr != nil {
 			global.LOG.Infof("%s alert webhook %s push faild, err: %v", alertType, methodStr, alertErr)
 			return
 		}
-		alertUtil.CreateNewAlertTask(quota, alertType, quotaType, methodStr)
+		if !queued {
+			alertUtil.CreateNewAlertTask(quota, alertType, quotaType, methodStr)
+		}
 	}
 }
 
@@ -844,12 +882,16 @@ func calculateSSLExpiryDays(sslList []model.WebsiteSSL, cycle uint) (map[int][]s
 		daysDiff := int(math.Ceil(
 			ssl.ExpireDate.Sub(currentDate).Hours() / 24,
 		))
-		if daysDiff > 0 && int(cycle) >= daysDiff {
+		if daysDiff > 0 && int(cycle) >= daysDiff && !shouldSuppressSSLExpiryAlert(ssl, daysDiff) {
 			daysDiffMap[daysDiff] = append(daysDiffMap[daysDiff], ssl.PrimaryDomain)
 			projectMap[ssl.ID] = append(projectMap[ssl.ID], ssl.ExpireDate)
 		}
 	}
 	return daysDiffMap, projectMap
+}
+
+func shouldSuppressSSLExpiryAlert(ssl model.WebsiteSSL, remainingDays int) bool {
+	return ssl.AutoRenew && remainingDays < sslAutoRenewAlertSkipDays
 }
 
 func calculateWebsiteExpiryDays(websites []model.Website, cycle uint) (map[int][]string, map[uint][]time.Time) {
@@ -1024,50 +1066,37 @@ func processAllDisks(alert dto.AlertDTO) error {
 		global.LOG.Errorf("error getting disk list, err: %v", err)
 		return err
 	}
-	var errMsgs []string
 	for _, item := range diskList {
-		err := checkAndCreateDiskAlert(alert, item.Path)
-		if err != nil {
-			errMsg := fmt.Sprintf("disk path %s process failed: %v", item.Path, err)
-			errMsgs = append(errMsgs, errMsg)
-			global.LOG.Errorf("%s", errMsg)
+		if item.Total == 0 {
 			continue
 		}
-	}
-	if len(errMsgs) > 0 {
-		return fmt.Errorf("batch process disks failed, error count: %d, details: %s", len(errMsgs), strings.Join(errMsgs, "; "))
+		checkAndCreateDiskAlert(alert, item.Path, &disk.UsageStat{Used: item.Used, UsedPercent: item.UsedPercent})
 	}
 	return nil
 }
 
 func processSingleDisk(alert dto.AlertDTO) error {
-	err := checkAndCreateDiskAlert(alert, alert.Project)
+	usageStat, err := loadDiskUsageWithTimeout(alert.Project, true)
 	if err != nil {
-		global.LOG.Errorf("%s", err.Error())
+		global.LOG.Errorf("error getting disk usage for %s, err: %v", alert.Project, err)
 		return err
 	}
+	checkAndCreateDiskAlert(alert, alert.Project, usageStat)
 	return nil
 }
 
-func checkAndCreateDiskAlert(alert dto.AlertDTO, path string) error {
-	usageStat, err := psutil.DISK.GetUsage(path, false)
-	if err != nil {
-		global.LOG.Errorf("error getting disk usage for %s, err: %v", path, err)
-		return err
-	}
-
+func checkAndCreateDiskAlert(alert dto.AlertDTO, path string, usageStat *disk.UsageStat) {
 	usedTotal, usedStr := calculateUsedTotal(alert.Cycle, usageStat)
 	commonTotal := float64(alert.Count)
 	if alert.Cycle == 1 {
 		commonTotal *= 1024 * 1024 * 1024
 	}
 	if usedTotal < commonTotal {
-		return nil
+		return
 	}
 	params := createAlertDiskParams(path, usedStr)
 	sender := NewAlertSender(alert, alert.Project)
 	sender.ResourceSend(path, params)
-	return nil
 }
 
 func calculateUsedTotal(cycle uint, usageStat *disk.UsageStat) (float64, string) {
@@ -1096,4 +1125,56 @@ func calculateMinutesDifference(newDate time.Time) int {
 	}
 	minutesDifference := int(now.Sub(newDate).Minutes())
 	return minutesDifference
+}
+
+func loadSSHAlertHistories(
+	baseDir string,
+	startTime, endTime time.Time,
+	location *time.Location,
+) ([]dto.SSHHistory, error) {
+	fileList, err := listSSHLogFiles(baseDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		histories []dto.SSHHistory
+		loadErr   error
+	)
+	for _, file := range fileList {
+		items, err := loadSSHHistoriesFromFile(file.Name, "", "", startTime, endTime, file.Year, location)
+		if err != nil {
+			loadErr = errors.Join(loadErr, fmt.Errorf("load SSH log file %s: %w", file.Name, err))
+			continue
+		}
+		histories = append(histories, items...)
+	}
+	return histories, loadErr
+}
+
+func summarizeSSHLoginHistories(
+	histories []dto.SSHHistory,
+	now time.Time,
+	failedWindow time.Duration,
+	whitelist []string,
+) (int, []string) {
+	failedStartTime := now.Add(-failedWindow)
+	successStartTime := now.Add(-sshIPLoginWindow)
+	failedCount := 0
+	var abnormalLogins []string
+
+	for _, item := range histories {
+		switch item.Status {
+		case constant.StatusFailed:
+			if isSSHLogWithinTimeRange(item.Date, failedStartTime, now) {
+				failedCount++
+			}
+		case constant.StatusSuccess:
+			if !isSSHLogWithinTimeRange(item.Date, successStartTime, now) || isIPInWhitelist(item.Address, whitelist) {
+				continue
+			}
+			abnormalLogins = append(abnormalLogins, fmt.Sprintf("%s-%s", item.Address, item.Date.Format(constant.DateTimeLayout)))
+		}
+	}
+	return failedCount, abnormalLogins
 }

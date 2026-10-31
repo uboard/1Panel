@@ -4,6 +4,16 @@ import (
 	"time"
 )
 
+const DefaultPanelCache = `{"tabs":true,"pagination":true,"refresh":true,"search":false,"duration":"24h"}`
+
+type PanelCache struct {
+	Tabs       *bool  `json:"tabs"`
+	Pagination *bool  `json:"pagination"`
+	Refresh    *bool  `json:"refresh"`
+	Search     *bool  `json:"search"`
+	Duration   string `json:"duration"`
+}
+
 type SettingInfo struct {
 	SystemVersion       string `json:"systemVersion"`
 	DeveloperMode       string `json:"developerMode"`
@@ -18,6 +28,7 @@ type SettingInfo struct {
 	Theme          string `json:"theme"`
 	MenuTabs       string `json:"menuTabs"`
 	MenuAccordion  string `json:"menuAccordion"`
+	PanelCache     string `json:"panelCache"`
 	Language       string `json:"language"`
 	DocSource      string `json:"docSource"`
 
@@ -27,6 +38,7 @@ type SettingInfo struct {
 	BindDomain                 string `json:"bindDomain"`
 	PasskeyTrustedProxies      string `json:"passkeyTrustedProxies"`
 	AllowIPs                   string `json:"allowIPs"`
+	AllowIPTrustedProxies      string `json:"allowIPTrustedProxies"`
 	SecurityEntrance           string `json:"securityEntrance"`
 	DashboardMemoVisible       string `json:"dashboardMemoVisible"`
 	DashboardSimpleNodeVisible string `json:"dashboardSimpleNodeVisible"`
@@ -61,6 +73,7 @@ type SettingBaseInfo struct {
 	Theme         string `json:"theme"`
 	MenuTabs      string `json:"menuTabs"`
 	MenuAccordion string `json:"menuAccordion"`
+	PanelCache    string `json:"panelCache"`
 	Language      string `json:"language"`
 	HideMenu      string `json:"hideMenu"`
 	DocSource     string `json:"docSource"`
@@ -75,6 +88,10 @@ type SettingBaseInfo struct {
 
 	DashboardMemoVisible       string `json:"dashboardMemoVisible"`
 	DashboardSimpleNodeVisible string `json:"dashboardSimpleNodeVisible"`
+}
+
+type FileDownloadPreference struct {
+	UseServerFilename bool `json:"useServerFilename"`
 }
 
 type SettingUpdate struct {
@@ -235,16 +252,31 @@ type MenuLabelSort struct {
 }
 
 type TerminalInfo struct {
-	LineHeight        string `json:"lineHeight"`
-	LetterSpacing     string `json:"letterSpacing"`
-	FontSize          string `json:"fontSize"`
-	FontFamily        string `json:"fontFamily"`
-	BackgroundColor   string `json:"backgroundColor"`
-	ForegroundColor   string `json:"foregroundColor"`
-	CursorBlink       string `json:"cursorBlink"`
-	CursorStyle       string `json:"cursorStyle"`
-	Scrollback        string `json:"scrollback"`
-	ScrollSensitivity string `json:"scrollSensitivity"`
+	ShowTerminalButton string `json:"showTerminalButton"`
+	LineHeight         string `json:"lineHeight"`
+	LetterSpacing      string `json:"letterSpacing"`
+	FontSize           string `json:"fontSize"`
+	FontFamily         string `json:"fontFamily"`
+	BackgroundColor    string `json:"backgroundColor"`
+	ForegroundColor    string `json:"foregroundColor"`
+	CursorBlink        string `json:"cursorBlink"`
+	CursorStyle        string `json:"cursorStyle"`
+	Scrollback         string `json:"scrollback"`
+	ScrollSensitivity  string `json:"scrollSensitivity"`
+}
+
+type TerminalUpdate struct {
+	ShowTerminalButton *string `json:"showTerminalButton,omitempty" validate:"omitempty,oneof=Enable Disable"`
+	LineHeight         *string `json:"lineHeight,omitempty"`
+	LetterSpacing      *string `json:"letterSpacing,omitempty"`
+	FontSize           *string `json:"fontSize,omitempty"`
+	FontFamily         *string `json:"fontFamily,omitempty"`
+	BackgroundColor    *string `json:"backgroundColor,omitempty"`
+	ForegroundColor    *string `json:"foregroundColor,omitempty"`
+	CursorBlink        *string `json:"cursorBlink,omitempty"`
+	CursorStyle        *string `json:"cursorStyle,omitempty"`
+	Scrollback         *string `json:"scrollback,omitempty"`
+	ScrollSensitivity  *string `json:"scrollSensitivity,omitempty"`
 }
 
 type AppstoreUpdate struct {
@@ -268,6 +300,7 @@ type LoginSetting struct {
 	Language       string `json:"language"`
 	MenuTabs       string `json:"menuTabs"`
 	MenuAccordion  string `json:"menuAccordion"`
+	PanelCache     string `json:"panelCache"`
 	PanelName      string `json:"panelName"`
 	Theme          string `json:"theme"`
 	NeedCaptcha    bool   `json:"needCaptcha"`

@@ -30,7 +30,7 @@
             />
             <el-date-picker
                 v-model="timeRange"
-                class="p-w-360"
+                class="host-log-time-range"
                 type="datetimerange"
                 range-separator="-"
                 :start-placeholder="$t('commons.search.timeStart')"
@@ -57,7 +57,7 @@
             <TableRefresh @search="resetAndLoadLogs" />
         </template>
         <template #main>
-            <ComplexTable :data="logs" :pagination-config="paginationConfig" @row-click="openDetail">
+            <ComplexTable :data="logs" :pagination-config="paginationConfig" @row-click="openDetail" :heightDiff="320">
                 <el-table-column prop="time" :label="$t('commons.table.date')" width="220" show-overflow-tooltip />
                 <el-table-column :label="$t('logs.priority')" width="120">
                     <template #default="{ row }">
@@ -101,6 +101,8 @@
 </template>
 
 <script setup lang="ts">
+import { panelCacheKey, writePanelCache, readCachedPageSize } from '@/utils/panel-cache';
+import { useSearchState } from '@/utils/search-reset';
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { Log } from '@/api/interface/log';
 import { getSystemLogStatus, listRunningServices, readSystemLogs } from '@/api/modules/log';
@@ -113,6 +115,7 @@ const logs = ref<Log.SystemLogItem[]>([]);
 const loading = ref(false);
 const watching = ref(false);
 const keyword = ref('');
+useSearchState('log/host-system/index', { keyword }, { onRevisit: () => scheduleFilterSearch() });
 const priority = ref('');
 const service = ref('');
 const services = ref<string[]>([]);
@@ -192,7 +195,7 @@ const loadPreviousPage = () => {
 };
 
 const changePageSize = () => {
-    localStorage.setItem(paginationConfig.cacheSizeKey, String(paginationConfig.pageSize));
+    writePanelCache('pagination', panelCacheKey(`size:${paginationConfig.cacheSizeKey}`), paginationConfig.pageSize);
     resetAndLoadLogs();
 };
 
@@ -261,24 +264,24 @@ const priorityType = (value: string) => {
 };
 
 onMounted(async () => {
-    const cachedPageSize = Number(localStorage.getItem(paginationConfig.cacheSizeKey));
+    const cachedPageSize = readCachedPageSize(paginationConfig.cacheSizeKey);
     if (pageSizes.includes(cachedPageSize)) {
         paginationConfig.pageSize = cachedPageSize;
     }
-    await loadSystemLogStatus();
-    resetAndLoadLogs();
-    loadServices();
+    await Promise.allSettled([loadSystemLogStatus(), resetAndLoadLogs(), loadServices()]);
 });
 onUnmounted(() => {
     if (timer) clearTimeout(timer);
     if (filterTimer) clearTimeout(filterTimer);
 });
 
-watch([keyword, priority, service], () => {
+const scheduleFilterSearch = () => {
     requestID++;
     if (filterTimer) clearTimeout(filterTimer);
     filterTimer = setTimeout(resetAndLoadLogs, 300);
-});
+};
+
+watch([keyword, priority, service], scheduleFilterSearch);
 </script>
 
 <style scoped lang="scss">
@@ -294,5 +297,13 @@ watch([keyword, priority, service], () => {
     background: var(--panel-logs-bg-color);
     border: 1px solid var(--el-border-color-darker);
     border-radius: 4px;
+}
+
+@media only screen and (max-width: 767px) {
+    :deep(.host-log-time-range.el-date-editor) {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
 }
 </style>

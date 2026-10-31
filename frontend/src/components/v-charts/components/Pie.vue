@@ -4,10 +4,10 @@
 <script lang="ts" setup>
 import { onMounted, nextTick, watch, onBeforeUnmount, ref } from 'vue';
 import echarts from '@/utils/echarts';
-import { useGlobalStore } from '@/composables/useGlobalStore';
-const { themeConfig } = useGlobalStore();
-const isDarkTheme = ref(false);
-let mediaQuery: MediaQueryList;
+const PieChartRef = ref<HTMLElement>();
+let themeObserver: MutationObserver | undefined;
+let resizeObserver: ResizeObserver | undefined;
+let resizeFrame: number | undefined;
 
 const props = defineProps({
     id: {
@@ -28,31 +28,43 @@ const props = defineProps({
     },
 });
 function changeChartSize() {
-    echarts.getInstanceByDom(document.getElementById(props.id) as HTMLElement)?.resize();
+    if (resizeFrame !== undefined) {
+        return;
+    }
+    resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = undefined;
+        resizeChart();
+    });
+}
+
+function resizeChart() {
+    if (!PieChartRef.value) {
+        return;
+    }
+    echarts.getInstanceByDom(PieChartRef.value)?.resize();
 }
 function getThemeColors() {
+    // Match the applied page theme, including while settings are still loading.
+    const isDarkTheme = document.documentElement.classList.contains('dark');
+    const style = getComputedStyle(document.documentElement);
     return {
-        primaryLight2: getComputedStyle(document.documentElement)
-            .getPropertyValue('--panel-color-primary-light-3')
-            .trim(),
-        primaryLight1: getComputedStyle(document.documentElement).getPropertyValue('--panel-color-primary').trim(),
-        pieBgColor: isDarkTheme.value ? '#434552' : '#ffffff',
-        textColor: isDarkTheme.value ? '#ffffff' : '#0f0f0f',
-        subtextColor: isDarkTheme.value ? '#BBBFC4' : '#646A73',
-        shadowColor: isDarkTheme.value ? '#16191D' : 'rgba(0, 94, 235, 0.1)',
-        backgroundStyleColor: isDarkTheme.value ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 94, 235, 0.05)',
+        primaryLight2: style.getPropertyValue('--panel-color-primary-light-3').trim() || '#4c8ef1',
+        primaryLight1: style.getPropertyValue('--panel-color-primary').trim() || '#005eeb',
+        pieBgColor: isDarkTheme ? '#434552' : '#ffffff',
+        textColor: isDarkTheme ? '#ffffff' : '#0f0f0f',
+        subtextColor: isDarkTheme ? '#BBBFC4' : '#646A73',
+        shadowColor: isDarkTheme ? '#16191D' : 'rgba(0, 94, 235, 0.1)',
+        backgroundStyleColor: isDarkTheme ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 94, 235, 0.05)',
     };
 }
 
 function initChart() {
-    if (themeConfig.value.theme === 'auto') {
-        isDarkTheme.value = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    } else {
-        isDarkTheme.value = themeConfig.value.theme === 'dark';
+    if (!PieChartRef.value) {
+        return;
     }
-    let myChart = echarts?.getInstanceByDom(document.getElementById(props.id) as HTMLElement);
+    let myChart = echarts?.getInstanceByDom(PieChartRef.value);
     if (myChart === null || myChart === undefined) {
-        myChart = echarts.init(document.getElementById(props.id) as HTMLElement);
+        myChart = echarts.init(PieChartRef.value);
     }
     let percentText = String(props.option.data).split('.');
     const { primaryLight2, primaryLight1, pieBgColor, textColor, subtextColor, shadowColor, backgroundStyleColor } =
@@ -74,7 +86,6 @@ function initChart() {
 
                     color: textColor,
                     lineHeight: 25,
-                    // fontSize: 20,
                     fontWeight: 500,
                 },
                 left: '49%',
@@ -176,17 +187,31 @@ function handleThemeChange() {
 
 onMounted(() => {
     nextTick(() => {
-        mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-        mediaQuery.addEventListener('change', handleThemeChange);
+        themeObserver = new MutationObserver(handleThemeChange);
+        themeObserver.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['class', 'style'],
+        });
         initChart();
         window.addEventListener('resize', changeChartSize);
+        if (PieChartRef.value) {
+            resizeObserver = new ResizeObserver(changeChartSize);
+            resizeObserver.observe(PieChartRef.value);
+        }
     });
 });
 
 onBeforeUnmount(() => {
-    echarts.getInstanceByDom(document.getElementById(props.id) as HTMLElement).dispose();
+    if (resizeFrame !== undefined) {
+        cancelAnimationFrame(resizeFrame);
+        resizeFrame = undefined;
+    }
+    if (PieChartRef.value) {
+        echarts.getInstanceByDom(PieChartRef.value)?.dispose();
+    }
     window.removeEventListener('resize', changeChartSize);
-    mediaQuery.removeEventListener('change', handleThemeChange);
+    themeObserver?.disconnect();
+    resizeObserver?.disconnect();
 });
 </script>
 <style lang="scss" scoped></style>

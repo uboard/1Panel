@@ -59,7 +59,8 @@ type IAppService interface {
 }
 
 type appInstallHooks struct {
-	AfterCopyData func(appInstall *model.AppInstall) error
+	AfterCopyData  func(appInstall *model.AppInstall) error
+	PrepareSiteDir func(model.App, model.AppDetail, request.AppInstallCreate, *task.Task) error
 }
 
 func NewIAppService() IAppService {
@@ -134,6 +135,7 @@ func (a AppService) PageApp(ctx *gin.Context, req request.AppSearch) (*response.
 			ID:                  ap.ID,
 			Name:                ap.Name,
 			Key:                 ap.Key,
+			Icon:                appicon.RemoteURL(ap.Icon),
 			Limit:               ap.Limit,
 			GpuSupport:          ap.GpuSupport,
 			Recommend:           ap.Recommend,
@@ -223,6 +225,9 @@ func (a AppService) GetAppDetailByKey(appKey, version string) (response.AppDetai
 	if err != nil {
 		return appDetailDTO, err
 	}
+	if err = checkVllmVersionAccess(app.Key, version); err != nil {
+		return appDetailDTO, err
+	}
 	appDetail, err := appDetailRepo.GetFirst(appDetailRepo.WithAppId(app.ID), appDetailRepo.WithVersion(version))
 	if err != nil {
 		return appDetailDTO, err
@@ -241,37 +246,59 @@ func (a AppService) GetAppDetail(appID uint, version, appType string) (response.
 	if err != nil {
 		return appDetailDTO, err
 	}
+	app, err := appRepo.GetFirst(repo.WithByID(detail.AppId))
+	if err != nil {
+		return appDetailDTO, err
+	}
+	if err = checkVllmVersionAccess(app.Key, detail.Version); err != nil {
+		return appDetailDTO, err
+	}
 	appDetailDTO.AppDetail = detail
 	appDetailDTO.Enable = true
 
 	if appType == "runtime" {
-		app, err := appRepo.GetFirst(repo.WithByID(appID))
-		if err != nil {
-			return appDetailDTO, err
-		}
 		fileOp := files.NewFileOp()
 
 		versionPath := filepath.Join(app.GetAppResourcePath(), detail.Version)
-		if !fileOp.Stat(versionPath) || detail.Update {
-			if err = downloadApp(app, detail, nil, nil); err != nil && !fileOp.Stat(versionPath) {
+		if err = downloadApp(app, detail, nil, nil); err != nil && !fileOp.Stat(versionPath) {
+			return appDetailDTO, err
+		}
+		packageReady := err == nil
+		if packageReady && app.Resource == constant.AppResourceRemote {
+			detail.Update = false
+			appDetailDTO.Update = false
+		}
+		if packageReady && strings.TrimSpace(detail.DockerCompose) == "" {
+			compose, err := fileOp.GetContent(filepath.Join(versionPath, "docker-compose.yml"))
+			if err != nil {
+				return appDetailDTO, err
+			}
+			if err := cacheAppDetailCompose(&detail, compose); err != nil {
 				return appDetailDTO, err
 			}
 		}
 		switch app.Type {
 		case constant.RuntimePHP:
-			paramsPath := filepath.Join(versionPath, "data.yml")
-			if !fileOp.Stat(paramsPath) {
-				return appDetailDTO, buserr.WithDetail("ErrFileNotExist", paramsPath, nil)
-			}
-			param, err := fileOp.GetContent(paramsPath)
-			if err != nil {
-				return appDetailDTO, err
-			}
 			paramMap := make(map[string]interface{})
-			if err = yaml.Unmarshal(param, &paramMap); err != nil {
-				return appDetailDTO, err
+			if app.Resource == constant.AppResourceRemote {
+				if err = json.Unmarshal([]byte(detail.Params), &paramMap); err != nil {
+					return appDetailDTO, err
+				}
+				appDetailDTO.Params = paramMap
+			} else {
+				paramsPath := filepath.Join(versionPath, "data.yml")
+				if !fileOp.Stat(paramsPath) {
+					return appDetailDTO, buserr.WithDetail("ErrFileNotExist", paramsPath, nil)
+				}
+				param, err := fileOp.GetContent(paramsPath)
+				if err != nil {
+					return appDetailDTO, err
+				}
+				if err = yaml.Unmarshal(param, &paramMap); err != nil {
+					return appDetailDTO, err
+				}
+				appDetailDTO.Params = paramMap["additionalProperties"]
 			}
-			appDetailDTO.Params = paramMap["additionalProperties"]
 			composePath := filepath.Join(versionPath, "docker-compose.yml")
 			if !fileOp.Stat(composePath) {
 				return appDetailDTO, buserr.WithDetail("ErrFileNotExist", composePath, nil)
@@ -280,15 +307,17 @@ func (a AppService) GetAppDetail(appID uint, version, appType string) (response.
 			if err != nil {
 				return appDetailDTO, err
 			}
-			composeMap := make(map[string]interface{})
+			if err := validateAppDetailCompose(compose); err != nil {
+				return appDetailDTO, err
+			}
+			var composeMap struct {
+				Services map[string]interface{} `yaml:"services"`
+			}
 			if err := yaml.Unmarshal(compose, &composeMap); err != nil {
 				return appDetailDTO, err
 			}
-			if service, ok := composeMap["services"]; ok {
-				servicesMap := service.(map[string]interface{})
-				for k := range servicesMap {
-					appDetailDTO.Image = k
-				}
+			for k := range composeMap.Services {
+				appDetailDTO.Image = k
 			}
 		}
 	} else {
@@ -299,30 +328,13 @@ func (a AppService) GetAppDetail(appID uint, version, appType string) (response.
 		appDetailDTO.Params = paramMap
 	}
 
-	if appDetailDTO.DockerCompose == "" {
-		filename := filepath.Base(appDetailDTO.DownloadUrl)
-		dockerComposeUrl := fmt.Sprintf("%s%s", strings.TrimSuffix(appDetailDTO.DownloadUrl, filename), "docker-compose.yml")
-		statusCode, composeRes, err := req_helper.HandleRequest(dockerComposeUrl, http.MethodGet, constant.TimeOut20s)
-		if statusCode == http.StatusNotFound {
-			return appDetailDTO, buserr.New("ErrAppVersionUnavailable")
-		}
-		if err != nil {
-			return appDetailDTO, buserr.WithDetail("ErrGetCompose", err.Error(), err)
-		}
-		if statusCode > 200 {
-			return appDetailDTO, buserr.WithDetail("ErrGetCompose", string(composeRes), err)
-		}
-		detail.DockerCompose = string(composeRes)
-		_ = appDetailRepo.Update(context.Background(), detail)
-		appDetailDTO.DockerCompose = string(composeRes)
+	if err := ensureAppDetailCompose(app, &detail); err != nil {
+		return appDetailDTO, err
 	}
+	appDetailDTO.DockerCompose = detail.DockerCompose
 
 	appDetailDTO.HostMode = isHostModel(appDetailDTO.DockerCompose)
 
-	app, err := appRepo.GetFirst(repo.WithByID(detail.AppId))
-	if err != nil {
-		return appDetailDTO, err
-	}
 	if err := checkLimit(app); err != nil {
 		appDetailDTO.Enable = false
 	}
@@ -335,6 +347,13 @@ func (a AppService) GetAppDetailByID(id uint) (*response.AppDetailDTO, error) {
 	res := &response.AppDetailDTO{}
 	appDetail, err := appDetailRepo.GetFirst(repo.WithByID(id))
 	if err != nil {
+		return nil, err
+	}
+	app, err := appRepo.GetFirst(repo.WithByID(appDetail.AppId))
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureAppDetailCompose(app, &appDetail); err != nil {
 		return nil, err
 	}
 	res.AppDetail = appDetail
@@ -372,6 +391,9 @@ func (a AppService) installWithHooks(req request.AppInstallCreate, executeScript
 	}
 	app, err = appRepo.GetFirst(repo.WithByID(appDetail.AppId))
 	if err != nil {
+		return
+	}
+	if err = checkVllmVersionAccess(app.Key, appDetail.Version); err != nil {
 		return
 	}
 	if DatabaseKeys[app.Key] > 0 {
@@ -421,25 +443,13 @@ func (a AppService) installWithHooks(req request.AppInstallCreate, executeScript
 		App:         app,
 	}
 	composeMap := make(map[string]interface{})
-	var composeRes []byte
 	if req.EditCompose {
 		if err = yaml.Unmarshal([]byte(req.DockerCompose), &composeMap); err != nil {
 			return
 		}
 	} else {
-		if appDetail.DockerCompose == "" {
-			dockerComposeUrl := fmt.Sprintf("%s/%s/1panel/%s/%s/docker-compose.yml", global.AppRepoURL(), global.CONF.Base.Mode, app.Key, appDetail.Version)
-			var statusCode int
-			statusCode, composeRes, err = req_helper.HandleRequest(dockerComposeUrl, http.MethodGet, constant.TimeOut20s)
-			if statusCode == http.StatusNotFound {
-				err = buserr.New("ErrAppVersionUnavailable")
-				return
-			}
-			if err != nil {
-				return
-			}
-			appDetail.DockerCompose = string(composeRes)
-			_ = appDetailRepo.Update(context.Background(), appDetail)
+		if err = ensureAppDetailCompose(app, &appDetail); err != nil {
+			return
 		}
 		if err = yaml.Unmarshal([]byte(appDetail.DockerCompose), &composeMap); err != nil {
 			return
@@ -473,6 +483,22 @@ func (a AppService) installWithHooks(req request.AppInstallCreate, executeScript
 	req.Params[constant.ContainerName] = containerName
 	appInstall.ContainerName = containerName
 
+	modelAccountBaseURL := ""
+	if app.Key == "ollama" {
+		appInstall.SyncModelAccount = req.SyncModelAccount == nil || *req.SyncModelAccount
+		appInstall.ModelAccountBaseURLType = req.ModelAccountBaseURLType
+		if appInstall.ModelAccountBaseURLType == "" {
+			appInstall.ModelAccountBaseURLType = "container"
+		}
+		appInstall.ModelAccountBaseURL = req.ModelAccountBaseURL
+	}
+	if app.Key == "ollama" && appInstall.SyncModelAccount {
+		modelAccountBaseURL, err = ResolveLocalModelAccountBaseURL(req.ModelAccountBaseURLType, req.ModelAccountBaseURL, containerName, "11434", httpPort)
+		if err != nil {
+			return
+		}
+	}
+
 	index := 0
 	serviceName := ""
 	for k := range servicesMap {
@@ -483,20 +509,42 @@ func (a AppService) installWithHooks(req request.AppInstallCreate, executeScript
 		index++
 	}
 	newServiceName := strings.ToLower(appInstall.Name)
-	if app.Limit == 0 && newServiceName != serviceName && len(servicesMap) == 1 {
+	if app.Limit == 0 && newServiceName != serviceName && len(servicesMap) == 1 && !req.KeepServiceName {
 		servicesMap[newServiceName] = servicesMap[serviceName]
 		delete(servicesMap, serviceName)
 		serviceName = newServiceName
 	}
 	appInstall.ServiceName = serviceName
 
-	if err = addDockerComposeCommonParam(composeMap, appInstall.ServiceName, req.AppContainerConfig, req.Params); err != nil {
-		return
+	if !req.SkipComposeCommonConfig {
+		if err = addDockerComposeCommonParam(composeMap, appInstall.ServiceName, req.AppContainerConfig, req.Params); err != nil {
+			return
+		}
 	}
 	var (
 		composeByte []byte
 		paramByte   []byte
 	)
+	if (app.Key == "ollama" || app.Key == "vllm") && req.GPU != nil {
+		gpuServiceName := appInstall.ServiceName
+		imageType := "nvidia"
+		if app.Key == "vllm" {
+			imageType = req.GPUImageType
+			if len(servicesMap) > 1 {
+				gpuServiceName = "vllm"
+				if _, ok := servicesMap[gpuServiceName]; !ok {
+					gpuServiceName = "vllm-dspark"
+				}
+			}
+		}
+		service, ok := servicesMap[gpuServiceName].(map[string]interface{})
+		if !ok {
+			return nil, buserr.New("ErrFileParse")
+		}
+		if err = ApplyModelGPU(service, req.GPU, req.Params, imageType); err != nil {
+			return
+		}
+	}
 
 	composeByte, err = yaml.Marshal(composeMap)
 	if err != nil {
@@ -543,6 +591,11 @@ func (a AppService) installWithHooks(req request.AppInstallCreate, executeScript
 
 	installTask, err := task.NewTaskWithOps(appInstall.Name, task.TaskInstall, task.TaskScopeApp, req.TaskID, appInstall.ID)
 	if err != nil {
+		appInstall.Status = constant.StatusInstallErr
+		appInstall.Message = err.Error()
+		if saveErr := appInstallRepo.Save(context.Background(), appInstall); saveErr != nil {
+			err = fmt.Errorf("%w; save failed install status: %v", err, saveErr)
+		}
 		return
 	}
 
@@ -550,7 +603,7 @@ func (a AppService) installWithHooks(req request.AppInstallCreate, executeScript
 		return
 	}
 
-	installApp := func(t *task.Task) error {
+	installApp := func(t *task.Task) (err error) {
 		if err = copyData(t, app, appDetail, appInstall, req); err != nil {
 			return err
 		}
@@ -559,23 +612,27 @@ func (a AppService) installWithHooks(req request.AppInstallCreate, executeScript
 				return err
 			}
 		}
-		if executeScript {
+		if executeScript || req.UseLifecycleScripts {
 			if err = runScript(t, appInstall, "init"); err != nil {
 				return err
 			}
 		}
 		if app.Key == "openresty" {
-			if err = handleSiteDir(app, appDetail, req, t); err != nil {
+			if err = prepareAppInstallSiteDirectory(app, appDetail, req, t, hooks); err != nil {
 				return err
 			}
 			if err = handleOpenrestyFile(appInstall); err != nil {
 				return err
 			}
 		}
-		if err = upApp(t, appInstall, req.PullImage); err != nil {
+		if err = upApp(t, appInstall, req.PullImage, req.UseLifecycleScripts); err != nil {
 			return err
 		}
 		updateToolApp(appInstall)
+		if app.Key == "ollama" && appInstall.SyncModelAccount {
+			_, err := SyncLocalModelAccount(*appInstall, 0, modelAccountBaseURL, nil, false, true)
+			return err
+		}
 		return nil
 	}
 
@@ -868,22 +925,10 @@ func (a AppService) GetAppUpdate() (*response.AppUpdateRes, error) {
 		res.CanUpdate = true
 		return res, err
 	}
-	apps, _ := appRepo.GetBy(appRepo.WithResource(constant.AppResourceRemote))
-	for _, app := range apps {
-		if app.Icon == "" {
-			res.CanUpdate = true
-			return res, err
-		}
-		if appicon.IsIconFile(app.Icon) {
-			fileName, _ := appicon.ParseIconField(app.Icon)
-			if fileName == "" || !appicon.IconFileExists(fileName) {
-				res.CanUpdate = true
-				return res, err
-			}
-		}
+	list, err := readAppList()
+	if err != nil || list.LastModified != lastModified {
+		list, err = getAppList()
 	}
-
-	list, err := getAppList()
 	if err != nil {
 		return res, err
 	}
@@ -914,27 +959,24 @@ func getAppFromRepo(downloadPath string) error {
 }
 
 func getAppList() (*dto.AppList, error) {
-	list := &dto.AppList{}
 	if err := getAppFromRepo(fmt.Sprintf("%s/%s/1panel.json.zip", global.AppRepoURL(), global.CONF.Base.Mode)); err != nil {
 		return nil, err
 	}
+	return readAppList()
+}
+
+func readAppList() (*dto.AppList, error) {
 	listFile := filepath.Join(global.Dir.ResourceDir, "1panel.json")
-	file, err := os.Open(listFile)
+	data, err := os.ReadFile(listFile)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
-	if err = json.NewDecoder(file).Decode(list); err != nil {
+	list := &dto.AppList{}
+	if err = json.Unmarshal(data, list); err != nil {
 		return nil, err
 	}
 
 	return list, nil
-}
-
-var InitTypes = map[string]struct{}{
-	"runtime": {},
-	"php":     {},
-	"node":    {},
 }
 
 func deleteCustomApp() {
@@ -1032,6 +1074,10 @@ func (a AppService) GetAppIcon(key string) ([]byte, string, string, error) {
 	app, err := appRepo.GetFirst(appRepo.WithKey(key))
 	if err != nil {
 		return nil, "", "", err
+	}
+
+	if appicon.IsRemoteURL(app.Icon) {
+		return nil, app.Icon, "", nil
 	}
 
 	if appicon.IsIconFile(app.Icon) {

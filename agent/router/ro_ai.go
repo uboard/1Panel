@@ -13,11 +13,12 @@ func (a *AIToolsRouter) InitRouter(Router *gin.RouterGroup) {
 
 	baseApi := v1.ApiGroupApp.BaseApi
 	{
+		aiToolsRouter.GET("/benchmark/sources", baseApi.AIBenchmarkSources)
 		aiToolsRouter.POST("/ollama/close", baseApi.CloseOllamaModel)
 		aiToolsRouter.POST("/ollama/model", baseApi.CreateOllamaModel)
 		aiToolsRouter.POST("/ollama/model/recreate", baseApi.RecreateOllamaModel)
 		aiToolsRouter.POST("/ollama/model/search", baseApi.SearchOllamaModel)
-		aiToolsRouter.POST("/ollama/model/sync", baseApi.SyncOllamaModel)
+		aiToolsRouter.POST("/ollama/account/sync", baseApi.SyncOllamaModelAccount)
 		aiToolsRouter.POST("/ollama/model/load", baseApi.LoadOllamaModelDetail)
 		aiToolsRouter.POST("/ollama/model/del", baseApi.DeleteOllamaModel)
 		aiToolsRouter.POST("/domain/bind", baseApi.BindDomain)
@@ -25,8 +26,12 @@ func (a *AIToolsRouter) InitRouter(Router *gin.RouterGroup) {
 		aiToolsRouter.POST("/domain/update", baseApi.UpdateBindDomain)
 
 		aiToolsRouter.GET("/gpu/load", baseApi.LoadGpuInfo)
+		aiToolsRouter.GET("/model/gpu/devices", baseApi.LoadModelGPUDevices)
 		aiToolsRouter.POST("/gpu/search", baseApi.LoadGPUMonitor)
 		aiToolsRouter.GET("/gpu/options", baseApi.GetCPUOptions)
+		aiToolsRouter.POST("/vllm/monitor/search", baseApi.LoadVLLMMonitor)
+		aiToolsRouter.POST("/vllm/monitor/current", baseApi.LoadVLLMCurrent)
+		aiToolsRouter.POST("/vllm/monitor/clean", baseApi.CleanVLLMMonitor)
 
 		aiToolsRouter.POST("/mcp/search", baseApi.PageMcpServers)
 		aiToolsRouter.POST("/mcp/server/detail", baseApi.LoadMcpServerDetail)
@@ -87,6 +92,7 @@ func (a *AIToolsRouter) InitRouter(Router *gin.RouterGroup) {
 		aiToolsRouter.POST("/agents/agent/md/update", baseApi.UpdateAgentRoleMarkdownFile)
 		aiToolsRouter.POST("/agents/channel/feishu/get", baseApi.GetAgentFeishuConfig)
 		aiToolsRouter.POST("/agents/channel/feishu/update", baseApi.UpdateAgentFeishuConfig)
+		aiToolsRouter.POST("/agents/channel/feishu/switch", baseApi.SwitchAgentFeishuPlugin)
 		aiToolsRouter.POST("/agents/channel/telegram/get", baseApi.GetAgentTelegramConfig)
 		aiToolsRouter.POST("/agents/channel/telegram/update", baseApi.UpdateAgentTelegramConfig)
 		aiToolsRouter.POST("/agents/channel/discord/get", baseApi.GetAgentDiscordConfig)
@@ -104,6 +110,10 @@ func (a *AIToolsRouter) InitRouter(Router *gin.RouterGroup) {
 		aiToolsRouter.POST("/agents/plugin/upgrade", baseApi.UpgradeAgentPlugin)
 		aiToolsRouter.POST("/agents/plugin/uninstall", baseApi.UninstallAgentPlugin)
 		aiToolsRouter.POST("/agents/plugin/check", baseApi.CheckAgentPlugin)
+		aiToolsRouter.POST("/agents/plugins/list", baseApi.ListAgentPlugins)
+		aiToolsRouter.POST("/agents/plugins/search", baseApi.SearchAgentPlugins)
+		aiToolsRouter.POST("/agents/plugins/install", baseApi.InstallAgentMarketPlugin)
+		aiToolsRouter.POST("/agents/plugins/operate", baseApi.OperateAgentPlugin)
 		aiToolsRouter.POST("/agents/security/get", baseApi.GetAgentSecurityConfig)
 		aiToolsRouter.POST("/agents/security/update", baseApi.UpdateAgentSecurityConfig)
 		aiToolsRouter.POST("/agents/other/get", baseApi.GetAgentOtherConfig)

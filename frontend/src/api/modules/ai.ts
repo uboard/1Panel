@@ -19,11 +19,16 @@ export const searchOllamaModel = (params: AI.OllamaModelSearch) => {
 export const loadOllamaModel = (name: string) => {
     return http.post<string>(`/ai/ollama/model/load`, { name: name });
 };
-export const syncOllamaModel = () => {
-    return http.post<Array<AI.OllamaModelDropInfo>>(`/ai/ollama/model/sync`);
+export const syncOllamaModelAccount = (req: AI.ModelAccountSync) => {
+    return http.post('/ai/ollama/account/sync', req);
 };
-export const closeOllamaModel = (name: string) => {
-    return http.post(`/ai/ollama/close`, { name: name });
+export const closeOllamaModel = (name: string, currentNode?: string) => {
+    return http.post(
+        `/ai/ollama/close`,
+        { name: name },
+        undefined,
+        currentNode ? { CurrentNode: currentNode } : undefined,
+    );
 };
 
 export const bindDomain = (req: AI.BindDomain) => {
@@ -38,14 +43,27 @@ export const updateBindDomain = (req: AI.BindDomain) => {
     return http.post(`/ai/domain/update`, req);
 };
 
+export const loadModelGPUDevices = () => {
+    return http.get<{ devices: AI.ModelGPUDevice[]; warnings: string[] }>('/ai/model/gpu/devices');
+};
+
 export const loadGPUInfo = () => {
-    return http.get<any>(`/ai/gpu/load`);
+    return http.get<AI.Info>(`/ai/gpu/load`);
 };
-export const getGPUOptions = () => {
-    return http.get<AI.MonitorGPUOptions>(`/ai/gpu/options`);
+export const getGPUOptions = (currentNode?: string) => {
+    return http.get<AI.MonitorGPUOptions>(
+        `/ai/gpu/options`,
+        {},
+        currentNode ? { headers: { CurrentNode: currentNode } } : {},
+    );
 };
-export const loadGPUMonitor = (param: AI.MonitorGPUSearch) => {
-    return http.post<AI.MonitorGPUData>(`/ai/gpu/search`, param);
+export const loadGPUMonitor = (param: AI.MonitorGPUSearch, currentNode?: string) => {
+    return http.post<AI.MonitorGPUData>(
+        `/ai/gpu/search`,
+        param,
+        TimeoutEnum.T_60S,
+        currentNode ? { CurrentNode: currentNode } : undefined,
+    );
 };
 
 export const pageMcpServer = (req: AI.McpServerSearch) => {
@@ -258,6 +276,10 @@ export const getAgentFeishuConfig = (req: AI.AgentFeishuConfigReq) => {
     return http.post<AI.AgentFeishuConfig>(`/ai/agents/channel/feishu/get`, req);
 };
 
+export const switchAgentFeishuPlugin = (req: AI.AgentFeishuSwitchReq) => {
+    return http.post(`/ai/agents/channel/feishu/switch`, req);
+};
+
 export const updateAgentFeishuConfig = (req: AI.AgentFeishuConfigUpdateReq) => {
     return http.post(`/ai/agents/channel/feishu/update`, req);
 };
@@ -328,6 +350,22 @@ export const uninstallAgentPlugin = (req: AI.AgentPluginUninstallReq) => {
 
 export const checkAgentPlugin = (req: AI.AgentPluginCheckReq) => {
     return http.post<AI.AgentPluginStatus>(`/ai/agents/plugin/check`, req);
+};
+
+export const listAgentPlugins = (req: AI.AgentPluginsReq) => {
+    return http.post<AI.AgentPluginItem[]>(`/ai/agents/plugins/list`, req);
+};
+
+export const searchAgentPlugins = (req: AI.AgentPluginSearchReq) => {
+    return http.post<AI.AgentPluginSearchItem[]>(`/ai/agents/plugins/search`, req);
+};
+
+export const installAgentMarketPlugin = (req: AI.AgentPluginMarketInstallReq) => {
+    return http.post(`/ai/agents/plugins/install`, req);
+};
+
+export const operateAgentPlugin = (req: AI.AgentPluginOperateReq) => {
+    return http.post(`/ai/agents/plugins/operate`, req);
 };
 
 export const getAgentSecurityConfig = (req: AI.AgentSecurityConfigReq) => {

@@ -27,6 +27,10 @@ func PasswordExpired() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		if IsPublicFileShareAPI(c.Request.URL.Path) {
+			c.Next()
+			return
+		}
 		if strings.HasPrefix(c.Request.URL.Path, "/api/v2/core/auth") ||
 			c.Request.URL.Path == "/api/v2/core/settings/search" ||
 			c.Request.URL.Path == "/api/v2/core/settings/search/base" ||
@@ -71,6 +75,15 @@ func PasswordExpired() gin.HandlerFunc {
 		}
 		expiredDays, _ := strconv.Atoi(expirationDays)
 		if expiredDays == 0 {
+			c.Next()
+			return
+		}
+		shouldCheck, err := xpack.AuthProvider.ShouldCheckPasswordExpiration(c)
+		if err != nil {
+			helper.ErrorWithDetail(c, http.StatusInternalServerError, "ErrPasswordExpired", err)
+			return
+		}
+		if !shouldCheck {
 			c.Next()
 			return
 		}

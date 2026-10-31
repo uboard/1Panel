@@ -83,7 +83,7 @@ import { MsgSuccess } from '@/utils/message';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 import { ArrowRight } from '@element-plus/icons-vue';
 import { sortMenu } from '@/utils/misc';
-const { isEE, isIntl, isAdmin, menuAccordion } = useGlobalStore();
+const { menuAccordion } = useGlobalStore();
 
 const drawerVisible = ref();
 const loading = ref();
@@ -103,9 +103,6 @@ const acceptParams = (params: DialogProps): void => {
     let hideMenu = JSON.parse(params.hideMenu);
     sortMenu(hideMenu);
     treeData.hideMenu = hideMenu;
-    if (isIntl.value || (isEE.value && !isAdmin.value)) {
-        treeData.hideMenu = removeUpage(treeData.hideMenu);
-    }
 };
 type Node = RenderContentContext['node'];
 
@@ -148,25 +145,17 @@ const allowDrop = (draggingNode: Node, dropNode: Node, type: AllowDropType) => {
 
 const handleDrop = (draggingNode: Node, dropNode: Node) => {
     const siblingNodes = dropNode.level == 2 ? dropNode.parent.parent.data : dropNode.parent.data;
-    siblingNodes.forEach((node, index) => {
-        node.sort = (index + 1) * 100;
-    });
-
-    const updateChildSort = (nodes) => {
+    const updateSort = (nodes) => {
         nodes.forEach((node, index) => {
             node.sort = (index + 1) * 100;
             if (node.children && node.children.length) {
-                updateChildSort(node.children);
+                updateSort(node.children);
             }
         });
     };
 
     if (siblingNodes.length) {
-        siblingNodes.forEach((node) => {
-            if (node.children && node.children.length) {
-                updateChildSort(node.children);
-            }
-        });
+        updateSort(siblingNodes);
     }
 };
 
@@ -174,17 +163,6 @@ const treeData = reactive({
     hideMenu: [],
     checkedData: [],
 });
-
-const removeUpage = (data: any): any => {
-    return data
-        .filter((item: { label: string }) => item.label !== 'Upage' && item.label !== 'XApp')
-        .map((item: { children: any }) => {
-            if (Array.isArray(item.children)) {
-                item.children = removeUpage(item.children);
-            }
-            return item;
-        });
-};
 
 const onChangeShow = async (row: any) => {
     if (row.children) {

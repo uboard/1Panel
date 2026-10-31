@@ -61,13 +61,14 @@ func (b *BaseApi) CreateRuntime(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Security Timestamp
 // @Router /runtimes/del [post]
-// @x-panel-log {"bodyKeys":["id"],"paramKeys":[],"BeforeFunctions":[],"formatZH":"删除运行环境 [id]","formatEN":"Delete runtime [id]"}
+// @x-panel-log {"bodyKeys":[],"paramKeys":[],"BeforeFunctions":[],"formatZH":"删除运行环境 [name]","formatEN":"Delete runtime [name]"}
 func (b *BaseApi) DeleteRuntime(c *gin.Context) {
 	var req request.RuntimeDelete
 	if err := helper.CheckBindAndValidate(&req, c); err != nil {
 		return
 	}
-	err := runtimeService.Delete(req)
+	name, err := runtimeService.Delete(req)
+	helper.SetOperationLogValues(c, map[string]string{"name": name})
 	if err != nil {
 		helper.InternalServer(c, err)
 		return
@@ -169,7 +170,7 @@ func (b *BaseApi) GetNodePackageRunScript(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Security Timestamp
 // @Router /runtimes/operate [post]
-// @x-panel-log {"bodyKeys":["id"],"paramKeys":[],"BeforeFunctions":[],"formatZH":"操作运行环境 [id]","formatEN":"Operate runtime [id]"}
+// @x-panel-log {"bodyKeys":["ID"],"paramKeys":[],"BeforeFunctions":[{"input_column":"id","input_value":"ID","isList":false,"db":"runtimes","output_column":"name","output_value":"name"}],"formatZH":"操作运行环境 [name]","formatEN":"Operate runtime [name]"}
 func (b *BaseApi) OperateRuntime(c *gin.Context) {
 	var req request.RuntimeOperate
 	if err := helper.CheckBindAndValidate(&req, c); err != nil {

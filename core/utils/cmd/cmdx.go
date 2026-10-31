@@ -22,14 +22,15 @@ import (
 const maxStreamOutputCapture = 64 * 1024
 
 type CommandHelper struct {
-	context      context.Context
-	workDir      string
-	outputFile   string
-	env          []string
-	timeout      time.Duration
-	taskItem     *task.Task
-	logger       *log.Logger
-	IgnoreExist1 bool
+	context            context.Context
+	workDir            string
+	outputFile         string
+	env                []string
+	timeout            time.Duration
+	taskItem           *task.Task
+	logger             *log.Logger
+	IgnoreExist1       bool
+	preserveErrorCause bool
 }
 
 type Option func(*CommandHelper)
@@ -229,6 +230,10 @@ func (c *CommandHelper) buildPipeCommands(ctx context.Context, commands []PipeCo
 		cmdItem.SysProcAttr = &syscall.SysProcAttr{
 			Setpgid: true,
 		}
+		cmdItem.Cancel = func() error {
+			_ = syscall.Kill(-cmdItem.Process.Pid, syscall.SIGKILL)
+			return cmdItem.Process.Kill()
+		}
 		cmds = append(cmds, cmdItem)
 	}
 	return cmds
@@ -304,6 +309,12 @@ func (c *CommandHelper) run(name string, arg ...string) (string, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
 	}
+	if newContext != nil {
+		cmd.Cancel = func() error {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			return cmd.Process.Kill()
+		}
+	}
 
 	customWriter := &CustomWriter{taskItem: c.taskItem}
 	var stdout, stderr bytes.Buffer
@@ -356,8 +367,19 @@ func (c *CommandHelper) run(name string, arg ...string) (string, error) {
 	}()
 	select {
 	case err := <-done:
+		if newContext != nil && newContext.Err() != nil {
+			resultErr := c.pipeResultErr(newContext, err)
+			if c.preserveErrorCause {
+				resultErr = &commandError{message: resultErr.Error(), cause: newContext.Err()}
+			}
+			return "", resultErr
+		}
 		if err != nil {
-			return handleErr(&stdout, &stderr, c.IgnoreExist1, err)
+			out, resultErr := handleErr(&stdout, &stderr, c.IgnoreExist1, err)
+			if c.preserveErrorCause && resultErr != nil {
+				resultErr = &commandError{message: resultErr.Error(), cause: err}
+			}
+			return out, resultErr
 		}
 		return stdout.String(), nil
 	case <-contextDone(newContext):
@@ -374,6 +396,9 @@ func (c *CommandHelper) run(name string, arg ...string) (string, error) {
 			err = newContext.Err()
 		}
 		<-done
+		if c.preserveErrorCause {
+			err = &commandError{message: err.Error(), cause: newContext.Err()}
+		}
 		return "", err
 	}
 }
@@ -413,6 +438,18 @@ func WithContext(ctx context.Context) Option {
 		s.context = ctx
 	}
 }
+
+func WithErrorCause() Option {
+	return func(s *CommandHelper) { s.preserveErrorCause = true }
+}
+
+type commandError struct {
+	message string
+	cause   error
+}
+
+func (e *commandError) Error() string { return e.message }
+func (e *commandError) Unwrap() error { return e.cause }
 
 func WithTimeout(timeout time.Duration) Option {
 	return func(s *CommandHelper) {

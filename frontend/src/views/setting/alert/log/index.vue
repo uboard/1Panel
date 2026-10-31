@@ -82,6 +82,8 @@
 </template>
 
 <script lang="ts" setup>
+import { toRef } from 'vue';
+import { useSearchState } from '@/utils/search-reset';
 import { onMounted, reactive, ref } from 'vue';
 import { dateFormat } from '@/utils/date';
 import { MsgSuccess } from '@/utils/message';
@@ -98,6 +100,8 @@ import {
 } from '@/api/modules/alert';
 import { ElMessageBox } from 'element-plus';
 import { useGlobalStore } from '@/composables/useGlobalStore';
+import { getAlertConfigDisplayName } from '@/views/setting/alert/setting/drawer/secret-field';
+import { cronjobAlertTypes, getCronjobAlertResult } from '@/utils/cronjob-alert';
 
 const { isMobile, isProductPro, isIntl, isMaster } = useGlobalStore();
 const { t } = i18n.global;
@@ -129,11 +133,18 @@ const resourceTypes = [
     'sshIpLogin',
 ];
 const paginationConfig = reactive({
-    cacheSizeKey: 'alert-log-page-size',
     currentPage: 1,
-    pageSize: Number(localStorage.getItem('alert-log-page-size')) || 20,
+    pageSize: 20,
     total: 0,
 });
+useSearchState(
+    'setting/alert/log/index',
+    {
+        page: toRef(paginationConfig, 'currentPage'),
+        pageSize: toRef(paginationConfig, 'pageSize'),
+    },
+    { onRevisit: () => search() },
+);
 const req = reactive({
     page: 1,
     pageSize: 10,
@@ -192,7 +203,15 @@ const syncAlert = (row: Alert.AlertLog) => {
     });
 };
 
-const formatMessage = (row: Alert.AlertInfo) => {
+const formatMessage = (row: Alert.AlertDetail) => {
+    const type = row.type === 'cronJob' ? row.subType : row.type;
+    if (cronjobAlertTypes.includes(type)) {
+        const title =
+            getCronjobAlertResult(row.params) === 'success'
+                ? 'xpack.alert.notificationSuccessTitle'
+                : 'cronjob.alertTitle';
+        return t(title, [t('cronjob.' + type), row.project]);
+    }
     const messageTemplates = {
         ssl: () => {
             return row.project === 'all' ? t('xpack.alert.allSslTitle') : t('xpack.alert.sslTitle', [row.project]);
@@ -211,17 +230,6 @@ const formatMessage = (row: Alert.AlertInfo) => {
             return row.project === 'all' ? t('xpack.alert.allDiskTitle') : t('xpack.alert.diskTitle', [row.project]);
         },
         clams: () => t('xpack.alert.clamsTitle', [row.project]),
-        app: () => t('xpack.alert.cronJobAppTitle', [row.project]),
-        website: () => t('xpack.alert.cronJobWebsiteTitle', [row.project]),
-        database: () => t('xpack.alert.cronJobDatabaseTitle', [row.project]),
-        directory: () => t('xpack.alert.cronJobDirectoryTitle', [row.project]),
-        log: () => t('xpack.alert.cronJobLogTitle', [row.project]),
-        snapshot: () => t('xpack.alert.cronJobSnapshotTitle', [row.project]),
-        shell: () => t('xpack.alert.cronJobShellTitle', [row.project]),
-        curl: () => t('xpack.alert.cronJobCurlTitle', [row.project]),
-        cutWebsiteLog: () => t('xpack.alert.cronJobCutWebsiteLogTitle', [row.project]),
-        clean: () => t('xpack.alert.cronJobCleanTitle', [row.project]),
-        ntp: () => t('xpack.alert.cronJobNtpTitle', [row.project]),
         nodeException: () => t('xpack.alert.nodeException'),
         licenseException: () => t('xpack.alert.licenseException'),
         panelLogin: () => t('xpack.alert.panelLogin'),
@@ -229,7 +237,6 @@ const formatMessage = (row: Alert.AlertInfo) => {
         panelIpLogin: () => t('xpack.alert.panelIpLogin'),
         sshIpLogin: () => t('xpack.alert.sshIpLogin'),
     };
-    let type = row.type === 'cronJob' ? row.subType : row.type;
     return messageTemplates[type] ? messageTemplates[type]() : '';
 };
 
@@ -242,8 +249,8 @@ const formatMethod = (row: Alert.AlertLog) => {
             const typeKey = config.type === 'email' ? 'mail' : config.type;
             const typeLabel = i18n.global.t('xpack.alert.' + typeKey);
             try {
-                const cfg = JSON.parse(config.config || '{}');
-                const name = cfg.displayName || cfg.sender || cfg.phone || '';
+                const cfg = JSON.parse(config.config || '{}') as Record<string, unknown>;
+                const name = getAlertConfigDisplayName(config.type, cfg);
                 return name ? `${name}(${typeLabel})` : typeLabel;
             } catch {
                 return typeLabel;
@@ -268,7 +275,8 @@ const formatMethod = (row: Alert.AlertLog) => {
             case 'sms':
                 return t('xpack.alert.sms');
             case 'webhook':
-                return t('xpack.alert.webhook');
+            case 'custom':
+                return t('xpack.alert.custom');
             case 'bark':
                 return t('xpack.alert.bark');
             default:

@@ -151,6 +151,30 @@ const checkIllegal: RuleValidator = (_rule, value, callback) => {
     }
 };
 
+const checkDatabaseUsername: RuleValidator = (_rule, value, callback) => {
+    if (value && /[&|;'`$()"><\n\r]/.test(value)) {
+        callback(new Error(i18n.global.t('commons.rule.illegalInput')));
+        return;
+    }
+    callback();
+};
+
+const checkDatabasePassword: RuleValidator = (_rule, value, callback) => {
+    if (!value) {
+        callback();
+        return;
+    }
+    if (value.includes(' ')) {
+        callback(new Error(i18n.global.t('setting.noSpace')));
+        return;
+    }
+    if (/[&|;'`$()"><\n\r]/.test(value)) {
+        callback(new Error(i18n.global.t('commons.rule.illegalInput')));
+        return;
+    }
+    callback();
+};
+
 const complexityPassword: RuleValidator = (_rule, value, callback) => {
     if (value === '' || typeof value === 'undefined' || value == null) {
         callback(new Error(i18n.global.t('commons.rule.complexityPassword')));
@@ -246,7 +270,7 @@ const checkComposeName: RuleValidator = (_rule, value, callback) => {
     if (value === '' || typeof value === 'undefined' || value == null) {
         callback(new Error(i18n.global.t('commons.rule.composeName')));
     } else {
-        const reg = /^[a-z0-9]{1}[a-z0-9_-]{0,256}$/;
+        const reg = /^[a-z0-9]{1}[a-z0-9_-]{0,255}$/;
         if (!reg.test(value) && value !== '') {
             callback(new Error(i18n.global.t('commons.rule.composeName')));
         } else {
@@ -496,7 +520,7 @@ const checkDoc: RuleValidator = (_rule, value, callback) => {
     if (value === '' || typeof value === 'undefined' || value == null) {
         callback(new Error(i18n.global.t('commons.rule.nginxDoc')));
     } else {
-        const reg = /^[A-Za-z0-9\n./]+$/;
+        const reg = /^[A-Za-z0-9\n./_-]+$/;
         if (!reg.test(value) && value !== '') {
             callback(new Error(i18n.global.t('commons.rule.nginxDoc')));
         } else {
@@ -682,6 +706,8 @@ interface CommonRule {
     userName: FormItemRule;
     simpleName: FormItemRule;
     simplePassword: FormItemRule;
+    databaseUsername: FormItemRule;
+    databasePassword: FormItemRule;
     dbName: FormItemRule;
     imageName: FormItemRule;
     composeName: FormItemRule;
@@ -858,6 +884,14 @@ export const Rules: CommonRule = {
     illegal: {
         validator: checkIllegal,
         required: true,
+        trigger: 'blur',
+    },
+    databaseUsername: {
+        validator: checkDatabaseUsername,
+        trigger: 'blur',
+    },
+    databasePassword: {
+        validator: checkDatabasePassword,
         trigger: 'blur',
     },
     port: {

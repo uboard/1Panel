@@ -110,7 +110,7 @@
                     @sort-change="search"
                     @search="search"
                     :data="tableRows"
-                    :heightDiff="370"
+                    :heightDiff="320"
                 >
                     <el-table-column :label="$t('commons.table.name')" prop="name" min-width="180" sortable>
                         <template #default="{ row }">
@@ -263,6 +263,7 @@
                             <el-button @click="random">{{ $t('commons.button.random') }}</el-button>
                         </template>
                     </el-input>
+                    <span class="input-help">{{ $t('commons.rule.illegalChar') }}</span>
                 </el-form-item>
                 <el-form-item :label="$t('database.permission')" prop="permission">
                     <el-select v-model="createForm.permission" class="w-full">
@@ -323,7 +324,8 @@
 </template>
 
 <script lang="ts" setup>
-import { nextTick, onMounted, reactive, ref } from 'vue';
+import { useSearchState } from '@/utils/search-reset';
+import { toRef, nextTick, onMounted, reactive, ref } from 'vue';
 import { dateFormat } from '@/utils/date';
 import { getRandomStr } from '@/utils/id';
 import { Position } from '@element-plus/icons-vue';
@@ -391,13 +393,17 @@ const dbOptionsRemote = ref<Array<Database.DatabaseOption>>([]);
 
 const tableRows = ref<Array<Database.MongodbDBInfo>>([]);
 const paginationConfig = reactive({
-    cacheSizeKey: 'mongodb-page-size',
     currentPage: 1,
-    pageSize: Number(localStorage.getItem('mongodb-page-size')) || 20,
+    pageSize: 20,
     total: 0,
     orderBy: 'createdAt',
     order: 'null',
 });
+useSearchState(
+    'database/mongodb/index',
+    { search: searchName, page: toRef(paginationConfig, 'currentPage'), pageSize: toRef(paginationConfig, 'pageSize') },
+    { onRevisit: () => search() },
+);
 
 type FormInstance = InstanceType<typeof ElForm>;
 const formRef = ref<FormInstance>();
@@ -413,7 +419,7 @@ const createForm = reactive({
 const rules = reactive({
     name: [Rules.requiredInput, Rules.dbName],
     username: [Rules.requiredInput, Rules.name],
-    password: [Rules.requiredInput, Rules.noSpace, Rules.illegal],
+    password: [Rules.requiredInput, Rules.databasePassword],
     permission: [Rules.requiredSelect],
 });
 

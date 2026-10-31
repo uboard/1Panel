@@ -56,6 +56,7 @@
                                         <span>{{ $t('commons.button.disable') }}</span>
                                     </el-radio-button>
                                 </el-radio-group>
+                                <span class="input-help">{{ $t('setting.menuTabsHelper') }}</span>
                             </el-form-item>
 
                             <el-form-item :label="$t('setting.watermark')" v-if="isXpackOrEE" prop="watermark">
@@ -169,6 +170,12 @@
                                 </el-button>
                             </el-form-item>
 
+                            <el-form-item :label="$t('setting.panelCache.title')">
+                                <el-button v-show="!show" @click="cacheRef.acceptParams()" icon="Setting">
+                                    {{ $t('commons.button.set') }}
+                                </el-button>
+                            </el-form-item>
+
                             <el-form-item :label="$t('setting.runtimeEnv')" prop="edition">
                                 <el-button icon="Setting" @click="onChangeRegion">
                                     {{ runtimeEnvLabel() }}
@@ -185,6 +192,7 @@
         <Proxy ref="proxyRef" @search="search()" />
         <Timeout ref="timeoutRef" @search="search()" />
         <HideMenu ref="hideMenuRef" @search="search()" />
+        <CacheSettings ref="cacheRef" />
         <ThemeColor ref="themeColorRef" />
         <Watermark ref="watermarkRef" @search="search()" />
         <Edition ref="editionRef" @search="search()" />
@@ -192,6 +200,7 @@
 </template>
 
 <script lang="ts" setup>
+import { applyPanelCacheSettings } from '@/utils/panel-cache';
 import { ref, reactive, onMounted } from 'vue';
 import { ElForm, ElMessageBox } from 'element-plus';
 import { getSettingInfo, updateSetting, getSystemAvailable, getAgentSettingInfo } from '@/api/modules/setting';
@@ -205,6 +214,7 @@ import Timeout from '@/views/setting/panel/timeout/index.vue';
 import PanelName from '@/views/setting/panel/name/index.vue';
 import SystemIP from '@/views/setting/panel/systemip/index.vue';
 import Proxy from '@/views/setting/panel/proxy/index.vue';
+import CacheSettings from '@/views/setting/panel/cache/index.vue';
 import HideMenu from '@/views/setting/panel/hidemenu/index.vue';
 import { getXpackProxyDocker } from '@/extensions/xpack';
 import { getXpackSetting, updateXpackSettingByKey } from '@/utils/xpack';
@@ -213,6 +223,7 @@ import { codeEditorThemeStorageKey } from '@/utils/code-editor-theme';
 import i18n from '@/lang';
 
 const {
+    docWithRegion,
     globalStore,
     isEnterprise,
     isIntl,
@@ -272,6 +283,7 @@ const systemIPRef = ref();
 const proxyRef = ref();
 const timeoutRef = ref();
 const hideMenuRef = ref();
+const cacheRef = ref();
 const watermarkRef = ref();
 const themeColorRef = ref();
 const editionRef = ref();
@@ -305,11 +317,14 @@ const search = async () => {
     form.menuTabs = res.data.menuTabs;
     form.menuAccordion = res.data.menuAccordion || 'Disable';
     menuAccordion.value = form.menuAccordion === 'Enable';
+    applyPanelCacheSettings(res.data.panelCache);
     form.panelName = res.data.panelName;
     form.language = res.data.language;
     form.sessionTimeout = Number(res.data.sessionTimeout || 0);
     form.docSource = res.data.docSource || 'withByRegion';
     form.edition = res.data.edition;
+    docWithRegion.value = form.docSource === 'withByRegion';
+    isIntl.value = form.edition === 'intl';
 
     form.proxyUrl = res.data.proxyUrl;
     form.proxyType = res.data.proxyType;

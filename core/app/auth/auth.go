@@ -90,6 +90,43 @@ func BeginMFALogin(c *gin.Context, name, entrance, mfaStatus string) *dto.UserLo
 	return &dto.UserLoginInfo{Name: name, MfaStatus: mfaStatus, MfaSession: mfaSession}
 }
 
+func BeginAuthSourceMFALogin(
+	c *gin.Context,
+	name, entrance, mfaStatus, authSource string,
+	authSourceID uint,
+	authSourceConfigVersion uint64,
+) *dto.UserLoginInfo {
+	ip := common.GetRealClientIP(c)
+	mfaSession := initauth.GetMFASessionStore().SetWithAuthSource(
+		name,
+		entrance,
+		ip,
+		authSource,
+		authSourceID,
+		authSourceConfigVersion,
+	)
+	return &dto.UserLoginInfo{Name: name, MfaStatus: mfaStatus, MfaSession: mfaSession}
+}
+
+func BeginAuthSourceMFALoginWithSession(
+	c *gin.Context,
+	name, entrance, mfaStatus, authSource string,
+	authSourceID uint,
+	authSourceConfigVersion uint64,
+	externalIssuer, externalNameID, externalNameIDFormat, externalSessionIndex string,
+	externalSessionExpiresAt time.Time,
+	externalSessionRequired bool,
+) *dto.UserLoginInfo {
+	ip := common.GetRealClientIP(c)
+	mfaSession := initauth.GetMFASessionStore().SetWithAuthSourceSession(
+		name, entrance, ip, authSource, authSourceID, authSourceConfigVersion,
+		externalIssuer, externalNameID, externalNameIDFormat, externalSessionIndex,
+		externalSessionExpiresAt,
+		externalSessionRequired,
+	)
+	return &dto.UserLoginInfo{Name: name, MfaStatus: mfaStatus, MfaSession: mfaSession}
+}
+
 func VerifyMFALogin(c *gin.Context, sessionID, code, entrance string) (string, string, error) {
 	settingRepo := repo.NewISettingRepo()
 	mfaSessions := initauth.GetMFASessionStore()
@@ -167,11 +204,7 @@ func CheckEntrance(entrance string) error {
 }
 
 func CheckPassword(priKey, password, passwordFromDB string) error {
-	privateKey, err := encrypt.ParseRSAPrivateKey(priKey)
-	if err != nil {
-		return err
-	}
-	loginPassword, err := encrypt.DecryptPassword(password, privateKey)
+	loginPassword, err := DecryptLoginPassword(priKey, password)
 	if err != nil {
 		return err
 	}
@@ -183,6 +216,18 @@ func CheckPassword(priKey, password, passwordFromDB string) error {
 		return buserr.New("ErrAuth")
 	}
 	return nil
+}
+
+func DecryptLoginPassword(priKey, password string) (string, error) {
+	privateKey, err := encrypt.ParseRSAPrivateKey(priKey)
+	if err != nil {
+		return "", err
+	}
+	loginPassword, err := encrypt.DecryptPassword(password, privateKey)
+	if err != nil {
+		return "", err
+	}
+	return loginPassword, nil
 }
 
 func LoadMFA(req dto.MfaRequest) (mfa.Otp, error) {
@@ -248,6 +293,8 @@ func GetCurrentUserInfo() (*dto.CurrentUserInfo, error) {
 	info.MFAInterval, _ = strconv.Atoi(settingMap["MFAInterval"])
 	info.ApiKeyValidityTime, _ = strconv.Atoi(settingMap["ApiKeyValidityTime"])
 	info.Name = settingMap["UserName"]
+	info.AuthSource = "local"
+	info.AuthSourceStatus = "active"
 	info.Role = "ADMIN"
 	info.Permissions = []string{}
 	info.NodeRoles = []dto.CurrentUserNodeRole{}
@@ -294,13 +341,22 @@ func UpdateCurrentUserInfo(c *gin.Context, req dto.CurrentUserUpdate) error {
 
 func GenerateApiKey() (string, error) {
 	apiKey := common.RandStr(32)
-	if err := repo.NewISettingRepo().Update("ApiKey", apiKey); err != nil {
+	if err := WithLegacyAPIKeyMutation(func() error { return repo.NewISettingRepo().Update("ApiKey", apiKey) }); err != nil {
 		return "", err
 	}
 	return apiKey, nil
 }
+
 func UpdateApiConfig(req dto.ApiInterfaceConfig) error {
+	return WithLegacyAPIKeyMutation(func() error { return StoreLegacyAPIConfig(req) })
+}
+
+func StoreLegacyAPIConfig(req dto.ApiInterfaceConfig) error {
 	settingRepo := repo.NewISettingRepo()
+	trustedProxies, err := NormalizeAPITrustedProxies(req.ApiTrustedProxies)
+	if err != nil {
+		return err
+	}
 	if err := settingRepo.UpdateOrCreate("ApiInterfaceStatus", req.ApiInterfaceStatus); err != nil {
 		return err
 	}
@@ -308,6 +364,9 @@ func UpdateApiConfig(req dto.ApiInterfaceConfig) error {
 		return err
 	}
 	if err := settingRepo.UpdateOrCreate("IpWhiteList", req.IpWhiteList); err != nil {
+		return err
+	}
+	if err := settingRepo.UpdateOrCreate("ApiTrustedProxies", trustedProxies); err != nil {
 		return err
 	}
 	if err := settingRepo.UpdateOrCreate("ApiKeyValidityTime", strconv.Itoa(req.ApiKeyValidityTime)); err != nil {

@@ -56,6 +56,7 @@
             </template>
             <template #main>
                 <ComplexTable
+                    :selection-context="() => [searchName, activeTag, includeAppStore, props.filters]"
                     :pagination-config="paginationConfig"
                     v-model:view-mode="viewMode"
                     v-model:selects="selects"
@@ -63,8 +64,6 @@
                     row-key="containerID"
                     @sort-change="search"
                     @search="search"
-                    @cell-mouse-enter="showFavorite"
-                    @cell-mouse-leave="hideFavorite"
                     :row-style="{ height: '65px' }"
                     style="width: 100%"
                     :columns="columns"
@@ -82,24 +81,26 @@
                         :fixed="isMobile ? false : 'left'"
                         show-overflow-tooltip
                     >
-                        <template #default="{ row, $index }">
+                        <template #default="{ row }">
                             <el-text type="primary" class="cursor-pointer" @click="onInspect(row)">
                                 {{ row.name }}
                             </el-text>
 
                             <div class="float-right">
                                 <el-tooltip
-                                    :content="row.isPinned ? $t('website.cancelFavorite') : $t('website.favorite')"
-                                    v-if="row.isPinned || hoveredRowIndex === $index"
+                                    :content="row.isPinned ? $t('commons.table.unpin') : $t('commons.table.pin')"
                                 >
                                     <el-button
+                                        class="container-pin-button"
+                                        :class="{ 'is-pinned': row.isPinned }"
                                         link
                                         size="large"
-                                        :icon="row.isPinned ? 'StarFilled' : 'Star'"
-                                        type="warning"
+                                        :type="row.isPinned ? 'warning' : 'info'"
                                         v-permission
                                         @click="changePinned(row, true)"
-                                    />
+                                    >
+                                        <svg-icon iconName="p-pushpin" className="container-pin-icon" />
+                                    </el-button>
                                 </el-tooltip>
                             </div>
                         </template>
@@ -176,73 +177,40 @@
                         min-width="120"
                     >
                         <template #default="{ row }">
-                            <div v-if="row.hasLoad">
-                                <div class="source-font">CPU: {{ row.cpuPercent.toFixed(2) }}%</div>
-                                <div class="float-left source-font">
-                                    {{ $t('monitor.memory') }}: {{ row.memoryPercent.toFixed(2) }}%
-                                </div>
-                                <el-popover placement="right" width="500px" class="float-right">
-                                    <template #reference>
-                                        <svg-icon iconName="p-xiangqing" class="svg-icon"></svg-icon>
+                            <span v-if="row.state !== 'running'">—</span>
+                            <ContainerResource v-else-if="row.hasLoad" :stats="row">
+                                <el-descriptions-item v-if="row.hasLoadSize">
+                                    <template #label>
+                                        {{ $t('container.sizeRw') }}
+                                        <el-tooltip :content="$t('container.sizeRwHelper')">
+                                            <el-icon class="icon-item"><InfoFilled /></el-icon>
+                                        </el-tooltip>
                                     </template>
-                                    <template #default>
-                                        <el-descriptions direction="vertical" border :column="3" size="small">
-                                            <el-descriptions-item :label="$t('container.cpuUsage')">
-                                                {{ computeCPU(row.cpuTotalUsage) }}
-                                            </el-descriptions-item>
-                                            <el-descriptions-item :label="$t('container.cpuTotal')">
-                                                {{ computeCPU(row.systemUsage) }}
-                                            </el-descriptions-item>
-                                            <el-descriptions-item :label="$t('container.core')">
-                                                {{ row.percpuUsage }}
-                                            </el-descriptions-item>
-
-                                            <el-descriptions-item :label="$t('container.memUsage')">
-                                                {{ computeSizeForDocker(row.memoryUsage) }}
-                                            </el-descriptions-item>
-                                            <el-descriptions-item :label="$t('container.memCache')">
-                                                {{ computeSizeForDocker(row.memoryCache) }}
-                                            </el-descriptions-item>
-                                            <el-descriptions-item :label="$t('container.memTotal')">
-                                                {{ computeSizeForDocker(row.memoryLimit) }}
-                                            </el-descriptions-item>
-                                            <el-descriptions-item v-if="row.hasLoadSize">
-                                                <template #label>
-                                                    {{ $t('container.sizeRw') }}
-                                                    <el-tooltip :content="$t('container.sizeRwHelper')">
-                                                        <el-icon class="icon-item"><InfoFilled /></el-icon>
-                                                    </el-tooltip>
-                                                </template>
-                                                {{ computeSize2(row.sizeRw) }}
-                                            </el-descriptions-item>
-                                            <el-descriptions-item
-                                                :label="$t('container.sizeRootFs')"
-                                                v-if="row.hasLoadSize"
-                                            >
-                                                <template #label>
-                                                    {{ $t('container.sizeRootFs') }}
-                                                    <el-tooltip :content="$t('container.sizeRootFsHelper')">
-                                                        <el-icon class="icon-item"><InfoFilled /></el-icon>
-                                                    </el-tooltip>
-                                                </template>
-                                                {{ computeSize2(row.sizeRootFs) }}
-                                            </el-descriptions-item>
-                                        </el-descriptions>
-
-                                        <el-button
-                                            class="mt-2"
-                                            v-if="!row.hasLoadSize"
-                                            size="small"
-                                            link
-                                            type="primary"
-                                            @click="loadSize(row)"
-                                        >
-                                            {{ $t('container.loadSize') }}
-                                        </el-button>
+                                    {{ computeSize2(row.sizeRw) }}
+                                </el-descriptions-item>
+                                <el-descriptions-item :label="$t('container.sizeRootFs')" v-if="row.hasLoadSize">
+                                    <template #label>
+                                        {{ $t('container.sizeRootFs') }}
+                                        <el-tooltip :content="$t('container.sizeRootFsHelper')">
+                                            <el-icon class="icon-item"><InfoFilled /></el-icon>
+                                        </el-tooltip>
                                     </template>
-                                </el-popover>
-                            </div>
-                            <div v-if="!row.hasLoad">
+                                    {{ computeSize2(row.sizeRootFs) }}
+                                </el-descriptions-item>
+                                <template #footer>
+                                    <el-button
+                                        class="mt-2"
+                                        v-if="!row.hasLoadSize"
+                                        size="small"
+                                        link
+                                        type="primary"
+                                        @click="loadSize(row)"
+                                    >
+                                        {{ $t('container.loadSize') }}
+                                    </el-button>
+                                </template>
+                            </ContainerResource>
+                            <div v-else>
                                 <el-button link loading></el-button>
                             </div>
                         </template>
@@ -354,6 +322,20 @@
                         show-overflow-tooltip
                         prop="runTime"
                     />
+                    <!-- The API sorts by createdAt; the row field is named createTime. -->
+                    <el-table-column
+                        :label="$t('commons.table.createdAt')"
+                        card-type="description"
+                        min-width="180"
+                        show-overflow-tooltip
+                        prop="createdAt"
+                        sortable="custom"
+                        :sort-orders="['descending', 'ascending', null]"
+                    >
+                        <template #default="{ row }">
+                            {{ row.createTime }}
+                        </template>
+                    </el-table-column>
                     <fu-table-operations
                         card-type="button"
                         fix
@@ -374,6 +356,7 @@
                                         @change="toggleSelection"
                                     ></el-checkbox>
                                 </template>
+                                <el-option :label="$t('commons.button.upgrade')" value="upgrade" />
                                 <el-option
                                     :label="$t('container.start')"
                                     value="start"
@@ -473,6 +456,7 @@
 </template>
 
 <script lang="ts" setup>
+import { useSearchState } from '@/utils/search-reset';
 import PruneDialog from '@/views/container/container/prune/index.vue';
 import RenameDialog from '@/views/container/container/rename/index.vue';
 import UpgradeDialog from '@/views/container/container/upgrade/index.vue';
@@ -488,7 +472,7 @@ import Uploads from '@/components/upload/index.vue';
 import DockerStatus from '@/views/container/docker-status/index.vue';
 import ContainerLogDialog from '@/components/log/container-drawer/index.vue';
 import Status from '@/components/status/index.vue';
-import { computed, reactive, onMounted, ref } from 'vue';
+import { toRef, computed, onBeforeUnmount, onDeactivated, reactive, ref } from 'vue';
 import {
     containerItemStats,
     containerListStats,
@@ -503,7 +487,8 @@ import { MsgSuccess, MsgWarning } from '@/utils/message';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 import { routerToName, routerToNameWithQuery } from '@/utils/router';
 import router from '@/routers';
-import { computeSize2, computeSizeForDocker, computeCPU } from '@/utils/size';
+import { computeSize2 } from '@/utils/size';
+import ContainerResource from '@/components/container-resource/index.vue';
 import { newUUID } from '@/utils/id';
 import { updateCommonDescription } from '@/api/modules/setting';
 
@@ -524,14 +509,14 @@ const portsDialogContainer = ref('');
 const portFilter = ref('');
 const showIPv6Ports = ref(true);
 const selects = ref<any>([]);
+const defaultSort = { prop: 'name', order: 'ascending' };
 const paginationConfig = reactive({
-    cacheSizeKey: 'container-page-size',
     currentPage: 1,
-    pageSize: Number(localStorage.getItem('container-page-size')) || 20,
+    pageSize: 20,
     total: 0,
     state: 'all',
-    orderBy: 'createdAt',
-    order: 'null',
+    orderBy: defaultSort.prop,
+    order: defaultSort.order,
 });
 const searchName = ref();
 const dialogUpgradeRef = ref();
@@ -539,7 +524,7 @@ const dialogCommitRef = ref();
 const dialogPortJumpRef = ref();
 const dialogBackupRef = ref();
 const opRef = ref();
-const includeAppStore = ref(true);
+const includeAppStore = ref(localStorage.getItem('includeAppStore') !== 'false');
 const columns = ref([]);
 
 const batchNames = ref();
@@ -549,8 +534,20 @@ const taskLogRef = ref();
 
 const tags = ref([]);
 const activeTag = ref('all');
+useSearchState(
+    'container/container/index',
+    {
+        search: searchName,
+        page: toRef(paginationConfig, 'currentPage'),
+        pageSize: toRef(paginationConfig, 'pageSize'),
+        state: toRef(paginationConfig, 'state'),
+        activeTag,
+        orderBy: toRef(paginationConfig, 'orderBy'),
+        order: toRef(paginationConfig, 'order'),
+    },
+    { onRevisit: () => search() },
+);
 
-const hoveredRowIndex = ref(-1);
 const activeDropdownContainerId = ref('');
 const statFields = [
     'cpuTotalUsage',
@@ -701,46 +698,84 @@ const dialogContainerLogRef = ref();
 const dialogRenameRef = ref();
 const dialogPruneRef = ref();
 
-const search = async (column?: any) => {
-    if (!isActive.value || !isExist.value) {
+let requestController: AbortController | undefined;
+
+const cancelRequests = () => {
+    requestController?.abort();
+    requestController = undefined;
+    loading.value = false;
+};
+onBeforeUnmount(cancelRequests);
+onDeactivated(cancelRequests);
+
+const loadContainers = async (background = false, column?: any) => {
+    if (!isActive.value || !isExist.value || (background && requestController)) {
         return;
     }
+    requestController?.abort();
+    const controller = new AbortController();
+    requestController = controller;
+    loading.value = !background;
     localStorage.setItem('includeAppStore', includeAppStore.value ? 'true' : 'false');
-    let filterItem = (router.currentRoute.value.query?.filters as string) || '';
-    paginationConfig.orderBy = column?.order ? column.prop : paginationConfig.orderBy;
-    paginationConfig.order = column?.order ? column.order : paginationConfig.order;
-    let params = {
+    if (column) {
+        paginationConfig.orderBy = column.order ? column.prop : defaultSort.prop;
+        paginationConfig.order = column.order || defaultSort.order;
+    }
+    const params = {
         name: searchName.value,
         state: paginationConfig.state || 'all',
         page: paginationConfig.currentPage,
         pageSize: paginationConfig.pageSize,
-        filters: filterItem,
+        filters: props.filters || (router.currentRoute.value.query?.filters as string) || '',
         orderBy: paginationConfig.orderBy,
         order: paginationConfig.order,
         excludeAppStore: !includeAppStore.value,
     };
-    loading.value = true;
-    const [containerResult, statsResult, statusResult] = await Promise.allSettled([
-        searchContainer(params),
-        containerListStats(),
-        loadContainerStatus(),
-    ]);
-    loading.value = false;
-
-    if (containerResult.status === 'fulfilled') {
-        const containers = containerResult.value.data.items || [];
+    const statusRequest = loadContainerStatus(undefined, true, controller.signal)
+        .then((res) => {
+            if (!controller.signal.aborted) {
+                updateTags(res.data || {});
+            }
+        })
+        .catch(() => {}); // Request errors are reported by the HTTP layer.
+    try {
+        const res = await searchContainer(params, undefined, controller.signal);
+        if (controller.signal.aborted) {
+            return;
+        }
+        const containers = res.data.items || [];
         syncContainerRows(containers);
-        paginationConfig.total = containerResult.value.data.total;
-    }
-
-    if (statsResult.status === 'fulfilled') {
-        applyStatsToRows(statsResult.value.data || []);
-    }
-
-    if (statusResult.status === 'fulfilled') {
-        updateTags(statusResult.value.data || {});
+        paginationConfig.total = res.data.total;
+        loading.value = false;
+        // Stopped containers no longer produce samples; discard their previous usage.
+        for (const row of data.value) {
+            if (row.state !== 'running') {
+                for (const field of statFields) {
+                    row[field] = 0;
+                }
+            }
+        }
+        const ids = containers.filter((item) => item.state === 'running').map((item) => item.containerID);
+        if (ids.length > 0) {
+            const stats = await containerListStats(undefined, ids, { signal: controller.signal });
+            if (!controller.signal.aborted) {
+                applyStatsToRows(stats.data || []);
+            }
+        }
+    } catch {
+        // Preserve the last successful rows; the HTTP layer reports the failure.
+    } finally {
+        if (!controller.signal.aborted) {
+            loading.value = false;
+        }
+        await statusRequest;
+        if (requestController === controller) {
+            requestController = undefined;
+        }
     }
 };
+
+const search = (column?: any) => loadContainers(false, column);
 
 const searchWithStatus = (item: string) => {
     activeTag.value = item;
@@ -753,12 +788,6 @@ const searchWithAppShow = (item: any) => {
     search();
 };
 
-const showFavorite = (row: any) => {
-    hoveredRowIndex.value = data.value.findIndex((item) => item === row);
-};
-const hideFavorite = () => {
-    hoveredRowIndex.value = -1;
-};
 const changePinned = (row: any, isPinned: boolean) => {
     let params = {
         id: row.containerID,
@@ -776,21 +805,7 @@ const changePinned = (row: any, isPinned: boolean) => {
     });
 };
 
-const refresh = async () => {
-    let filterItem = props.filters ? props.filters : '';
-    let params = {
-        name: searchName.value,
-        state: paginationConfig.state || 'all',
-        page: paginationConfig.currentPage,
-        pageSize: paginationConfig.pageSize,
-        filters: filterItem,
-        orderBy: paginationConfig.orderBy,
-        order: paginationConfig.order,
-    };
-    const [containerResult, statsResult] = await Promise.all([searchContainer(params), containerListStats()]);
-    syncContainerRows(containerResult.data.items || []);
-    applyStatsToRows(statsResult.data || []);
-};
+const refresh = () => loadContainers(true);
 
 const loadSize = async (row: any) => {
     containerItemStats(row.containerID).then((res) => {
@@ -896,6 +911,10 @@ const checkStatus = (operation: string, row: Container.ContainerInfo | null) => 
 };
 
 const onOperate = async (op: string, row: Container.ContainerInfo | null) => {
+    if (op === 'upgrade') {
+        dialogUpgradeRef.value.acceptParams(selects.value);
+        return;
+    }
     let opList = row ? [row] : selects.value;
     let msg = i18n.global.t('container.operatorHelper', [i18n.global.t('container.' + op)]);
     batchNames.value = [];
@@ -1026,11 +1045,6 @@ const buttons = [
         },
     },
 ];
-
-onMounted(() => {
-    let includeItem = localStorage.getItem('includeAppStore');
-    includeAppStore.value = !includeItem || includeItem === 'true';
-});
 </script>
 
 <style scoped lang="scss">
@@ -1099,14 +1113,6 @@ onMounted(() => {
         white-space: nowrap;
     }
 }
-.source-font {
-    font-size: 12px;
-}
-.svg-icon {
-    margin-top: -3px;
-    font-size: 6px;
-    cursor: pointer;
-}
 .tag-button {
     margin-top: -5px;
     margin-right: 10px;
@@ -1121,5 +1127,25 @@ onMounted(() => {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+.container-pin-button {
+    opacity: 0.72;
+    transition: opacity 0.2s;
+
+    &:hover,
+    &:focus-visible {
+        opacity: 1;
+    }
+
+    &.is-pinned {
+        opacity: 1;
+    }
+
+    :deep(.container-pin-icon) {
+        width: 1em;
+        height: 1em;
+        padding: 0;
+        vertical-align: middle;
+    }
 }
 </style>

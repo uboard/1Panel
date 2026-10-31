@@ -1,9 +1,9 @@
 <template>
-    <el-form-item prop="advanced">
+    <el-form-item v-if="showToggle" prop="advanced">
         <el-checkbox v-model="form.advanced" :label="$t('app.advanced')" size="large" />
     </el-form-item>
     <div v-if="form.advanced">
-        <el-form-item :label="$t('app.containerName')" prop="containerName">
+        <el-form-item v-if="showContainerName" :label="$t('app.containerName')" prop="containerName">
             <el-input v-model.trim="form.containerName" :placeholder="$t('app.containerNameHelper')" />
         </el-form-item>
         <el-form-item v-if="showAllowPort" prop="allowPort">
@@ -22,29 +22,31 @@
                 <el-option :label="$t('container.unlessStopped')" value="unless-stopped" />
             </el-select>
         </el-form-item>
-        <el-form-item :label="$t('container.cpuQuota')" prop="cpuQuota" :rules="checkNumberRange(0, limits.cpu)">
-            <el-input type="number" class="!w-2/5" v-model.number="form.cpuQuota" maxlength="5">
-                <template #append>{{ $t('app.cpuCore') }}</template>
-            </el-input>
-            <span class="input-help">
-                {{ $t('container.limitHelper', [limits.cpu]) }}{{ $t('commons.units.core') }}
-            </span>
-        </el-form-item>
-        <el-form-item
-            :label="$t('container.memoryLimit')"
-            prop="memoryLimit"
-            :rules="checkNumberRange(0, limits.memory)"
-        >
-            <el-input class="!w-2/5" v-model.number="form.memoryLimit" maxlength="10">
-                <template #append>
-                    <el-select v-model="form.memoryUnit" class="p-w-100" @change="changeUnit">
-                        <el-option label="MB" value="M" />
-                        <el-option label="GB" value="G" />
-                    </el-select>
-                </template>
-            </el-input>
-            <span class="input-help">{{ $t('container.limitHelper', [limits.memory]) }}{{ form.memoryUnit }}B</span>
-        </el-form-item>
+        <template v-if="showResourceLimit">
+            <el-form-item :label="$t('container.cpuQuota')" prop="cpuQuota" :rules="checkNumberRange(0, limits.cpu)">
+                <el-input type="number" class="!w-2/5" v-model.number="form.cpuQuota" maxlength="5">
+                    <template #append>{{ $t('app.cpuCore') }}</template>
+                </el-input>
+                <span class="input-help">
+                    {{ $t('container.limitHelper', [limits.cpu]) }}{{ $t('commons.units.core') }}
+                </span>
+            </el-form-item>
+            <el-form-item
+                :label="$t('container.memoryLimit')"
+                prop="memoryLimit"
+                :rules="checkNumberRange(0, limits.memory)"
+            >
+                <el-input class="!w-2/5" v-model.number="form.memoryLimit" maxlength="10">
+                    <template #append>
+                        <el-select v-model="form.memoryUnit" class="p-w-100" @change="changeUnit">
+                            <el-option label="MB" value="M" />
+                            <el-option label="GB" value="G" />
+                        </el-select>
+                    </template>
+                </el-input>
+                <span class="input-help">{{ $t('container.limitHelper', [limits.memory]) }}{{ form.memoryUnit }}B</span>
+            </el-form-item>
+        </template>
         <el-form-item v-if="showPullImage" prop="pullImage">
             <el-checkbox v-model="form.pullImage" :label="$t('app.pullImage')" />
             <span class="input-help">{{ $t('app.pullImageHelper') }}</span>
@@ -81,17 +83,23 @@ const props = withDefaults(
             editCompose: boolean;
             dockerCompose: string;
         };
+        showToggle?: boolean;
         showAllowPort?: boolean;
         showSpecifyIP?: boolean;
+        showContainerName?: boolean;
         showRestartPolicy?: boolean;
+        showResourceLimit?: boolean;
         showPullImage?: boolean;
         showCompose?: boolean;
         autoLoadLimit?: boolean;
     }>(),
     {
+        showToggle: true,
         showAllowPort: true,
         showSpecifyIP: true,
+        showContainerName: true,
         showRestartPolicy: true,
+        showResourceLimit: true,
         showPullImage: true,
         showCompose: true,
         autoLoadLimit: true,

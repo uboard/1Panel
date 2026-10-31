@@ -18,6 +18,15 @@
             </template>
             <template #rightToolBar>
                 <TableSearch @search="search()" v-model:searchName="searchName" />
+                <el-tooltip
+                    :content="includeAppStore ? $t('container.includeAppstore') : $t('container.excludeAppstore')"
+                >
+                    <el-button
+                        :type="includeAppStore ? '' : 'primary'"
+                        @click="searchWithAppShow(!includeAppStore)"
+                        :icon="includeAppStore ? 'View' : 'Hide'"
+                    />
+                </el-tooltip>
                 <TableRefresh @search="search()" />
                 <TableSetting title="container-refresh" @search="refresh()" />
             </template>
@@ -38,13 +47,31 @@
                                             :class="{ 'is-active': currentCompose?.name === row.name && !isOnCreate }"
                                         >
                                             <div class="font-medium text-base compose-title">
-                                                {{ row.name }}
+                                                <span class="compose-title__name">{{ row.name }}</span>
                                                 <el-tooltip
                                                     v-if="!row.composeFileExists"
                                                     :content="$t('container.composeFileMissing')"
                                                 >
                                                     <el-button link icon="WarningFilled" @click.stop>
                                                         <WarningFilled />
+                                                    </el-button>
+                                                </el-tooltip>
+                                                <el-tooltip
+                                                    :content="
+                                                        row.isPinned
+                                                            ? $t('commons.table.unpin')
+                                                            : $t('commons.table.pin')
+                                                    "
+                                                >
+                                                    <el-button
+                                                        class="compose-pin-button"
+                                                        :class="{ 'is-pinned': row.isPinned }"
+                                                        link
+                                                        :type="row.isPinned ? 'warning' : 'info'"
+                                                        v-permission
+                                                        @click.stop="changePinned(row)"
+                                                    >
+                                                        <svg-icon iconName="p-pushpin" className="compose-pin-icon" />
                                                     </el-button>
                                                 </el-tooltip>
                                             </div>
@@ -222,7 +249,10 @@
                                             </div>
                                             <el-popover placement="right" width="500px" class="float-right">
                                                 <template #reference>
-                                                    <svg-icon iconName="p-xiangqing" class="svg-icon"></svg-icon>
+                                                    <svg-icon
+                                                        iconName="p-xiangqing"
+                                                        className="resource-detail-icon"
+                                                    ></svg-icon>
                                                 </template>
                                                 <template #default>
                                                     <el-descriptions
@@ -320,6 +350,7 @@
                                     v-if="showType !== 'log' && !(showType === 'env' && isAppStoreCompose)"
                                     v-permission
                                     type="primary"
+                                    :disabled="detailLoading || !composeContent"
                                     @click="onSubmitEdit"
                                 >
                                     {{ $t('commons.button.save') }}
@@ -425,14 +456,24 @@
                                         />
                                     </el-select>
                                 </el-form-item>
-                                <el-form-item v-if="form.from === 'edit' || form.from === 'template'" prop="name">
-                                    <el-input @input="changePath" @change="onEdit('')" v-model.trim="form.name">
+                                <el-form-item v-if="form.from === 'edit' || form.from === 'template'" prop="dirName">
+                                    <el-input @input="changePath" @change="onEdit('')" v-model.trim="form.dirName">
                                         <template #prefix>
-                                            <span style="margin-right: 8px">{{ $t('file.dir') }}</span>
+                                            <span style="margin-right: 8px">{{ $t('commons.table.name') }}</span>
                                         </template>
                                     </el-input>
                                     <span class="input-help">
-                                        {{ $t('container.composePathHelper', [composeFile]) }}
+                                        {{ $t('container.composePathHelper', [composeFile, form.dirName]) }}
+                                    </span>
+                                </el-form-item>
+                                <el-form-item v-if="form.from === 'path'" prop="name">
+                                    <el-input v-model.trim="form.name">
+                                        <template #prefix>
+                                            <span style="margin-right: 8px">{{ $t('commons.table.name') }}</span>
+                                        </template>
+                                    </el-input>
+                                    <span class="input-help">
+                                        {{ $t('container.composeNamePriorityHelper') }}
                                     </span>
                                 </el-form-item>
                                 <el-form-item>
@@ -481,6 +522,7 @@
 </template>
 
 <script lang="ts" setup>
+import { useSearchState } from '@/utils/search-reset';
 import { computed, h, ref } from 'vue';
 import CodemirrorPro from '@/components/codemirror-pro/index.vue';
 import ContainerLog from '@/components/log/container/index.vue';
@@ -494,6 +536,7 @@ import Backups from '@/components/backup/index.vue';
 import Uploads from '@/components/upload/index.vue';
 import {
     composeOperate,
+    composePin,
     composeUpdate,
     containerItemStats,
     containerListStats,
@@ -534,6 +577,8 @@ const dialogBackupRef = ref();
 const uploadRef = ref();
 
 const searchName = ref('');
+useSearchState('container/compose/index', { search: searchName }, { onRevisit: () => search() });
+const includeAppStore = ref(localStorage.getItem('includeAppStore') !== 'false');
 const showType = ref('compose');
 const containerStats = ref<any[]>([]);
 const env = ref();
@@ -550,6 +595,7 @@ const formRef = ref<FormInstance>();
 const form = reactive({
     taskID: '',
     name: '',
+    dirName: '',
     from: 'edit',
     path: '',
     file: '',
@@ -557,11 +603,22 @@ const form = reactive({
     env: '',
     forcePull: false,
 });
-const rules = reactive({
-    name: [Rules.requiredInput, Rules.composeName],
+const optionalComposeNameRule = {
+    validator: (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+        if (!value || /^[a-z0-9][a-z0-9_-]{0,255}$/.test(value)) {
+            callback();
+            return;
+        }
+        callback(new Error(i18n.global.t('commons.rule.composeName')));
+    },
+    trigger: 'blur',
+};
+const rules = computed(() => ({
+    name: [optionalComposeNameRule],
+    dirName: [Rules.requiredInput, Rules.composeName],
     path: [Rules.requiredInput],
     template: [Rules.requiredSelect],
-});
+}));
 
 const isActive = ref(false);
 const isExist = ref(false);
@@ -624,6 +681,7 @@ const refresh = async () => {
         info: searchName.value,
         page: 1,
         pageSize: 100,
+        excludeAppStore: !includeAppStore.value,
     };
     await searchCompose(params).then((res) => {
         data.value = res.data.items || [];
@@ -634,10 +692,12 @@ const search = async (withRefreshDetail?: boolean) => {
     if (!isActive.value || !isExist.value) {
         return;
     }
+    localStorage.setItem('includeAppStore', includeAppStore.value ? 'true' : 'false');
     let params = {
         info: searchName.value,
         page: 1,
         pageSize: 100,
+        excludeAppStore: !includeAppStore.value,
     };
     loading.value = true;
     await searchCompose(params)
@@ -651,6 +711,20 @@ const search = async (withRefreshDetail?: boolean) => {
         .finally(() => {
             loading.value = false;
         });
+};
+
+const searchWithAppShow = (item: boolean) => {
+    includeAppStore.value = item;
+    search();
+};
+
+const changePinned = async (row: Container.ComposeInfo) => {
+    await composePin({
+        name: row.name,
+        isPinned: !row.isPinned,
+    });
+    await search(true);
+    MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
 };
 
 const loadDetail = async (row: Container.ComposeInfo, withRefresh: boolean) => {
@@ -668,18 +742,24 @@ const loadDetail = async (row: Container.ComposeInfo, withRefresh: boolean) => {
 };
 
 const inspectCompose = async (name: string, detailPath: string) => {
+    composeContent.value = '';
     if (!currentCompose.value?.composeFileExists) {
-        composeContent.value = '';
         loadContainerStats();
         detailLoading.value = false;
         return;
     }
+    detailLoading.value = true;
     await inspect({ id: name, type: 'compose', detail: detailPath })
         .then((res) => {
+            if (currentCompose.value?.name !== name || currentYamlPath.value !== detailPath) {
+                return;
+            }
             composeContent.value = res.data;
-            detailLoading.value = false;
         })
         .finally(() => {
+            if (currentCompose.value?.name !== name || currentYamlPath.value !== detailPath) {
+                return;
+            }
             loadContainerStats();
             detailLoading.value = false;
         });
@@ -698,6 +778,7 @@ const onOpenDialog = async () => {
     isOnCreate.value = true;
     loadTemplates();
     form.name = '';
+    form.dirName = '';
     form.from = 'edit';
     form.path = '';
     form.file = '';
@@ -757,7 +838,7 @@ const loadPath = async () => {
     changePath();
 };
 const changePath = async () => {
-    composeFile.value = baseDir.value + '/docker/compose/' + form.name;
+    composeFile.value = baseDir.value + '/docker/compose/' + form.dirName;
 };
 const loadDir = async (path: string) => {
     form.path = path;
@@ -958,7 +1039,37 @@ const onOpenLog = (row: any) => {
 }
 
 .compose-title {
+    display: flex;
+    align-items: center;
+    gap: 4px;
     transition: color 0.15s;
+}
+
+.compose-title__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.compose-pin-button {
+    flex-shrink: 0;
+    margin-left: auto;
+    opacity: 0.72;
+    transition: opacity 0.2s;
+
+    &:hover,
+    &:focus-visible,
+    &.is-pinned {
+        opacity: 1;
+    }
+
+    :deep(.compose-pin-icon) {
+        width: 1em;
+        height: 1em;
+        padding: 0;
+        vertical-align: middle;
+    }
 }
 
 .compose-item.is-active .compose-title {
@@ -980,7 +1091,7 @@ const onOpenLog = (row: any) => {
     max-height: 40px;
 }
 
-.svg-icon {
+.resource-detail-icon {
     margin-top: -3px;
     font-size: 6px;
     cursor: pointer;

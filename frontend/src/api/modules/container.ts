@@ -1,21 +1,26 @@
 import http from '@/api';
+import type { AxiosRequestConfig } from 'axios';
 import { ResPage, SearchWithPage } from '../interface';
 import { Container } from '../interface/container';
 import { TimeoutEnum } from '@/enums/http-enum';
 
-export const searchContainer = (params: Container.ContainerSearch, currentNode?: string) => {
-    return http.post<ResPage<Container.ContainerInfo>>(
-        `/containers/search`,
-        params,
-        TimeoutEnum.T_40S,
-        currentNode ? { CurrentNode: currentNode } : undefined,
-    );
+export const searchContainer = (params: Container.ContainerSearch, currentNode?: string, signal?: AbortSignal) => {
+    return http.postWithConfig<ResPage<Container.ContainerInfo>>(`/containers/search`, params, {
+        timeout: TimeoutEnum.T_40S,
+        headers: currentNode ? { CurrentNode: currentNode } : undefined,
+        signal,
+    });
 };
 export const listContainer = () => {
     return http.post<Array<Container.ContainerOption>>(`/containers/list`, {});
 };
-export const listContainerByImage = (image: string) => {
-    return http.post<Array<Container.ContainerOption>>(`/containers/list/byimage`, { name: image });
+export const listContainerByImage = (image: string, node?: string) => {
+    return http.post<Array<Container.ContainerOption>>(
+        `/containers/list/byimage`,
+        { name: image },
+        undefined,
+        node ? { CurrentNode: node } : undefined,
+    );
 };
 export const loadContainerUsers = (name: string) => {
     return http.post<Array<string>>(`/containers/users`, { name: name });
@@ -23,10 +28,11 @@ export const loadContainerUsers = (name: string) => {
 export const listContainerFiles = (params: Container.ContainerFileReq) => {
     return http.post<Array<Container.ContainerFileInfo>>(`/containers/files/search`, params, TimeoutEnum.T_40S);
 };
-export const uploadContainerFile = (params: FormData) => {
+export const uploadContainerFile = (params: FormData, config?: AxiosRequestConfig & { skipErrorMessage?: boolean }) => {
     return http.upload(`/containers/files/upload`, params, {
-        headers: { 'Content-Type': 'multipart/form-data' },
         timeout: TimeoutEnum.T_5M,
+        ...config,
+        headers: { 'Content-Type': 'multipart/form-data', ...config?.headers },
     });
 };
 export const getContainerFileContent = (params: Container.ContainerFileReq) => {
@@ -44,12 +50,11 @@ export const downloadContainerFile = (params: { containerID: string; path: strin
         timeout: TimeoutEnum.T_40S,
     });
 };
-export const loadContainerStatus = (currentNode?: string) => {
-    return http.get<Container.ContainerStatus>(
-        `/containers/status`,
-        {},
-        currentNode ? { headers: { CurrentNode: currentNode } } : {},
-    );
+export const loadContainerStatus = (currentNode?: string, containersOnly = false, signal?: AbortSignal) => {
+    return http.get<Container.ContainerStatus>(`/containers/status`, containersOnly ? { containersOnly: true } : {}, {
+        headers: currentNode ? { CurrentNode: currentNode } : undefined,
+        signal,
+    });
 };
 export const loadResourceLimit = () => {
     return http.get<Container.ResourceLimit>(`/containers/limit`);
@@ -60,8 +65,8 @@ export const createContainer = (params: Container.ContainerHelper) => {
 export const updateContainer = (params: Container.ContainerHelper) => {
     return http.post(`/containers/update`, params, TimeoutEnum.T_10M);
 };
-export const upgradeContainer = (params: Container.ContainerUpgrade) => {
-    return http.post(`/containers/upgrade`, params, TimeoutEnum.T_10M);
+export const upgradeContainer = (params: Container.ContainerUpgrade, node?: string) => {
+    return http.post(`/containers/upgrade`, params, TimeoutEnum.T_10M, node ? { CurrentNode: node } : undefined);
 };
 export const commitContainer = (params: Container.ContainerCommit) => {
     return http.post(`/containers/commit`, params);
@@ -82,19 +87,23 @@ export const cleanContainerLog = (containerName: string, operateNode?: string) =
     return http.post(`/containers/clean/log${params}`, { name: containerName }, TimeoutEnum.T_60S);
 };
 export const containerItemStats = (containerID: string, currentNode?: string) => {
+    const timeout = containerID === 'system' ? TimeoutEnum.T_5M : TimeoutEnum.T_60S;
     return http.post<Container.ContainerItemStats>(
         `/containers/item/stats`,
         { name: containerID },
-        TimeoutEnum.T_60S,
+        timeout,
         currentNode ? { CurrentNode: currentNode } : undefined,
     );
 };
-export const containerListStats = (currentNode?: string) => {
-    return http.get<Array<Container.ContainerListStats>>(
-        `/containers/list/stats`,
-        {},
-        currentNode ? { headers: { CurrentNode: currentNode } } : {},
-    );
+export const containerListStats = (
+    currentNode?: string,
+    ids?: string[],
+    config?: AxiosRequestConfig & { skipErrorMessage?: boolean },
+) => {
+    return http.get<Array<Container.ContainerListStats>>(`/containers/list/stats`, ids ? { ids: ids.join(',') } : {}, {
+        ...config,
+        headers: { ...config?.headers, ...(currentNode ? { CurrentNode: currentNode } : {}) },
+    });
 };
 export const containerStats = (id: string) => {
     return http.get<Container.ContainerStats>(`/containers/stats/${id}`);
@@ -143,8 +152,13 @@ export const imagePull = (params: Container.ImagePull) => {
 export const imagePush = (params: Container.ImagePush) => {
     return http.post<string>(`/containers/image/push`, params);
 };
-export const imageLoad = (params: Container.ImageLoad) => {
-    return http.post(`/containers/image/load`, params, TimeoutEnum.T_10M);
+export const imageLoad = (params: Container.ImageLoad, currentNode?: string) => {
+    return http.post(
+        `/containers/image/load`,
+        params,
+        TimeoutEnum.T_10M,
+        currentNode ? { CurrentNode: currentNode } : undefined,
+    );
 };
 export const imageSave = (params: Container.ImageSave) => {
     return http.post(`/containers/image/save`, params, TimeoutEnum.T_10M);
@@ -239,6 +253,9 @@ export const composeOperate = (params: Container.ComposeOperation) => {
 };
 export const composeUpdate = (params: Container.ComposeUpdate) => {
     return http.post(`/containers/compose/update`, params, TimeoutEnum.T_10M);
+};
+export const composePin = (params: Container.ComposePin) => {
+    return http.post(`/containers/compose/pin`, params);
 };
 
 // docker

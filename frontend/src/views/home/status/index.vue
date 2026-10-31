@@ -1,10 +1,12 @@
 <template>
     <div class="custom-row">
-        <el-col :xs="6" :sm="6" :md="3" :lg="3" :xl="3" align="center">
+        <el-col v-if="view === 'system'" :xs="6" :sm="6" :md="3" :lg="3" :xl="3" align="center">
             <el-popover
                 :hide-after="20"
                 :teleported="false"
                 :width="320"
+                popper-class="dashboard-status-popover"
+                :trigger="hasFinePointer ? 'hover' : 'click'"
                 v-if="chartsOption['load']"
                 @hide="onCpuPopoverHide"
             >
@@ -50,11 +52,13 @@
             </el-popover>
             <span class="input-help">{{ loadStatus(currentInfo.loadUsagePercent) }}</span>
         </el-col>
-        <el-col :xs="6" :sm="6" :md="3" :lg="3" :xl="3">
+        <el-col v-if="view === 'system'" :xs="6" :sm="6" :md="3" :lg="3" :xl="3">
             <el-popover
                 :hide-after="20"
                 :teleported="false"
                 :width="430"
+                popper-class="dashboard-status-popover"
+                :trigger="hasFinePointer ? 'hover' : 'click'"
                 v-if="chartsOption['cpu']"
                 @hide="onCpuPopoverHide"
             >
@@ -156,11 +160,13 @@
                 </span>
             </div>
         </el-col>
-        <el-col :xs="6" :sm="6" :md="3" :lg="3" :xl="3" align="center">
+        <el-col v-if="view === 'system'" :xs="6" :sm="6" :md="3" :lg="3" :xl="3" align="center">
             <el-popover
                 :hide-after="20"
                 :teleported="false"
                 :width="480"
+                popper-class="dashboard-status-popover"
+                :trigger="hasFinePointer ? 'hover' : 'click'"
                 v-if="chartsOption['memory']"
                 @hide="onMemPopoverHide"
             >
@@ -248,8 +254,22 @@
             </span>
         </el-col>
         <template v-for="(item, index) of currentInfo.diskData" :key="index">
-            <el-col :xs="6" :sm="6" :md="3" :lg="3" :xl="3" align="center" v-if="isShow('disk', index)">
-                <el-popover :hide-after="20" :teleported="false" :width="450" v-if="chartsOption[`disk${index}`]">
+            <el-col
+                :xs="6"
+                :sm="6"
+                :md="3"
+                :lg="3"
+                :xl="3"
+                align="center"
+                v-if="view === 'system' && (showMore || index < (currentInfo.diskData.length > 5 ? 4 : 5))"
+            >
+                <el-popover
+                    :hide-after="20"
+                    :teleported="false"
+                    :width="450"
+                    popper-class="dashboard-status-popover"
+                    v-if="chartsOption[`disk${index}`]"
+                >
                     <el-descriptions :column="1" size="small">
                         <el-descriptions-item :label="$t('home.mount')">
                             {{ item.path }}
@@ -298,78 +318,16 @@
                 <span class="input-help">{{ computeSize(item.used) }} / {{ computeSize(item.total) }}</span>
             </el-col>
         </template>
-        <template v-for="(item, index) of currentInfo.gpuData" :key="index">
-            <el-col :xs="6" :sm="6" :md="3" :lg="3" :xl="3" align="center" v-if="isShow('gpu', index)">
-                <el-popover :hide-after="20" :teleported="false" :width="450" v-if="chartsOption[`gpu${index}`]">
-                    <el-descriptions :title="item.productName" direction="vertical" :column="3" size="small">
-                        <el-descriptions-item :label="$t('aiTools.gpu.gpuUtil')">
-                            {{ item.gpuUtil }}
-                        </el-descriptions-item>
-                        <el-descriptions-item :label="$t('aiTools.gpu.temperature')">
-                            {{ item.temperature.replaceAll('C', '°C') }}
-                        </el-descriptions-item>
-                        <el-descriptions-item :label="$t('aiTools.gpu.performanceState')">
-                            {{ item.performanceState }}
-                        </el-descriptions-item>
-                        <el-descriptions-item :label="$t('aiTools.gpu.powerUsage')">
-                            {{ item.powerUsage }}
-                        </el-descriptions-item>
-                        <el-descriptions-item :label="$t('aiTools.gpu.memoryUsage')">
-                            {{ item.memoryUsage }}
-                        </el-descriptions-item>
-                        <el-descriptions-item :label="$t('aiTools.gpu.fanSpeed')">
-                            {{ item.fanSpeed }}
-                        </el-descriptions-item>
-                    </el-descriptions>
-                    <template #reference>
-                        <v-charts
-                            @click="goGPU()"
-                            height="160px"
-                            :id="`gpu${index}`"
-                            type="pie"
-                            :option="chartsOption[`gpu${index}`]"
-                            v-if="chartsOption[`gpu${index}`]"
-                        />
-                    </template>
-                </el-popover>
-                <el-tooltip :content="item.productName" v-if="item.productName.length > 25">
-                    <span class="input-help">{{ item.productName.substring(0, 22) }}...</span>
-                </el-tooltip>
-                <span class="input-help" v-else>{{ item.productName }}</span>
-            </el-col>
-        </template>
-        <template v-for="(item, index) of currentInfo.xpuData" :key="index">
-            <el-col :xs="6" :sm="6" :md="3" :lg="3" :xl="3" align="center" v-if="isShow('xpu', index)">
-                <el-popover :hide-after="20" :teleported="false" :width="400" v-if="chartsOption[`xpu${index}`]">
-                    <el-descriptions :title="item.deviceName" direction="vertical" :column="3" size="small">
-                        <el-descriptions-item :label="$t('aiTools.gpu.temperature')">
-                            {{ item.temperature }}
-                        </el-descriptions-item>
-                        <el-descriptions-item :label="$t('aiTools.gpu.powerUsage')">
-                            {{ item.power }}
-                        </el-descriptions-item>
-                        <el-descriptions-item :label="$t('aiTools.gpu.memoryUsage')">
-                            {{ item.memoryUsed }}/{{ item.memory }}
-                        </el-descriptions-item>
-                    </el-descriptions>
-                    <template #reference>
-                        <v-charts
-                            @click="goGPU()"
-                            height="160px"
-                            :id="`xpu${index}`"
-                            type="pie"
-                            :option="chartsOption[`xpu${index}`]"
-                            v-if="chartsOption[`xpu${index}`]"
-                        />
-                    </template>
-                </el-popover>
-                <el-tooltip :content="item.deviceName" v-if="item.deviceName.length > 25">
-                    <span class="input-help">{{ item.deviceName.substring(0, 22) }}...</span>
-                </el-tooltip>
-                <span class="input-help" v-else>{{ item.deviceName }}</span>
-            </el-col>
-        </template>
-        <el-col :xs="6" :sm="6" :md="3" :lg="3" :xl="3" align="center" v-if="totalCount > 5">
+        <GPUStatus v-if="view === 'gpu'" :current="currentInfo" @open="routerToName('GPU')" />
+        <el-col
+            :xs="6"
+            :sm="6"
+            :md="3"
+            :lg="3"
+            :xl="3"
+            align="center"
+            v-if="view === 'system' && currentInfo.diskData.length > 5"
+        >
             <el-button v-if="!showMore" link type="primary" @click="changeShowMore(true)" class="buttonClass">
                 {{ $t('tabs.more') }}
                 <el-icon><Bottom /></el-icon>
@@ -387,14 +345,17 @@
 import { Dashboard } from '@/api/interface/dashboard';
 import { computeSize } from '@/utils/size';
 import i18n from '@/lang';
-import { nextTick, onBeforeUnmount, ref } from 'vue';
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import GPUStatus from './gpu.vue';
+import { useMediaQuery } from '@vueuse/core';
 import { routerToFileWithPath, routerToName } from '@/utils/router';
 import { stopProcess } from '@/api/modules/process';
 import { loadTopCPU, loadTopMem } from '@/api/modules/dashboard';
 import { MsgSuccess } from '@/utils/message';
-const showMore = ref(false);
-const totalCount = ref();
 
+const hasFinePointer = useMediaQuery('(hover: hover) and (pointer: fine)');
+const props = defineProps<{ view: 'system' | 'gpu' }>();
+const showMore = ref(false);
 let cpuPopoverTimer: ReturnType<typeof setTimeout> | null = null;
 let memPopoverTimer: ReturnType<typeof setTimeout> | null = null;
 let cpuLoading = false;
@@ -462,6 +423,7 @@ const currentInfo = ref<Dashboard.CurrentInfo>({
 
     diskData: [],
     gpuData: [],
+    npuData: [],
     xpuData: [],
 
     topCPUItems: [],
@@ -486,6 +448,7 @@ const chartsOption = ref({
 });
 
 const acceptParams = (current: Dashboard.CurrentInfo, base: Dashboard.BaseInfo): void => {
+    normalizeDashboardAccelerators(current);
     currentInfo.value = current;
     baseInfo.value = base;
     chartsOption.value['cpu'] = {
@@ -510,38 +473,8 @@ const acceptParams = (current: Dashboard.CurrentInfo, base: Dashboard.BaseInfo):
                 data: formatNumber(currentInfo.value.diskData[i].usedPercent),
             };
         }
-        currentInfo.value.gpuData = currentInfo.value.gpuData || [];
-        for (let i = 0; i < currentInfo.value.gpuData.length; i++) {
-            chartsOption.value['gpu' + i] = {
-                title: 'GPU-' + currentInfo.value.gpuData[i].index,
-                data: formatNumber(Number(currentInfo.value.gpuData[i].gpuUtil.replaceAll(' %', ''))),
-            };
-        }
-        currentInfo.value.xpuData = currentInfo.value.xpuData || [];
-        for (let i = 0; i < currentInfo.value.xpuData.length; i++) {
-            chartsOption.value['xpu' + i] = {
-                title: 'XPU-' + currentInfo.value.xpuData[i].deviceID,
-                data: formatNumber(Number(currentInfo.value.xpuData[i].memoryUtil.replaceAll('%', ''))),
-            };
-        }
-        totalCount.value =
-            currentInfo.value.diskData.length + currentInfo.value.gpuData.length + currentInfo.value.xpuData.length;
         showMore.value = localStorage.getItem('dashboard_show') === 'more';
     });
-};
-
-const isShow = (val: string, index: number) => {
-    let showCount = totalCount.value < 6 ? 5 : 4;
-    switch (val) {
-        case 'disk':
-            return showMore.value || index < showCount;
-        case 'gpu':
-            let gpuCount = showCount - currentInfo.value.diskData.length;
-            return showMore.value || index < gpuCount;
-        case 'xpu':
-            let xpuCount = showCount - currentInfo.value.diskData.length - currentInfo.value.gpuData.length;
-            return showMore.value || index < xpuCount;
-    }
 };
 
 const changeShowMore = (show: boolean) => {
@@ -577,13 +510,36 @@ function loadStatus(val: number) {
     return i18n.global.t('home.runJam');
 }
 
-const goGPU = () => {
-    routerToName('GPU');
-};
-
 function formatNumber(val: number) {
     return Number(val.toFixed(2));
 }
+
+const normalizeDashboardAccelerators = (current: Dashboard.CurrentInfo) => {
+    const legacyNPUs = (current.gpuData || [])
+        .filter((item) => item.type === 'ascend')
+        .map<Dashboard.NPUInfo>((item) => ({
+            type: 'ascend',
+            index: item.index,
+            npuIndex: item.npuIndex,
+            chipIndex: item.chipIndex,
+            productName: item.productName,
+            busID: item.busID || '',
+            health: item.performanceState || '',
+            temperature: item.temperature || '',
+            powerDraw: item.powerDraw || item.powerUsage || '',
+            aiCore: item.gpuUtil || '',
+            memUsed: item.memUsed || '',
+            memTotal: item.memTotal || '',
+            memoryUsed: '',
+            memoryTotal: '',
+            hbmUsed: '',
+            hbmTotal: '',
+            hugepagesUsed: '',
+            hugepagesTotal: '',
+        }));
+    current.gpuData = (current.gpuData || []).filter((item) => item.type !== 'ascend');
+    current.npuData = current.npuData?.length ? current.npuData : legacyNPUs;
+};
 
 const toggleCpuTop = async () => {
     showCpuTop.value = !showCpuTop.value;
@@ -659,6 +615,14 @@ const loadTopMemData = async () => {
     }
 };
 
+watch(
+    () => props.view,
+    () => {
+        onCpuPopoverHide();
+        onMemPopoverHide();
+    },
+);
+
 onBeforeUnmount(() => {
     if (cpuPopoverTimer) {
         clearInterval(Number(cpuPopoverTimer));
@@ -722,6 +686,14 @@ defineExpose({
 @media (min-width: 1920px) {
     .custom-row .el-col.el-col-xl-3 {
         grid-column: span 3;
+    }
+}
+@media (max-width: 767px) {
+    :deep(.dashboard-status-popover) {
+        max-width: calc(100vw - 24px);
+        max-height: calc(100vh - 24px);
+        max-height: calc(100dvh - 24px);
+        overflow: auto;
     }
 }
 </style>

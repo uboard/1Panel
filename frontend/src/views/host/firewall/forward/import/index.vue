@@ -1,38 +1,56 @@
 <template>
-    <DialogPro v-model="visible" :title="$t('commons.button.import')" size="large">
+    <DialogPro v-model="visible" :title="$t('commons.button.import')" size="w-70">
+        <el-alert
+            class="mb-3"
+            type="info"
+            :closable="false"
+            :title="$t('firewall.importLimit', [FIREWALL_BATCH_LIMIT, FIREWALL_IMPORT_MAX_SIZE / 1024])"
+        />
         <div>
-            <el-alert :closable="false" show-icon type="info">
-                <template #default>
-                    <div>{{ $t('commons.msg.importHelper') }}</div>
-                </template>
-            </el-alert>
-            <el-upload
-                action="#"
-                :auto-upload="false"
-                ref="uploadRef"
-                class="float-left mt-2"
-                :show-file-list="false"
-                :limit="1"
-                accept=".json"
-                :on-change="fileOnChange"
-                :on-exceed="handleExceed"
-                v-model:file-list="uploaderFiles"
-            >
-                <el-button class="float-left" type="primary">{{ $t('commons.button.upload') }}</el-button>
-            </el-upload>
-
-            <el-card class="mt-2 w-full" v-loading="loading">
-                <ComplexTable
-                    :pagination-config="paginationConfig"
-                    @search="search"
-                    v-model:selects="selects"
-                    :data="pageData"
-                    :height="440"
+            <el-alert v-if="submitError" class="mb-3" type="error" :closable="false" :title="submitError" />
+            <div class="import-file-bar mt-3">
+                <el-upload
+                    ref="uploadRef"
+                    v-model:file-list="uploaderFiles"
+                    action="#"
+                    :auto-upload="false"
+                    :disabled="loading"
+                    :show-file-list="false"
+                    :limit="1"
+                    accept=".json"
+                    :on-change="fileOnChange"
+                    :on-exceed="handleExceed"
                 >
+                    <el-button type="primary" icon="Upload">{{ $t('commons.button.upload') }}</el-button>
+                </el-upload>
+                <div v-if="uploaderFiles.length" class="import-file-info">
+                    <el-icon><Document /></el-icon>
+                    <span class="import-file-name">{{ uploaderFiles[0].name }}</span>
+                </div>
+                <el-text v-else type="info">.json</el-text>
+            </div>
+
+            <el-alert
+                v-if="deduplicatedCount"
+                class="mt-3"
+                type="info"
+                :closable="false"
+                :title="$t('firewall.importDuplicatesRemoved', [deduplicatedCount])"
+            />
+            <el-card class="mt-3 w-full" shadow="never" v-loading="loading">
+                <template #header>
+                    <div class="import-preview-header">
+                        <span>{{ $t('commons.button.preview') }}</span>
+                        <el-tag v-if="displayData.length" type="info" effect="plain">
+                            {{ $t('commons.table.total', [displayData.length]) }}
+                        </el-tag>
+                    </div>
+                </template>
+                <ComplexTable v-model:selects="selects" :data="displayData" :height="300">
                     <el-table-column type="selection" fix />
-                    <el-table-column :label="$t('commons.table.status')" :min-width="80">
+                    <el-table-column label="IP" :min-width="60" prop="family">
                         <template #default="{ row }">
-                            <Status :status="row.status" />
+                            {{ row.family === 'ipv6' ? 'IPv6' : 'IPv4' }}
                         </template>
                     </el-table-column>
                     <el-table-column :label="$t('commons.table.protocol')" :min-width="70" prop="protocol" />
@@ -40,7 +58,7 @@
                     <el-table-column :label="$t('firewall.targetIP')" :min-width="100" prop="targetIP" />
                     <el-table-column :label="$t('firewall.targetPort')" :min-width="70" prop="targetPort" />
                     <el-table-column
-                        v-if="currentFireName === 'ufw'"
+                        v-if="currentFireName === 'iptables' || currentFireName === 'nftables'"
                         :label="$t('firewall.forwardInboundInterface')"
                         :min-width="100"
                         prop="interface"
@@ -63,7 +81,7 @@
                 <el-button @click="visible = false">
                     {{ $t('commons.button.cancel') }}
                 </el-button>
-                <el-button type="primary" :disabled="selects.length === 0" @click="onImport">
+                <el-button type="primary" :loading="loading" :disabled="selects.length === 0" @click="onImport">
                     {{ $t('commons.button.import') }}
                 </el-button>
             </span>
@@ -73,93 +91,94 @@
 
 <script lang="ts" setup>
 import { ref } from 'vue';
-import { genFileId, UploadFile, UploadFiles, UploadProps, UploadRawFile } from 'element-plus';
-import { MsgError, MsgSuccess } from '@/utils/message';
+import { genFileId, type UploadFile, type UploadFiles, type UploadProps, type UploadRawFile } from 'element-plus';
+import { MsgError } from '@/utils/message';
 import i18n from '@/lang';
-import { operateForwardRule, searchFireRule, getNetworkOptions } from '@/api/modules/host';
-import { Host } from '@/api/interface/host';
+import { getErrorMessage } from '@/utils/misc';
+import { isAxiosError } from 'axios';
+import { operateForwardRule, searchForwardRule } from '@/api/modules/firewall';
+import { Firewall } from '@/api/interface/firewall';
+import { normalizeForwardRuleImport, parseForwardRuleImport } from '../transfer';
+import { FIREWALL_BATCH_LIMIT, FIREWALL_IMPORT_MAX_SIZE } from '@/views/host/firewall/utils/validation';
+import { Document } from '@element-plus/icons-vue';
 
-const emit = defineEmits<{ (e: 'search'): void }>();
+const emit = defineEmits<{ (e: 'created', taskID: string): void }>();
 
 const visible = ref(false);
 const loading = ref(false);
-const selects = ref<any>([]);
-const displayData = ref<any>([]);
-const currentRules = ref<Host.RuleInfo[]>([]);
+const submitError = ref('');
+const selects = ref<Firewall.RuleForward[]>([]);
+const displayData = ref<Firewall.RuleForward[]>([]);
+const deduplicatedCount = ref(0);
 const currentFireName = ref('');
-const availableInterfaces = ref<string[]>([]);
 
 const uploadRef = ref();
-const uploaderFiles = ref();
-const pageData = ref([]);
-const paginationConfig = reactive({
-    currentPage: 1,
-    pageSize: 10,
-    total: 0,
-});
-
-const acceptParams = async (fireName: string): Promise<void> => {
-    visible.value = true;
+const uploaderFiles = ref<UploadFile[]>([]);
+const acceptParams = (fireName: string) => {
+    loading.value = false;
+    submitError.value = '';
     displayData.value = [];
     selects.value = [];
+    deduplicatedCount.value = 0;
+    uploaderFiles.value = [];
+
+    uploadRef.value?.clearFiles();
     currentFireName.value = fireName;
-    loadCurrentData(fireName);
+    visible.value = true;
 };
 
-const loadCurrentData = async (fireName: string) => {
-    const res = await searchFireRule({
-        type: 'forward',
-        strategy: '',
-        info: '',
-        page: 1,
-        pageSize: 10000,
-    });
-    currentRules.value = res.data.items || [];
-    if (fireName === 'ufw') {
-        const networkRes = await getNetworkOptions();
-        availableInterfaces.value = networkRes.data || [];
-    }
-};
-
-const search = () => {
-    const startIndex = (paginationConfig.currentPage - 1) * paginationConfig.pageSize;
-    const endIndex = startIndex + paginationConfig.pageSize;
-    pageData.value = displayData.value.slice(startIndex, endIndex);
-};
-
-const fileOnChange = (_uploadFile: UploadFile, uploadFiles: UploadFiles) => {
+const fileOnChange = async (uploadFile: UploadFile, uploadFiles: UploadFiles) => {
+    if (!uploadFile.raw) return;
     loading.value = true;
+    submitError.value = '';
     displayData.value = [];
+    deduplicatedCount.value = 0;
+    selects.value = [];
     uploaderFiles.value = uploadFiles;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const content = e.target.result as string;
-            const parsed = JSON.parse(content);
-
-            if (!Array.isArray(parsed)) {
-                MsgError(i18n.global.t('commons.msg.errImportFormat'));
-                loading.value = false;
-                return;
+    if (uploadFile.raw.size > FIREWALL_IMPORT_MAX_SIZE) {
+        uploadRef.value?.clearFiles();
+        uploaderFiles.value = [];
+        loading.value = false;
+        MsgError(i18n.global.t('firewall.importLimit', [FIREWALL_BATCH_LIMIT, FIREWALL_IMPORT_MAX_SIZE / 1024]));
+        return;
+    }
+    try {
+        const parsed = parseForwardRuleImport(await uploadFile.raw.text());
+        if (!parsed) throw new Error(i18n.global.t('commons.msg.errImportFormat'));
+        const imported = parsed.flatMap((item) => {
+            const rule = normalizeForwardRuleImport(item);
+            return rule.protocol.split('/').map((protocol) => ({ ...rule, protocol }));
+        });
+        const response = await searchForwardRule({ strategy: '', info: '', page: 1, pageSize: 10000, all: true });
+        if (!visible.value || uploaderFiles.value[0]?.uid !== uploadFile.uid) return;
+        const ruleKey = (rule: Firewall.RuleForward) =>
+            JSON.stringify([rule.family, rule.protocol, rule.port, rule.targetIP, rule.targetPort, rule.interface]);
+        const seen = new Set((response.data.items || []).map((rule) => ruleKey(normalizeForwardRuleImport(rule))));
+        const unique: Firewall.RuleForward[] = [];
+        let duplicates = 0;
+        for (const rule of imported) {
+            const key = ruleKey(rule);
+            if (seen.has(key)) {
+                duplicates++;
+                continue;
             }
-
-            for (const item of parsed) {
-                if (!checkDataFormat(item)) {
-                    MsgError(i18n.global.t('commons.msg.errImportFormat'));
-                    loading.value = false;
-                    return;
-                }
-            }
-
-            compareRules(parsed);
-            loading.value = false;
-        } catch (error) {
-            MsgError(i18n.global.t('commons.msg.errImport') + error.message);
-            loading.value = false;
+            seen.add(key);
+            unique.push(rule);
         }
-    };
-    reader.readAsText(_uploadFile.raw);
+        if (unique.length > FIREWALL_BATCH_LIMIT) {
+            MsgError(i18n.global.t('firewall.importLimit', [FIREWALL_BATCH_LIMIT, FIREWALL_IMPORT_MAX_SIZE / 1024]));
+            return;
+        }
+        displayData.value = unique;
+        deduplicatedCount.value = duplicates;
+    } catch (error) {
+        if (visible.value && uploaderFiles.value[0]?.uid === uploadFile.uid) {
+            submitError.value = getErrorMessage(error) || i18n.global.t('commons.msg.errImportFormat');
+        }
+    } finally {
+        if (uploaderFiles.value[0]?.uid === uploadFile.uid) loading.value = false;
+    }
 };
 
 const handleExceed: UploadProps['onExceed'] = (files) => {
@@ -169,57 +188,24 @@ const handleExceed: UploadProps['onExceed'] = (files) => {
     uploadRef.value!.handleStart(file);
 };
 
-const checkDataFormat = (item: any): boolean => {
-    if (!item.protocol || !item.port || !item.targetIP || !item.targetPort) {
-        return false;
-    }
-    if (!['tcp', 'udp', 'tcp/udp'].includes(item.protocol)) {
-        return false;
-    }
-
-    if (currentFireName.value === 'ufw' && item.interface !== undefined && item.interface !== null) {
-        const interfaceValue = item.interface;
-        if (interfaceValue !== '' && interfaceValue !== 'all') {
-            if (!availableInterfaces.value.includes(interfaceValue)) {
-                return false;
-            }
-        }
-    }
-
-    return true;
-};
-
-const compareRules = (importedRules: any[]) => {
-    const newRules: any[] = [];
-    const conflictRules: any[] = [];
-    const duplicateRules: any[] = [];
-
-    for (const importedRule of importedRules) {
-        const key = `${importedRule.protocol}:${importedRule.port}:${importedRule.targetIP}:${importedRule.targetPort}`;
-
-        const existingRule = currentRules.value.find((rule) => {
-            const existingKey = `${rule.protocol}:${rule.port}:${rule.targetIP}:${rule.targetPort}`;
-            return existingKey === key;
-        });
-
-        if (!existingRule) {
-            newRules.push({ ...importedRule, status: 'new' });
-        } else {
-            duplicateRules.push({ ...importedRule, status: 'duplicate' });
-        }
-    }
-
-    displayData.value = [...newRules, ...conflictRules, ...duplicateRules];
-    paginationConfig.total = displayData.value.length;
-    search();
-};
-
 const onImport = async () => {
+    if (loading.value || selects.value.length === 0) return;
+    if (
+        selects.value.reduce(
+            (total: number, rule: Firewall.RuleForward) => total + rule.protocol.split('/').length,
+            0,
+        ) > FIREWALL_BATCH_LIMIT
+    ) {
+        MsgError(i18n.global.t('firewall.importLimit', [FIREWALL_BATCH_LIMIT, FIREWALL_IMPORT_MAX_SIZE / 1024]));
+        return;
+    }
     loading.value = true;
-    const rules: Host.RuleForward[] = [];
+    submitError.value = '';
+    const rules: Firewall.RuleForward[] = [];
     for (const rule of selects.value) {
         rules.push({
             operation: 'add',
+            family: rule.family,
             protocol: rule.protocol,
             port: rule.port,
             targetIP: rule.targetIP,
@@ -228,19 +214,55 @@ const onImport = async () => {
         });
     }
 
-    await operateForwardRule({ rules })
-        .then(() => {
-            loading.value = false;
-            MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-            emit('search');
-            visible.value = false;
-        })
-        .catch(() => {
-            loading.value = false;
-        });
+    try {
+        const result = (await operateForwardRule({ rules, import: true })).data;
+        if (!result.taskID || !result.queued) {
+            submitError.value = i18n.global.t('commons.msg.operationFailed');
+            return;
+        }
+        visible.value = false;
+        emit('created', result.taskID);
+    } catch (error) {
+        submitError.value =
+            (isAxiosError(error) && error.response?.data?.message) ||
+            (error && getErrorMessage(error)) ||
+            i18n.global.t('commons.res.commonError');
+    } finally {
+        loading.value = false;
+    }
 };
 
 defineExpose({
     acceptParams,
 });
 </script>
+
+<style scoped lang="scss">
+.import-file-bar {
+    display: flex;
+    min-height: 32px;
+    align-items: center;
+    gap: 12px;
+}
+
+.import-file-info {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    color: var(--el-text-color-regular);
+}
+
+.import-file-name {
+    overflow: hidden;
+    max-width: 420px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.import-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+</style>

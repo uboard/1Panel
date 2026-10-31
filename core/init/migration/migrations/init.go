@@ -18,6 +18,7 @@ import (
 	"github.com/1Panel-dev/1Panel/core/utils/common"
 	"github.com/1Panel-dev/1Panel/core/utils/ctl_conf"
 	"github.com/1Panel-dev/1Panel/core/utils/encrypt"
+	"github.com/1Panel-dev/1Panel/core/utils/menutree"
 	"github.com/go-gormigrate/gormigrate/v2"
 	"gorm.io/gorm"
 )
@@ -171,6 +172,9 @@ var InitSetting = &gormigrate.Migration{
 		if err := tx.Create(&model.Setting{Key: "AllowIPs", Value: ""}).Error; err != nil {
 			return err
 		}
+		if err := tx.Create(&model.Setting{Key: "AllowIPTrustedProxies", Value: ""}).Error; err != nil {
+			return err
+		}
 		if err := tx.Create(&model.Setting{Key: "NoAuthSetting", Value: "200"}).Error; err != nil {
 			return err
 		}
@@ -181,6 +185,9 @@ var InitSetting = &gormigrate.Migration{
 			return err
 		}
 		if err := tx.Create(&model.Setting{Key: "IpWhiteList", Value: ""}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&model.Setting{Key: "ApiTrustedProxies", Value: ""}).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(&model.Setting{Key: "ApiKeyValidityTime", Value: "120"}).Error; err != nil {
@@ -1280,5 +1287,138 @@ var AddMenuAccordionSetting = &gormigrate.Migration{
 			return tx.Model(&model.Setting{}).Where("key = ?", "MenuAccordion").Update("value", constant.StatusDisable).Error
 		}
 		return nil
+	},
+}
+
+var AddAPITrustedProxiesSetting = &gormigrate.Migration{
+	ID: "20260729-add-api-trusted-proxies-setting",
+	Migrate: func(tx *gorm.DB) error {
+		var setting model.Setting
+		if err := tx.Where("key = ?", "ApiTrustedProxies").First(&setting).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return tx.Create(&model.Setting{Key: "ApiTrustedProxies", Value: ""}).Error
+			}
+			return err
+		}
+		return nil
+	},
+}
+
+var AddAllowIPTrustedProxiesSetting = &gormigrate.Migration{
+	ID: "20260820-add-allow-ip-trusted-proxies-setting",
+	Migrate: func(tx *gorm.DB) error {
+		var setting model.Setting
+		if err := tx.Where("key = ?", "AllowIPTrustedProxies").First(&setting).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return tx.Create(&model.Setting{Key: "AllowIPTrustedProxies", Value: ""}).Error
+			}
+			return err
+		}
+		return nil
+	},
+}
+
+var AddWebsiteTemplateMenu = &gormigrate.Migration{
+	ID: "20260728-add-website-template-menu",
+	Migrate: func(tx *gorm.DB) error {
+		return helper.UpsertChildMenuByLabel(tx, "Website-Menu", dto.ShowMenu{
+			ID:       "34",
+			Disabled: false,
+			Title:    "menu.template",
+			IsShow:   true,
+			Label:    "WebsiteTemplate",
+			Path:     "/websites/templates",
+			Sort:     250,
+		}, "SSL")
+	},
+}
+
+func reconcileHideMenuSetting(tx *gorm.DB) error {
+	var setting model.Setting
+	if err := tx.Where("key = ?", "HideMenu").First(&setting).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return tx.Create(&model.Setting{Key: "HideMenu", Value: helper.LoadMenus()}).Error
+		}
+		return err
+	}
+
+	updateValue := func(value string) error {
+		return tx.Model(&setting).Update("value", value).Error
+	}
+
+	if strings.TrimSpace(setting.Value) == "" {
+		return updateValue(helper.LoadMenus())
+	}
+
+	var menus []dto.ShowMenu
+	if err := json.Unmarshal([]byte(setting.Value), &menus); err != nil || len(menus) == 0 {
+		return updateValue(helper.LoadMenus())
+	}
+
+	updatedMenus, changed := menutree.ReconcileHideMenuIntegrity(menus, nil)
+	if !changed {
+		return nil
+	}
+	updatedJSON, err := json.Marshal(updatedMenus)
+	if err != nil {
+		return err
+	}
+	return updateValue(string(updatedJSON))
+}
+
+var RepairXpackAppMenus = &gormigrate.Migration{
+	ID:      "20260818-repair-xapp-upage-hide-menu",
+	Migrate: reconcileHideMenuSetting,
+}
+
+var RemoveUpageHideMenu = &gormigrate.Migration{
+	ID:      "20260901-remove-upage-hide-menu",
+	Migrate: reconcileHideMenuSetting,
+}
+
+var UpdateAiMenuOrder = &gormigrate.Migration{
+	ID: "20261023-update-ai-menu-order",
+	Migrate: func(tx *gorm.DB) error {
+		return helper.UpdateChildMenuSortByLabel(tx, "AI-Menu", []dto.MenuLabelSort{
+			{Label: "AIModel", Sort: 50},
+			{Label: "AIProxyManagement", Sort: 75},
+			{Label: "Agents", Sort: 100},
+			{Label: "MCPServer", Sort: 200},
+			{Label: "SkillsHub", Sort: 225},
+			{Label: "AIBenchmark", Sort: 250},
+			{Label: "GPU", Sort: 300},
+		})
+	},
+}
+
+var UpdateAiMenuOrderV2 = &gormigrate.Migration{
+	ID: "20261026-update-ai-menu-order-v2",
+	Migrate: func(tx *gorm.DB) error {
+		return helper.UpdateChildMenuSortByLabel(tx, "AI-Menu", []dto.MenuLabelSort{
+			{Label: "AIModel", Sort: 50},
+			{Label: "Agents", Sort: 100},
+			{Label: "AIProxyManagement", Sort: 150},
+			{Label: "SkillsHub", Sort: 175},
+			{Label: "MCPServer", Sort: 200},
+			{Label: "GPU", Sort: 300},
+			{Label: "AIBenchmark", Sort: 350},
+		})
+	},
+}
+
+var UpdateFirewallMenuPath = &gormigrate.Migration{
+	ID: "20260819-update-firewall-menu-path",
+	Migrate: func(tx *gorm.DB) error {
+		return helper.UpdateHideMenu(tx, func(menus []dto.ShowMenu) []dto.ShowMenu {
+			for i := range menus {
+				for j := range menus[i].Children {
+					menu := &menus[i].Children[j]
+					if (menu.ID == "74" || menu.Label == "FirewallPort") && menu.Path == "/hosts/firewall/port" {
+						menu.Path = "/hosts/firewall/rules"
+					}
+				}
+			}
+			return menus
+		})
 	},
 }

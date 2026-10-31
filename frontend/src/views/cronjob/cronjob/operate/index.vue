@@ -80,14 +80,12 @@
                                 <LayoutCol>
                                     <el-form-item :label="$t('commons.table.group')" prop="groupID">
                                         <el-select filterable v-model="form.groupID" clearable>
-                                            <div v-for="item in groupOptions" :key="item.id">
-                                                <el-option
-                                                    v-if="item.name === 'Default'"
-                                                    :label="$t('commons.table.default')"
-                                                    :value="item.id"
-                                                />
-                                                <el-option v-else :label="item.name" :value="item.id" />
-                                            </div>
+                                            <el-option
+                                                v-for="item in groupOptions"
+                                                :key="item.id"
+                                                :label="item.name"
+                                                :value="item.id"
+                                            />
                                         </el-select>
                                     </el-form-item>
                                 </LayoutCol>
@@ -356,7 +354,7 @@
                                     <el-form-item :label="$t('cronjob.backupArgs')">
                                         <el-select v-model="form.argItems" filterable allow-create multiple>
                                             <el-option
-                                                v-for="item in mysqlArgs"
+                                                v-for="item in loadMysqlArgs(form.dbType)"
                                                 :key="item.arg"
                                                 :value="item.arg"
                                                 :label="item.arg"
@@ -689,10 +687,10 @@
 
                         <el-card class="mt-5">
                             <el-row :gutter="20">
-                                <LayoutCol :span="8">
+                                <LayoutCol :span="20">
                                     <el-form-item prop="hasAlert">
                                         <el-checkbox v-model="form.hasAlert" :label="$t('xpack.alert.isAlert')" />
-                                        <span class="input-help">{{ $t('xpack.alert.cronJobHelper') }}</span>
+                                        <span class="input-help">{{ $t('xpack.alert.alertNotificationHelper') }}</span>
 
                                         <span class="input-help logText" v-if="form.hasAlert && !isProductPro">
                                             {{ $t('xpack.alert.licenseHelper') }}
@@ -700,6 +698,20 @@
                                                 {{ $t('license.levelUpPro') }}
                                             </el-link>
                                         </span>
+                                    </el-form-item>
+                                </LayoutCol>
+                            </el-row>
+                            <el-row :gutter="20" v-if="form.hasAlert">
+                                <LayoutCol>
+                                    <el-form-item :label="$t('xpack.alert.alertTriggerMode')" prop="alertTriggerMode">
+                                        <el-select class="selectClass" v-model="form.alertTriggerMode">
+                                            <el-option
+                                                v-for="item in cronjobAlertModes"
+                                                :key="item.value"
+                                                :value="item.value"
+                                                :label="$t(item.label)"
+                                            />
+                                        </el-select>
                                     </el-form-item>
                                 </LayoutCol>
                             </el-row>
@@ -860,7 +872,7 @@ import {
     transSpecToObj,
     weekOptions,
     cronjobTypes,
-    mysqlArgs,
+    loadMysqlArgs,
 } from '../helper';
 import { loadUsers } from '@/api/modules/toolbox';
 import { loadContainerUsers } from '@/api/modules/container';
@@ -870,6 +882,8 @@ import { splitTimeFromSecond, transferTimeToSecond } from '@/utils/validate';
 import { getGroupList } from '@/api/modules/group';
 import { routerToName, routerToPath } from '@/utils/router';
 import { loadBaseDir } from '@/api/modules/setting';
+import { getAlertConfigDisplayName } from '@/views/setting/alert/setting/drawer/secret-field';
+import { cronjobAlertModes, normalizeCronjobAlertMode } from '@/utils/cronjob-alert';
 const router = useRouter();
 
 const { docsUrl, isFxplay, isProductPro } = useGlobalStore();
@@ -914,6 +928,8 @@ const legacyAlertMethodTypeMap: Record<string, string> = {
     weCom: 'weCom',
     dingTalk: 'dingTalk',
     feiShu: 'feiShu',
+    webhook: 'custom',
+    custom: 'custom',
 };
 
 const normalizeAlertMethodItems = (methods: string[]) => {
@@ -935,7 +951,7 @@ const groupedAlertConfigOptions = computed(() => {
         type: string;
         options: { value: string; label: string; typeLabel: string }[];
     }[] = [];
-    const typeOrder = ['email', 'sms', 'weCom', 'dingTalk', 'feiShu', 'bark'];
+    const typeOrder = ['email', 'sms', 'weCom', 'dingTalk', 'feiShu', 'bark', 'custom'];
     for (const t of typeOrder) {
         if (typeMap.has(t)) {
             const typeLabel = getConfigTypeLabel(t);
@@ -948,6 +964,14 @@ const groupedAlertConfigOptions = computed(() => {
             });
         }
     }
+    for (const [type, options] of typeMap) {
+        if (typeOrder.includes(type)) continue;
+        const typeLabel = getConfigTypeLabel(type);
+        groups.push({
+            type,
+            options: options.map((item) => ({ ...item, typeLabel })),
+        });
+    }
     return groups;
 });
 
@@ -957,8 +981,11 @@ const getConfigTypeLabel = (type: string): string => {
 
 const getAlertConfigOptionLabel = (c: Alert.AlertConfigInfo): string => {
     try {
-        const cfg = JSON.parse(c.config || '{}');
-        return cfg.displayName || i18n.global.t(`xpack.alert.${c.type === 'email' ? 'mail' : c.type}`);
+        const cfg = JSON.parse(c.config || '{}') as Record<string, unknown>;
+        return (
+            getAlertConfigDisplayName(c.type, cfg) ||
+            i18n.global.t(`xpack.alert.${c.type === 'email' ? 'mail' : c.type}`)
+        );
     } catch {
         return i18n.global.t(`xpack.alert.${c.type === 'email' ? 'mail' : c.type}`);
     }
@@ -1020,6 +1047,7 @@ const form = reactive<Cronjob.CronjobInfo>({
     secret: '',
     hasAlert: false,
     alertCount: 3,
+    alertTriggerMode: 'failed',
     alertTitle: '',
     alertMethod: '',
     alertMethodItems: [],
@@ -1119,6 +1147,7 @@ const search = async () => {
                 form.secret = res.data.secret;
                 form.hasAlert = res.data.alertCount > 0;
                 form.alertCount = res.data.alertCount || 3;
+                form.alertTriggerMode = normalizeCronjobAlertMode(res.data.alertTriggerMode);
                 form.alertTitle = res.data.alertTitle;
                 if (res.data.alertMethod) {
                     form.alertMethodItems = normalizeAlertMethodItems(res.data.alertMethod.split(',') || []);
@@ -1333,7 +1362,7 @@ const rules = reactive({
     downloadAccountID: [Rules.requiredSelect],
     retainCopies: [Rules.number],
     retryTimes: [Rules.number],
-    timeoutItem: [Rules.number],
+    timeoutItem: [Rules.integerNumber],
     timeoutUnit: [Rules.requiredSelect],
     alertCount: [Rules.integerNumber, { validator: checkSendCount, trigger: 'blur' }],
     alertMethodItems: [Rules.requiredSelect],
@@ -1657,7 +1686,7 @@ const onSubmit = async (formEl: FormInstance | undefined) => {
         form.alertCount = form.hasAlert ? form.alertCount : 0;
         form.alertMethod = form.alertMethodItems.join(',');
         form.alertTitle = form.hasAlert
-            ? i18n.global.t('cronjob.alertTitle', [i18n.global.t('cronjob.' + form.type), form.name])
+            ? i18n.global.t('xpack.alert.notificationTitle', [i18n.global.t('cronjob.' + form.type), form.name])
             : '';
         if (!form) return;
 

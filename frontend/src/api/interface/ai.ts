@@ -1,7 +1,27 @@
 import { ReqPage } from '.';
 
 export namespace AI {
-    export type AgentType = 'openclaw' | 'copaw' | 'hermes-agent';
+    export interface ModelGPUDevice {
+        id: string;
+        name: string;
+        type: string;
+        uuid?: string;
+        available: boolean;
+    }
+    export interface ModelGPUConfig {
+        mode: 'all' | 'count' | 'devices';
+        count?: number;
+        error?: string;
+        enabled: boolean;
+        deviceIDs: string[];
+        capabilities: string[];
+    }
+    export interface ModelAccountSync {
+        id: number;
+        modelAccountBaseURLType: 'container' | 'localhost' | 'systemIP' | 'custom';
+        modelAccountBaseURL: string;
+    }
+    export type AgentType = 'openclaw' | 'copaw' | 'hermes-agent' | 'deepseek-harness' | 'octop';
 
     export interface OllamaModelInfo {
         id: number;
@@ -13,21 +33,52 @@ export namespace AI {
         message: string;
         createdAt: Date;
     }
-    export interface OllamaModelDropInfo {
-        id: number;
-        name: string;
-    }
     export interface OllamaModelSearch extends ReqPage {
-        info: string;
+        info?: string;
     }
 
     export interface Info {
+        collectedAt?: string;
+        warnings?: string[];
         cudaVersion: string;
         driverVersion: string;
         type: string;
         gpu: GPU[];
+        npu: NPU[];
+        xpuDriverVersion: string;
+        xpu: XpuInfo['xpu'];
     }
     export interface GPU {
+        sharedMemory?: boolean;
+        eccPending?: string;
+        eccErrors?: { scope: string; correctable: string; uncorrectable: string }[];
+        memoryActivity?: string;
+        encoderUtil?: string;
+        decoderUtil?: string;
+        jpegUtil?: string;
+        ofaUtil?: string;
+        mediaUtil?: string;
+        hotspotTemperature?: string;
+        fanRPM?: string;
+        mediaFrequency?: string;
+
+        uuid?: string;
+        driverVersion?: string;
+        architecture?: string;
+        frequency?: string;
+        memoryFrequency?: string;
+        memoryTemperature?: string;
+        memoryFree?: string;
+        memoryReserved?: string;
+        powerLimit?: string;
+        defaultPowerLimit?: string;
+        pcieGeneration?: string;
+        pcieMaxGeneration?: string;
+        pcieWidth?: string;
+        pcieMaxWidth?: string;
+        clockEvents?: string[];
+        processStatus?: string;
+        type: 'nvidia' | 'amd';
         index: number;
         productName: string;
         persistenceMode: string;
@@ -47,36 +98,101 @@ export namespace AI {
         migMode: string;
         processes: Process[];
     }
+    export interface NPU {
+        aiCPUUtil?: string;
+        ctrlCPUUtil?: string;
+        ddrBandwidth?: string;
+        hbmBandwidth?: string;
+
+        processStatus?: string;
+        type: 'ascend';
+        index: number;
+        npuIndex: number;
+        chipIndex: number;
+        productName: string;
+        busID: string;
+        health: string;
+        temperature: string;
+        powerDraw: string;
+        aiCore: string;
+        memUsed: string;
+        memTotal: string;
+        memoryUsed: string;
+        memoryTotal: string;
+        hbmUsed: string;
+        hbmTotal: string;
+        hugepagesUsed: string;
+        hugepagesTotal: string;
+        processes: NPUProcess[];
+    }
     export interface MonitorGPUSearch {
+        aggregation?: 'avg' | 'max';
+        deviceID?: string;
+        legacy?: boolean;
         productName: string;
         startTime: Date;
         endTime: Date;
     }
     export interface MonitorGPUOptions {
+        supported: boolean;
         gpuType: string;
         options: Array<string>;
         chartHide: Array<ChartHide>;
     }
     export interface ChartHide {
+        sharedMemory?: boolean;
+        deviceID?: string;
+        legacy?: boolean;
         productName: string;
+        type?: 'gpu' | 'npu' | 'xpu';
         process: boolean;
         gpu: boolean;
         memory: boolean;
         power: boolean;
+        powerLimit: boolean;
         temperature: boolean;
         speed: boolean;
     }
     export interface MonitorGPUData {
+        memoryActivity: Array<number | null>;
+        encoderUtil: Array<number | null>;
+        decoderUtil: Array<number | null>;
+        jpegUtil: Array<number | null>;
+        ofaUtil: Array<number | null>;
+        mediaUtil: Array<number | null>;
+        computeUtil: Array<number | null>;
+        copyUtil: Array<number | null>;
+        hotspotTemperature: Array<number | null>;
+        fanRPM: Array<number | null>;
+        aiCPUUtil: Array<number | null>;
+        ctrlCPUUtil: Array<number | null>;
+        ddrUsed: Array<number | null>;
+        ddrTotal: Array<number | null>;
+        hbmUsed: Array<number | null>;
+        hbmTotal: Array<number | null>;
+        ddrBandwidth: Array<number | null>;
+        hbmBandwidth: Array<number | null>;
+        memoryBandwidth: Array<number | null>;
+        mediaFrequency: Array<number | null>;
+        hugepagesUsed: Array<number | null>;
+        hugepagesTotal: Array<number | null>;
+
+        bucketSeconds: number;
+        sampleCount: number;
+        memoryTemperatureValue: Array<number | null>;
+        frequencyValue: Array<number | null>;
+        memoryFrequencyValue: Array<number | null>;
         date: Array<Date>;
-        gpuValue: Array<number>;
-        temperatureValue: Array<number>;
-        powerTotal: Array<number>;
-        powerUsed: Array<number>;
-        powerPercent: Array<number>;
-        memoryTotal: Array<number>;
-        memoryUsed: Array<number>;
-        memoryPercent: Array<number>;
-        speedValue: Array<number>;
+        gpuValue: Array<number | null>;
+        temperatureValue: Array<number | null>;
+        powerTotal: Array<number | null>;
+        powerUsed: Array<number | null>;
+        powerPercent: Array<number | null>;
+        memoryTotal: Array<number | null>;
+        memoryUsed: Array<number | null>;
+        memoryPercent: Array<number | null>;
+        speedValue: Array<number | null>;
+        processCount: Array<number | null>;
         gpuProcesses: Array<Array<GPUProcess>>;
     }
     export interface GPUProcess {
@@ -91,6 +207,11 @@ export namespace AI {
         processName: string;
         usedMemory: string;
     }
+    export interface NPUProcess {
+        pid: string;
+        processName: string;
+        usedMemory: string;
+    }
 
     export interface XpuInfo {
         type: string;
@@ -99,12 +220,15 @@ export namespace AI {
     }
 
     interface Xpu {
+        tiles?: { tileID: number; stats: Stats }[];
+        processStatus?: string;
         basic: Basic;
         stats: Stats;
         processes: XpuProcess[];
     }
 
     interface Basic {
+        uuid?: string;
         deviceID: number;
         deviceName: string;
         vendorName: string;
@@ -115,7 +239,15 @@ export namespace AI {
     }
 
     interface Stats {
+        mediaUtil?: string;
+        computeUtil?: string;
+        copyUtil?: string;
+        mediaFrequency?: string;
+        memoryTemperature?: string;
+
+        memoryBandwidthUtil?: string;
         power: string;
+        gpuUtil: string;
         frequency: string;
         temperature: string;
         memoryUsed: string;
@@ -277,6 +409,7 @@ export namespace AI {
     }
 
     export interface TensorRTLLM {
+        gpu?: ModelGPUConfig;
         id?: number;
         name: string;
         containerName: string;
@@ -309,6 +442,7 @@ export namespace AI {
     }
 
     export interface AgentCreateReq {
+        accessHost?: string;
         name: string;
         remark: string;
         appVersion: string;
@@ -336,6 +470,7 @@ export namespace AI {
     }
 
     export interface AgentItem {
+        accessHost: string;
         id: number;
         name: string;
         remark: string;
@@ -392,12 +527,21 @@ export namespace AI {
         accountId: number;
         model: string;
         fallbacks: string[];
+        metadata: AgentModelMetadata[];
     }
 
     export interface AgentModelConfig {
         accountId: number;
         model: string;
         fallbacks: string[];
+        metadata: AgentModelMetadata[];
+    }
+
+    export interface AgentModelMetadata {
+        model: string;
+        inputMode: 'auto' | 'text' | 'image';
+        contextWindow: number;
+        maxTokens: number;
     }
 
     export interface AgentHermesChatSessionItem {
@@ -556,8 +700,10 @@ export namespace AI {
         apiType: string;
         baseUrl: string;
         editableBaseUrl: boolean;
+        supportsModelDiscovery: boolean;
         defaultAuthMode: string;
         authModes: string[];
+        models: ProviderModelInfo[];
     }
 
     export interface ProviderInfo {
@@ -579,6 +725,7 @@ export namespace AI {
         authMode: string;
         models?: AgentAccountModel[];
         verifyModel: string;
+        validateAvailability: boolean;
         remark: string;
     }
 
@@ -591,6 +738,7 @@ export namespace AI {
         apiType: string;
         authMode: string;
         verifyModel: string;
+        validateAvailability: boolean;
         remark: string;
         syncAgents: boolean;
     }
@@ -599,6 +747,8 @@ export namespace AI {
         page: number;
         pageSize: number;
         provider: string;
+        apiType?: string;
+        textOnly?: boolean;
         name: string;
     }
 
@@ -607,6 +757,7 @@ export namespace AI {
     }
 
     export interface AgentAccountItem {
+        appInstallId?: number;
         id: number;
         provider: string;
         providerName: string;
@@ -646,6 +797,11 @@ export namespace AI {
     }
 
     export interface AgentFeishuConfig {
+        builtinManaged?: boolean;
+        legacyConfigured?: boolean;
+        groupSessionScope?: string;
+        builtinAvailable?: boolean;
+        legacy?: boolean;
         enabled: boolean;
         threadSession: boolean;
         replyMode: string;
@@ -660,6 +816,7 @@ export namespace AI {
     }
 
     export interface AgentFeishuConfigUpdateReq {
+        groupSessionScope?: string;
         agentId: number;
         enabled: boolean;
         threadSession: boolean;
@@ -671,6 +828,21 @@ export namespace AI {
         domain?: string;
         connectionMode?: 'websocket' | 'webhook';
         bots: AgentFeishuBot[];
+    }
+
+    export interface AgentFeishuTransition {
+        confirmed: boolean;
+        streaming: boolean;
+        groupSessionScope: string;
+        requireMention: string;
+    }
+
+    export interface AgentFeishuSwitchReq {
+        agentId: number;
+        taskID: string;
+        streaming: boolean;
+        groupSessionScope: string;
+        requireMention: 'true' | 'false';
     }
 
     export interface AgentTelegramConfigReq {
@@ -847,6 +1019,52 @@ export namespace AI {
         upgradable: boolean;
     }
 
+    export interface AgentPluginsReq {
+        agentId: number;
+    }
+
+    export interface AgentPluginSearchReq {
+        agentId: number;
+        keyword: string;
+        limit?: number;
+    }
+
+    export interface AgentPluginMarketInstallReq {
+        agentId: number;
+        package: string;
+        version: string;
+        taskID: string;
+    }
+
+    export interface AgentPluginOperateReq {
+        agentId: number;
+        pluginId: string;
+        operate: 'enable' | 'disable' | 'update' | 'uninstall';
+        taskID: string;
+    }
+
+    export interface AgentPluginItem {
+        id: string;
+        name: string;
+        version: string;
+        origin: string;
+        enabled: boolean;
+    }
+
+    export interface AgentPluginSearchItem {
+        package: string;
+        pluginId: string;
+        name: string;
+        description: string;
+        version: string;
+        channel: string;
+        verificationTier: string;
+        categories: string[];
+        official: boolean;
+        downloads: number;
+        score: number;
+    }
+
     export interface AgentDiscordConfigReq {
         agentId: number;
     }
@@ -917,9 +1135,9 @@ export namespace AI {
 
     export interface AgentOtherConfigUpdateReq {
         agentId: number;
-        userTimezone: string;
+        userTimezone?: string;
         browserEnabled: boolean;
-        npmRegistry: string;
+        npmRegistry?: string;
         dashboardUsername?: string;
         dashboardPassword?: string;
     }

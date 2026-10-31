@@ -5,9 +5,9 @@
                 <div class="flex w-full flex-col gap-4 md:flex-row">
                     <div class="flex flex-wrap gap-4 ml-3">
                         <el-tag effect="dark" type="success">FTP</el-tag>
-                        <Status class="mt-0.5" :status="form.isActive ? 'enable' : 'disable'" />
+                        <Status v-if="baseLoaded" class="mt-0.5" :status="form.isActive ? 'enable' : 'disable'" />
                     </div>
-                    <div class="mt-0.5">
+                    <div v-if="baseLoaded" class="mt-0.5">
                         <el-button
                             v-if="form.isActive"
                             v-permission
@@ -37,7 +37,11 @@
             </el-card>
         </div>
         <div v-if="form.isExist">
-            <LayoutContent v-loading="loading" :title="$t('toolbox.ftp.ftp', 2)" :class="{ mask: !form.isActive }">
+            <LayoutContent
+                v-loading="loading"
+                :title="$t('toolbox.ftp.ftp', 2)"
+                :class="{ mask: baseLoaded && !form.isActive }"
+            >
                 <template #prompt v-if="!isFxplay">
                     <el-alert type="info" :closable="false">
                         <template #title>
@@ -157,11 +161,11 @@
                 </template>
             </LayoutContent>
 
-            <el-card v-if="form.isExist && !form.isActive" class="mask-prompt">
+            <el-card v-if="baseLoaded && !form.isActive" class="mask-prompt">
                 <span>{{ $t('toolbox.ftp.notStart') }}</span>
             </el-card>
         </div>
-        <NoSuchService v-else name="FTP (pure-ftpd)" />
+        <NoSuchService v-if="!form.isExist" name="FTP (pure-ftpd)" />
 
         <OpDialog ref="opRef" @search="search" @submit="onSubmitDelete()" />
         <OperateDialog @search="search" ref="dialogRef" />
@@ -170,7 +174,8 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, reactive, ref } from 'vue';
+import { useSearchState } from '@/utils/search-reset';
+import { toRef, onMounted, reactive, ref } from 'vue';
 import i18n from '@/lang';
 import { MsgError, MsgSuccess } from '@/utils/message';
 import { deleteFtp, searchFtp, updateFtp, syncFtp, operateFtp, getFtpBase } from '@/api/modules/toolbox';
@@ -182,19 +187,24 @@ import { routerToFileWithPath } from '@/utils/router';
 import { getRandomStr } from '@/utils/id';
 const { docsUrl, isFxplay } = useGlobalStore();
 
-const loading = ref();
+const loading = ref(true);
+const baseLoaded = ref(false);
 const selects = ref<any>([]);
 
 const data = ref();
 const paginationConfig = reactive({
-    cacheSizeKey: 'ftp-page-size',
     currentPage: 1,
-    pageSize: Number(localStorage.getItem('ftp-page-size')) || 20,
+    pageSize: 20,
     total: 0,
     orderBy: 'createdAt',
     order: 'null',
 });
 const searchName = ref();
+useSearchState(
+    'toolbox/ftp/index',
+    { search: searchName, page: toRef(paginationConfig, 'currentPage'), pageSize: toRef(paginationConfig, 'pageSize') },
+    { onRevisit: () => search() },
+);
 
 const form = reactive({
     isActive: true,
@@ -212,6 +222,7 @@ const search = async (column?: any) => {
         .then(async (res) => {
             form.isActive = res.data.isActive;
             form.isExist = res.data.isExist;
+            baseLoaded.value = true;
             paginationConfig.orderBy = column?.order ? column.prop : paginationConfig.orderBy;
             paginationConfig.order = column?.order ? column.order : paginationConfig.order;
             let params = {

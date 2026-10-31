@@ -84,6 +84,7 @@
                     <el-table-column
                         :label="$t('commons.table.title')"
                         prop="title"
+                        :formatter="formatTitle"
                         min-width="300px"
                         show-overflow-tooltip
                     ></el-table-column>
@@ -158,14 +159,23 @@
 </template>
 
 <script lang="ts" setup>
+import { toRef } from 'vue';
+import { useSearchState } from '@/utils/search-reset';
 import { onMounted, reactive, ref } from 'vue';
 import { useGlobalStore } from '@/composables/useGlobalStore';
+import { getAlertConfigDisplayName } from '@/views/setting/alert/setting/drawer/secret-field';
 import { MsgSuccess } from '@/utils/message';
 import i18n from '@/lang';
 import { ElMessageBox } from 'element-plus';
 import AddTask from '@/views/setting/alert/dash/task/index.vue';
 import { Alert } from '@/api/interface/alert';
 import { UpdateAlertStatus, SearchAlerts, DeleteAlert, PageAlertConfigs } from '@/api/modules/alert';
+import {
+    cronjobAlertTypes,
+    getCronjobAlertMode,
+    getCronjobAlertModeLabel,
+    getCronjobAlertTitle,
+} from '@/utils/cronjob-alert';
 
 const { isMobile, isMaster, isProductPro, isEE } = useGlobalStore();
 
@@ -183,13 +193,20 @@ const req = reactive({
 });
 
 const paginationConfig = reactive({
-    cacheSizeKey: 'alert-list-page-size',
     currentPage: 1,
-    pageSize: Number(localStorage.getItem('alert-list-page-size')) || 20,
+    pageSize: 20,
     total: 0,
     orderBy: 'created_at',
     order: 'null',
 });
+useSearchState(
+    'setting/alert/dash/index',
+    {
+        page: toRef(paginationConfig, 'currentPage'),
+        pageSize: toRef(paginationConfig, 'pageSize'),
+    },
+    { onRevisit: () => search() },
+);
 const data = ref();
 
 const buttons = [
@@ -237,7 +254,21 @@ const changeSort = ({ prop, order }) => {
     search();
 };
 
+const formatTitle = (row: Alert.AlertInfo) => {
+    return getCronjobAlertTitle(row, (type, taskName) =>
+        t('xpack.alert.notificationTitle', [t('cronjob.' + type), taskName]),
+    );
+};
+
 const formatRule = (row: Alert.AlertInfo) => {
+    const type = row.type === 'cronJob' ? row.subType : row.type;
+    if (cronjobAlertTypes.includes(type)) {
+        return t('xpack.alert.notificationRule', [
+            t('cronjob.' + type),
+            t(getCronjobAlertModeLabel(getCronjobAlertMode(row.advancedParams))),
+            row.sendCount,
+        ]);
+    }
     const ruleTemplates = {
         ssl: () => t('xpack.alert.timeRule', [row.cycle, row.sendCount]),
         siteEndTime: () => t('xpack.alert.timeRule', [row.cycle, row.sendCount]),
@@ -252,17 +283,6 @@ const formatRule = (row: Alert.AlertInfo) => {
                 : t('xpack.alert.diskRule', [row.project, row.count, row.cycle === 1 ? 'G' : '%', row.sendCount]);
         },
         clams: () => t('xpack.alert.clamsRule', [row.sendCount]),
-        app: () => t('xpack.alert.cronJobAppRule', [row.sendCount]),
-        website: () => t('xpack.alert.cronJobWebsiteRule', [row.sendCount]),
-        database: () => t('xpack.alert.cronJobDatabaseRule', [row.sendCount]),
-        directory: () => t('xpack.alert.cronJobDirectoryRule', [row.sendCount]),
-        log: () => t('xpack.alert.cronJobLogRule', [row.sendCount]),
-        snapshot: () => t('xpack.alert.cronJobSnapshotRule', [row.sendCount]),
-        shell: () => t('xpack.alert.cronJobShellRule', [row.sendCount]),
-        curl: () => t('xpack.alert.cronJobCurlRule', [row.sendCount]),
-        cutWebsiteLog: () => t('xpack.alert.cronJobCutWebsiteLogRule', [row.sendCount]),
-        clean: () => t('xpack.alert.cronJobCleanRule', [row.sendCount]),
-        ntp: () => t('xpack.alert.cronJobNtpRule', [row.sendCount]),
         nodeException: () => t('xpack.alert.nodeExceptionRule', [row.sendCount]),
         licenseException: () => t('xpack.alert.licenseExceptionRule', [row.sendCount]),
         panelLogin: () => t('xpack.alert.panelLoginRule', [row.sendCount]),
@@ -293,8 +313,8 @@ const formatMethod = (row: Alert.AlertInfo) => {
         if (config) {
             const typeLabel = i18n.global.t(`xpack.alert.${config.type === 'email' ? 'mail' : config.type}`);
             try {
-                const cfg = JSON.parse(config.config || '{}');
-                const name = cfg.displayName || cfg.sender || cfg.phone || '';
+                const cfg = JSON.parse(config.config || '{}') as Record<string, unknown>;
+                const name = getAlertConfigDisplayName(config.type, cfg);
                 return name ? `${name}(${typeLabel})` : typeLabel;
             } catch {
                 return typeLabel;

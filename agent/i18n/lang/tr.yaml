@@ -93,6 +93,9 @@ ErrAgentWebsiteBound: 'Bu ajan zaten bir web sitesine bağlı'
 ErrAgentWebsiteTypeUnsupported: 'Yalnızca proxy veya statik web siteleri bağlanabilir'
 ErrAgentWebsiteInUse: 'Bu web sitesi zaten başka bir ajana bağlı'
 ErrAgentWebsiteUnbindUnsupported: 'Tek tıkla dağıtılan web sitelerinin bağlantısı manuel olarak kaldırılamaz'
+ErrQwenPawAuthRequest: 'QwenPaw kimlik bilgileri güncellenemedi: {{ .err }}'
+ErrQwenPawAuthOutOfSync: 'Geçerli QwenPaw kimlik bilgileri 1Panel kaydıyla eşleşmiyor. QwenPaw parolasını sıfırlayın veya uygulamanın .env dosyasındaki kimlik bilgilerini geri yükleyin'
+ErrQwenPawAuthDisabled: 'QwenPaw oturum açma kimlik doğrulaması etkin değil'
 ErrHermesPairingCodeUnavailable: 'Eşleştirme kodu Hermes içinde geçici olarak bulunamıyor; bu durum ağ kaynaklı olabilir. Lütfen daha sonra tekrar deneyin.'
 ErrHermesFeishuGroupAllowlistRequiresAllowlist: 'Feishu grup ilkesi izin listesi olduğunda, DM ilkesi eşleştirme kodu olamaz.'
 
@@ -132,7 +135,14 @@ ErrAppNameExist: 'Uygulama adı zaten mevcut'
 ErrAppInstallNameExist: '{{ .name }} uygulama kurulum adı zaten mevcut'
 AppStoreIsSyncing: 'Uygulama Mağazası senkronize ediliyor, lütfen daha sonra tekrar deneyin'
 ErrGetCompose: 'docker-compose.yml dosyası alınamadı {{ .detail }}'
+ErrComposeProjectNameParse: 'Docker Compose yapılandırma çıktısından proje adı ayrıştırılamadı: {{ .detail }}'
+ErrComposeProjectNameEmpty: 'Docker Compose yapılandırmasından veya dosyanın üst dizininden proje adı türetilemedi. Bir ad girip yeniden deneyin.'
+ErrComposeNameInvalid: 'Geçersiz Compose proje adı: küçük harf veya rakamla başlamalı, yalnızca küçük harf, rakam, kısa çizgi ve alt çizgi içermeli ve 1-256 karakter uzunluğunda olmalıdır.'
 ErrAppVersionUnavailable: 'Bu uygulama sürümü uzak hizmetten kaldırıldı. Lütfen başka bir sürüm seçip tekrar deneyin.'
+ErrVllmGB10ProOnly: 'Bu vLLM sürümü yalnızca 1Panel Professional Edition sürümünde kullanılabilir.'
+ErrAIGatewayDatabaseTypeMismatch: 'AI Gateway yalnızca aynı veritabanı türü (SQLite veya PostgreSQL) içinde yükseltilebilir.'
+ErrAIGatewayRecoverDatabaseTypeMismatch: 'AI Gateway yedeği ve hedef uygulama aynı veritabanı türünü (SQLite veya PostgreSQL) kullanmalıdır.'
+ErrHermesUpgradeVersion: 'Hermes Agent yalnızca ana sürümler arası yükseltme ayarının izin verdiği, tanınan daha yeni bir sürüme yükseltilebilir. Eski bir sürüme dönmek için yedekten geri yükleyin.'
 ErrAppWarn: 'Anormal durum, lütfen günlüğü kontrol edin'
 ErrAppParamKey: 'Parametre {{ .name }} alanı anormal'
 ErrAppUpgrade: 'Uygulama {{ .name }} yükseltmesi başarısız {{ .err }}'
@@ -154,12 +164,17 @@ ErrAppVersionDeprecated: '{{ .name }} uygulaması mevcut 1Panel sürümü ile uy
 ErrDockerFailed: 'Docker durumu anormal, lütfen servis durumunu kontrol edin'
 ErrDockerComposeCmdNotFound: 'Docker Compose komutu mevcut değil, lütfen önce bu komutu host makinesine yükleyin'
 UseExistImage: 'Görüntü zaten mevcut, mevcut görüntü kullanılıyor'
+UpgradePrepare: 'Uygulama yükseltmesini hazırla'
+UpgradeStop: 'Özgün uygulamayı durdur'
+UpgradeWaitReady: 'Uygulamanın hazır olmasını bekle'
+UpgradeBackupDisabled: 'Yükseltme yedeği devre dışı; yükseltme betiklerinin veri değişiklikleri tamamen geri alınamaz'
+UpgradeRollbackFailed: 'Geri alma başarısız'
 ErrDatabaseNotFound: '{{ .name }} veritabanı mevcut değil'
 
 # SSH
 ExportIP: 'Giriş IP'
 ExportArea: 'Konum'
-ExportPort: 'Port'
+ExportPort: 'Bağlantı noktası'
 ExportAuthMode: 'Giriş Yöntemi'
 ExportUser: 'Kullanıcı'
 ExportStatus: 'Giriş Durumu'
@@ -204,6 +219,9 @@ ErrDomainFormat: '{{ .name }} alan adı formatı yanlış'
 ErrDefaultAlias: 'default ayrılmış bir kod, lütfen başka bir kod kullanın'
 ErrParentWebsite: 'Önce {{ .name }} alt sitesini silmeniz gerekiyor'
 ErrBuildDirNotFound: 'Yapı dizini mevcut değil'
+ErrBrotliDisabled: 'brotli modülü etkin değil, önce etkinleştirin ve derleyin'
+ErrBrotliUnsupported: 'Panel brotli ayarlarını nginx.conf dosyasına otomatik olarak bağlayamadı; dosyayı kontrol edin veya OpenResty yi yükseltin'
+ErrModuleBuildUnsupported: 'Bu OpenResty sürümü modül derleyemez, önce yükseltin'
 ErrImageNotExist: 'İşletim ortamı {{ .name }} image mevcut değil, lütfen işletim ortamını yeniden düzenleyin'
 ErrProxyIsUsed: 'Yük dengeleme ters proxy tarafından kullanıldı, silinemez'
 ErrSSLValid: 'Sertifika dosyası anormal, lütfen sertifika durumunu kontrol edin'
@@ -285,6 +303,9 @@ BuildCache: 'Derleme önbelleği'
 Volume: 'Depolama hacmi'
 Network: 'Ağ'
 PruneStart: 'Temizlik devam ediyor, lütfen bekleyin...'
+NetworkCleanupConnected: "Ağ [{{ .name }}] ({{ .id }}) atlandı: bağlı konteynerler var veya ağ kullanımda; silinmedi"
+NetworkCleanupSummary: "Ağ temizliği tamamlandı: silinen {{ .deleted }}, atlanan {{ .skipped }}, başarısız {{ .failed }}"
+NetworkCleanupPartialFailure: "Bazı ağlar temizlenemedi; görev günlüğünü kontrol edin"
 ContainerBackupPrepare: 'Konteyner yedekleme çalışma alanını hazırla'
 ContainerBackupStop: 'Yedeklemeden önce konteyneri durdur'
 ContainerBackupInspect: 'Konteyner inspect ve ağ bilgisini yedekle'
@@ -449,6 +470,11 @@ TaskCreate: 'Oluştur'
 TaskDelete: 'Sil'
 TaskUpgrade: 'Yükselt'
 TaskUpdate: 'Güncelle'
+AgentPluginInstall: 'Eklenti yükle'
+AgentPluginEnable: 'Eklentiyi etkinleştir'
+AgentPluginDisable: 'Eklentiyi devre dışı bırak'
+AgentPluginUpdate: 'Eklentiyi güncelle'
+AgentPluginUninstall: 'Eklentiyi kaldır'
 TaskRestart: 'Yeniden Başlat'
 TaskProtect: 'Koru'
 TaskBackup: 'Yedekle'
@@ -575,6 +601,10 @@ ContainerDisconnectOld: 'Eski {{ .name }} konteynerinin ağ adreslerini serbest 
 ContainerCreateReplacement: 'Yeni {{ .name }} konteynerini oluştur'
 ContainerStartReplacement: 'Yeni {{ .name }} konteynerini başlat'
 ContainerWaitReplacement: 'Yeni {{ .name }} konteynerinin hazır olduğunu kontrol et'
+ContainerStartupDiagnostic: 'Yeni {{ .name }} konteynerinin başlatma hatası tanılaması'
+ContainerRecentLogs: 'Son konteyner günlükleri (son 200 satır)'
+ContainerDiagnosticLogsFailed: 'Başarısız {{ .name }} konteynerinin günlükleri alınamadı: {{ .err }}'
+ContainerDiagnosticLogsEmpty: 'Kullanılabilir konteyner günlüğü yok'
 ContainerRollbackRestartOld: 'Eski {{ .name }} konteynerini yeniden başlat'
 ContainerRollbackRemoveReplacement: 'Başlatılamayan yeni {{ .name }} konteynerini kaldır'
 ContainerRollbackRenameOld: 'Eski {{ .name }} konteynerinin adını geri yükle'
@@ -604,14 +634,15 @@ AppAttributesNotMatch: 'Uygulama türü veya adı eşleşmiyor'
 # uyarı
 ErrAlertMethodNotSupported: 'Bu sürüm bu uyarı yöntemini desteklemiyor'
 ErrAlertSync: 'Alarm bilgisi senkronizasyon hatası, lütfen kontrol edin ve tekrar deneyin'
+ErrWebhookTestFailed: 'Lütfen Webhook yapılandırmasını kontrol edin. Ayrıntılar için sistem günlüklerine bakın.'
 
 # görev - çalışma zamanı
 ErrInstallExtension: 'Zaten devam eden bir kurulum görevi var, görevin bitmesini bekleyin'
 
 # uyarı e-posta şablonu
 PanelAlertTitle: 'Panel Uyarı Bildirimi'
-TestAlertTitle: 'Test E-postası - E-posta Bağlantısını Doğrula'
-TestAlert: 'Bu, e-posta gönderim ayarlarınızın doğru yapılandırıldığını doğrulamak için gönderilen bir test e-postasıdır.'
+TestAlertTitle: 'Panel Test Bildirimi'
+TestAlertMessage: 'Bu, bildirim kanalı yapılandırmasını ve bağlantısını doğrulamak için gönderilen bir test bildirimidir.'
 LicenseExpirationAlert: 'Paneliniz {{ .node }}{{ .ip }}, lisans {{ .day }} gün içinde süresi dolacak. Detaylar için paneline giriş yapın.'
 CronJobFailedAlert: 'Paneliniz {{ .node }}{{ .ip }}, zamanlanmış görev {{ .name }} çalıştırma başarısız oldu. Detaylar için paneline giriş yapın.'
 ClamAlert: 'Paneliniz {{ .node }}{{ .ip }}, virüs tarama görevi {{ .num }} enfekte dosya tespit etti. Detaylar için paneline giriş yapın.'
@@ -625,6 +656,7 @@ CommonAlert: 'Paneliniz {{ .node }}{{ .ip }}, {{ .msg }}. Detaylar için panelin
 NodeExceptionAlert: 'Paneliniz {{ .node }}{{ .ip }}, {{ .num }} düğüm anormal durumda. Detaylar için paneline giriş yapın.'
 LicenseExceptionAlert: 'Paneliniz {{ .node }}{{ .ip }}, {{ .num }} lisans anormal durumda. Detaylar için paneline giriş yapın.'
 SSHAndPanelLoginAlert: 'Paneliniz {{ .node }}{{ .ip }}, {{ .loginIp }} adresinden {{ .name }} girişi anormal. Detaylar için paneline giriş yapın.'
+CronJobSuccessAlert: 'Panel {{ .node }}{{ .ip }}: zamanlanmış görev {{ .name }} başarıyla tamamlandı. Ayrıntıları görmek için giriş yapın.'
 
 # disk
 DeviceNotFound: 'Cihaz {{ .name }} bulunamadı'
@@ -637,6 +669,7 @@ XfsNotFound: 'XFS dosya sistemi algılanmadı, lütfen önce xfsprogs''i yükley
 # terminal
 TerminalAIBlockedRiskyCommand: 'Riskli komut engellendi: {{ .command }}'
 TerminalAIThinking: 'AI dusunuyor...'
+TerminalOutputTruncated: '[çıktı kısaltıldı, yalnızca son çıktı gösteriliyor]'
 TerminalAIReadyToExecute: 'Dusunme tamamlandi, calistirmak icin Enter tusuna basin (sure: {{ .duration }}, token: {{ .tokens }})'
 TerminalAIRequestFailed: 'AI istegi basarisiz oldu: {{ .err }}'
 
@@ -649,3 +682,123 @@ ErrAIProxyModelMapEmpty: 'Model eşlemesi boş olamaz'
 ErrAIProxyModelMapEmptyExternalModel: 'Model eşlemesi boş bir istek modeli içeriyor'
 ErrAIProxyModelMapEmptyUpstreamModel: '{{ .model }} için upstream model boş olamaz'
 AIProxyUserFallback: 'Silinen kullanıcı (ID: {{ .id }})'
+AIProviderBailian: 'Alibaba Cloud Model Studio'
+AIProviderBailianCodingPlan: 'Alibaba Cloud Model Studio Coding Plan'
+AIProviderArk: 'Volcengine Ark'
+AIProviderArkCodingPlan: 'Volcengine Ark Coding Plan'
+
+# Firewall
+ErrDockerIptablesChainUnavailable: 'Docker DOCKER-USER zinciri bulunamadı. Docker’ı yeniden başlatıp tekrar deneyin'
+ErrDockerNftablesChainUnavailable: 'Docker nftables IPv4 güvenlik duvarı zinciri bulunamadı. Geçerli Docker sürümünün nftables güvenlik duvarı arka ucunu desteklediğini doğrulayın, Docker’ı yeniden başlatıp tekrar deneyin'
+ErrDockerForwardPolicyDrop: 'Bu sunucu ağ yönlendirmesini kısıtlıyor. Konteyner port koruması şu anda etkinleştirilemiyor.'
+Firewall: 'Güvenlik duvarı'
+FirewallTaskHost: 'Ana makine güvenlik duvarı'
+FirewallTaskForwarding: 'Port yönlendirme'
+FirewallTaskDocker: 'Konteyner port koruması'
+FirewallRuleTaskCreate: 'Güvenlik duvarı kuralları oluştur [{{ .name }}]'
+FirewallRuleTaskUpdate: 'Güvenlik duvarı kurallarını güncelle [{{ .name }}]'
+FirewallRuleTaskDelete: 'Güvenlik duvarı kurallarını sil [{{ .name }}]'
+FirewallRuleTaskSync: 'Güvenlik duvarı kurallarını eşitle [{{ .name }}]'
+FirewallTaskInitialize: 'Güvenlik duvarını başlat [{{ .name }}]'
+FirewallCreateRulesStep: 'Güvenlik duvarı kuralları oluştur'
+FirewallCreateRulesResult: 'Oluşturma sonucu: {{ .succeeded }} başarılı, {{ .failed }} başarısız, {{ .skipped }} yürütülmedi'
+FirewallRuleOperationResult: 'İşlem sonucu: {{ .succeeded }} başarılı, {{ .failed }} başarısız'
+FirewallCreateRuleSkipped: 'Yürütülmedi'
+FirewallImportRuleConversion: '[{{ .index }}/{{ .total }}] {{ .source }} → {{ .target }}: {{ .rule }}; {{ .count }} kurala dönüştürüldü'
+FirewallCreateRuleExecutionFailed: 'Kural oluşturma başarısız. Yürütülen komutlar geri alınmadı'
+FirewallInitializeChainsStep: '{{ .name }} temel zincirlerini başlat ve bağla'
+FirewallSyncWhitelistStep: 'Güvenlik duvarı bağlantı noktası izin listesini eşitle'
+FirewallEnableForwardingStep: 'Bağlantı noktası yönlendirme zincirlerini etkinleştir ve bağla'
+FirewallRestoreForwardingRulesStep: 'Veritabanı bağlantı noktası yönlendirme kurallarını geri yükle'
+FirewallInspectDockerGuardStep: 'Docker güvenlik duvarı arka ucunu ve ilkelerini denetle'
+FirewallInitializeDockerGuardStep: '{{ .name }} bağlantı noktası koruma zincirlerini başlat ve bağla'
+FirewallPersistDockerGuardStep: 'Docker bağlantı noktası koruma durumunu kaydet'
+FileTaskCopy: 'Dosyaları {{ .dst }} konumuna kopyala'
+FileTaskMove: 'Dosyaları {{ .dst }} konumuna taşı'
+FileTaskCompress: 'Dosyaları {{ .dst }} konumuna sıkıştır'
+FileTaskDecompress: 'Dosyaları {{ .dst }} konumuna çıkar'
+FileTaskSource: 'Kaynak yol: {{ .path }}'
+FileTaskFormat: 'Arşiv biçimi: {{ .format }}'
+FileTaskRename: 'Hedef dosya adı: {{ .name }}'
+ErrFirewallBackendCleanupRequired: "Mevcut {{ .current }} arka ucunda hâlâ 1Panel kuralları var. {{ .target }} arka ucuna geçmeden önce bunları temizleyin."
+ErrDockerIPv4ForwardingDisabled: "IPv4 yönlendirmesi devre dışı. Docker güvenlik duvarı arka ucunu kullanmadan önce net.ipv4.ip_forward=1 ayarını yapın."
+ErrFirewallRuleSavedApplyFailed: "Yeni kural yapılandırması kaydedildi, ancak güvenlik duvarına uygulanamadı. Eşitleme yaparak yeniden deneyin: {{ .detail }}"
+ErrFirewallRuleConflict: "UFW içinde aynı eşleşme koşullarına sahip, farklı bir eylem uygulayan bir kural zaten var. Mevcut kuralı düzenleyin."
+ErrForwardInterfaceNotFound: "Yönlendirme kuralında belirtilen {{ .name }} ağ arayüzü mevcut değil. Arayüz adını kontrol edip yeniden deneyin."
+ErrIPv6RARisk: "Ağ bağlantısının kesilme riski nedeniyle IPv6 yönlendirmesi engellendi. Belgeleri ve sistem günlüklerini inceleyin."
+ErrIPv6RACheckFailed: "Ağ yapılandırması denetlenemediği için IPv6 yönlendirmesi engellendi. Ayrıntılar için sistem günlüklerini inceleyin."
+
+ErrSSHPublicKey: "Geçerli bir SSH açık anahtarı girin"
+ErrSSHPrivateKey: "SSH özel anahtarı geçersiz veya parola yanlış; şifreli anahtarlar mevcut parolayı gerektirir"
+ErrSSHKeyMismatch: "SSH açık ve özel anahtarları eşleşmiyor"
+
+# sanal makine
+ErrVMNotFound: "Sanal makine mevcut değil"
+ErrVMAlreadyExists: "Sanal makine zaten mevcut"
+ErrVMCountLimit: "Professional sürümü en fazla {{ .limit }} sanal makine oluşturulmasına izin verir. Mevcut bir sanal makineyi silin veya Enterprise sürümüne yükseltip tekrar deneyin."
+ErrVMImageAlreadyExists: "Sanal makine imaj dosyası zaten mevcut: {{ .detail }}"
+ErrVMStoragePathInUse: "Depolama havuzu yolu zaten [{{ .name }}] tarafından kullanılıyor"
+ErrVMHelperNotFound: "1panel-kvm bulunamadı"
+ErrVMBridgeManaged: "Bridge adı zaten libvirt veya Docker tarafından yönetiliyor"
+ErrVMNetworkInUse: "Ağ kullanımda ve silinemez"
+ErrVMStorageInUse: "Depolama havuzu kullanımda ve silinemez"
+ErrVMStorageNameCannotChange: "Depolama havuzunun adı değiştirilemez"
+ErrVMStoragePathCannotChange: "Depolama havuzunun yolu değiştirilemez"
+ErrVMRunning: "Sanal makine çalışıyor"
+ErrVMLibvirtConnect: "libvirt bağlantısı başarısız: {{ .detail }}"
+ErrVMPermission: "Sanal makine işlemi için izin yok: {{ .detail }}"
+ErrVMNetworkNotFound: "Sanal makine ağı mevcut değil: {{ .detail }}"
+ErrVMInvalidPath: "Geçersiz sanal makine yolu: {{ .detail }}"
+ErrVMInvalidInput: "Geçersiz sanal makine parametresi: {{ .detail }}"
+ErrVMCommandFailed: "Sanal makine komutu başarısız: {{ .err }}"
+ErrVMDiskResizeBlocked: "Disk genişletme koşullarını karşılamıyor veya başka bir aygıt tarafından kullanılıyor. Disk durumunu kontrol edin."
+ErrVMDiskReferenced: "Bu sanal disk başka bir sanal makine veya aygıt tarafından kullanılıyor; genişletme henüz desteklenmiyor."
+ErrVMDiskReferenceCheck: "Sanal disk başvuruları doğrulanamadı. Genişletme kullanılamıyor; diğer sanal makinelerin disklerini kontrol edin."
+ErrVMSnapshotMetadataSync: "Anlık görüntü geri yüklendi ancak disk bilgileri eşitlenemedi. Yenileyip kontrol edin; anlık görüntüyü tekrar geri yüklemeyin."
+VMCreateTask: "Sanal makine [{{ .name }}] oluştur"
+VMCreateFromTemplateTask: "Şablondan sanal makine [{{ .name }}] oluştur"
+VMUpdateTask: "Sanal makine [{{ .name }}] güncelle"
+VMDiskResizeTask: "[{{ .name }}] sanal makinesinin [{{ .disk }}] diskini genişlet"
+VMRenameTask: "Sanal makine [{{ .name }}] adını [{{ .newName }}] olarak değiştir"
+VMDeleteTask: "Sanal makine [{{ .name }}] sil"
+VMTemplateCreateTask: "Sanal makine [{{ .name }}] öğesini şablon [{{ .template }}] olarak kaydet"
+VMTemplateDeleteTask: "Sanal makine şablonu [{{ .name }}] sil"
+VMForceDeleteMetadataOnly: "1panel-kvm bulunamadı, yalnızca sanal makine [{{ .name }}] meta verileri zorla siliniyor"
+VMForceDeleteMetadataAfterLibvirtFailed: "Sanal makine [{{ .name }}] libvirt üzerinden silinemedi, meta veriler zorla siliniyor: {{ .err }}"
+VMForceDeleteDiskFailed: "Sanal makine disk dosyası [{{ .path }}] zorla silinemedi: {{ .err }}"
+VMForceDeleteDiskSuccess: "Sanal makine disk dosyası [{{ .path }}] zorla silindi"
+VMSnapshotCreateTask: "Sanal makine [{{ .vm }}] için anlık görüntü [{{ .snapshot }}] oluştur"
+VMSnapshotCreateStep: "Sanal makine anlık görüntüsü [{{ .snapshot }}] oluştur"
+VMSnapshotRecoverTask: "Sanal makine [{{ .vm }}] anlık görüntüsü [{{ .snapshot }}] geri yükle"
+VMSnapshotRecoverStep: "Sanal makine anlık görüntüsü [{{ .snapshot }}] geri yükle"
+VMSnapshotDeleteTask: "Sanal makine [{{ .vm }}] anlık görüntüsü [{{ .snapshot }}] sil"
+VMSnapshotDeleteStep: "Sanal makine anlık görüntüsü [{{ .snapshot }}] sil"
+
+ErrCAUpload: "Upload a ZIP (up to 10 MB) containing a valid self-signed CA certificate ca.crt and its matching private key ca.key, with a supported RSA or EC algorithm."
+
+ErrCAImport: "Provide a valid self-signed root CA certificate and matching private key (up to 1 MB each), using a supported RSA or EC algorithm."
+
+# Built-in Feishu
+ErrFeishuConfig: "Devam etmeden önce uyumsuz ayarları düzeltin: {{ .detail }}"
+ErrFeishuConfigChanged: "Geçiş sırasında ayarlar değişti. Yenileyip tekrar deneyin."
+ErrFeishuImageRequired: "Yerleşik Feishu içeren bir imaj kullanın."
+ErrFeishuAlreadySwitched: "Feishu zaten yerleşik eklentiye geçti."
+ErrFeishuSwitchRequired: "Önce Feishu kanal sayfasından yerleşik eklentiye geçin."
+ErrFeishuManaged: "Feishu kanal sayfasından yönetin; eklenti imajla güncellenir."
+ErrFeishuRestore: "Feishu ayarları geri yüklenemedi: {{ .err }}"
+ErrFeishuActivation: "Yerleşik Feishu eklentisi veya ağ geçidi başlatılamadı."
+AgentFeishuSwitch: "Feishu eklentisini değiştir"
+AgentFeishuBackup: "Ayar yedeği: {{ .name }}"
+AgentFeishuRestored: "Önceki ayarlar geri yüklendi."
+AgentFeishuProbeWarning: "Feishu bağlantı kontrolü başarısız. Ağı ve kimlik bilgilerini kontrol edin; geçiş korundu."
+AgentFeishuVerifyMessages: "Yerel etkinleştirme tamamlandı. Feishu üzerinden eşleştirmeyi, özel ve grup mesajlarını, bot yönlendirmesini ve akışı doğrulayın."
+
+ErrFeishuUpgradeConfirm: "Yükseltme sayfasında Feishu geçiş seçeneklerini onaylayın."
+
+ErrFeishuUpgradeBackup: "Feishu uyumluluk yükseltmesi tam uygulama yedeği gerektirir."
+
+ErrFeishuUpgradeMounts: "Bu bağlamalar tam yedeklenip geri yüklenemiyor. Uygulama dizinindeki standart veri bağlamalarını kullanın."
+
+AgentFeishuRecoveryDisabled: "Ağ geçidi kurtarıldı, Feishu kapalı; özgün yapılandırma yedeği korundu."
+
+ContainerUpgradeWaiting: "Waiting for a container upgrade execution slot"

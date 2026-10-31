@@ -17,6 +17,10 @@ const docTemplate = `{
 	},
 	"host": "",
 	"basePath": "/api/v2",
+	"schemes": [
+		"http",
+		"https"
+	],
 	"paths": {
 		"/ai/accounts": {
 			"post": {
@@ -74,7 +78,6 @@ const docTemplate = `{
 						"description": "OK",
 						"schema": {
 							"additionalProperties": {
-								"format": "int64",
 								"type": "integer"
 							},
 							"type": "object"
@@ -1171,6 +1174,41 @@ const docTemplate = `{
 				]
 			}
 		},
+		"/ai/agents/channel/feishu/switch": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.AgentFeishuSwitchReq"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Switch to the bundled OpenClaw Feishu plugin",
+				"tags": [
+					"AI"
+				]
+			}
+		},
 		"/ai/agents/channel/feishu/update": {
 			"post": {
 				"consumes": [
@@ -2115,6 +2153,158 @@ const docTemplate = `{
 					}
 				],
 				"summary": "Upgrade Agent plugin",
+				"tags": [
+					"AI"
+				]
+			}
+		},
+		"/ai/agents/plugins/install": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.AgentPluginMarketInstallReq"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Install an OpenClaw marketplace plugin",
+				"tags": [
+					"AI"
+				]
+			}
+		},
+		"/ai/agents/plugins/list": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.AgentPluginsReq"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"items": {
+								"$ref": "#/definitions/dto.AgentPluginItem"
+							},
+							"type": "array"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "List OpenClaw plugins",
+				"tags": [
+					"AI"
+				]
+			}
+		},
+		"/ai/agents/plugins/operate": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.AgentPluginOperateReq"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Operate an OpenClaw plugin",
+				"tags": [
+					"AI"
+				]
+			}
+		},
+		"/ai/agents/plugins/search": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.AgentPluginSearchReq"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"items": {
+								"$ref": "#/definitions/dto.AgentPluginSearchItem"
+							},
+							"type": "array"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Search OpenClaw plugins",
 				"tags": [
 					"AI"
 				]
@@ -3408,40 +3598,6 @@ const docTemplate = `{
 				]
 			}
 		},
-		"/ai/ollama/model/sync": {
-			"post": {
-				"responses": {
-					"200": {
-						"description": "OK",
-						"schema": {
-							"items": {
-								"$ref": "#/definitions/dto.OllamaModelDropList"
-							},
-							"type": "array"
-						}
-					}
-				},
-				"security": [
-					{
-						"ApiKeyAuth": []
-					},
-					{
-						"Timestamp": []
-					}
-				],
-				"summary": "Sync Ollama model list",
-				"tags": [
-					"AI"
-				],
-				"x-panel-log": {
-					"BeforeFunctions": [],
-					"bodyKeys": [],
-					"formatEN": "sync Ollama model list",
-					"formatZH": "同步 Ollama 模型列表",
-					"paramKeys": []
-				}
-			}
-		},
 		"/ai/tensorrt/create": {
 			"post": {
 				"consumes": [
@@ -3755,11 +3911,9 @@ const docTemplate = `{
 				],
 				"x-panel-log": {
 					"BeforeFunctions": [],
-					"bodyKeys": [
-						"id"
-					],
-					"formatEN": "delete alert config [id]",
-					"formatZH": "删除告警配置 [id]",
+					"bodyKeys": [],
+					"formatEN": "delete alert config [name]",
+					"formatZH": "删除告警配置 [name]",
 					"paramKeys": []
 				}
 			}
@@ -3818,6 +3972,50 @@ const docTemplate = `{
 				"tags": [
 					"Alert"
 				]
+			}
+		},
+		"/alert/config/status": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.AlertConfigStatusUpdate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Update alert config status",
+				"tags": [
+					"Alert"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"status"
+					],
+					"formatEN": "update alert config status [name][status]",
+					"formatZH": "更新告警配置状态 [name][status]",
+					"paramKeys": []
+				}
 			}
 		},
 		"/alert/config/test": {
@@ -3891,11 +4089,10 @@ const docTemplate = `{
 				"x-panel-log": {
 					"BeforeFunctions": [],
 					"bodyKeys": [
-						"id",
 						"displayName"
 					],
-					"formatEN": "update alert config [id][displayName]",
-					"formatZH": "更新告警配置 [id][displayName]",
+					"formatEN": "update alert config [displayName]",
+					"formatZH": "更新告警配置 [displayName]",
 					"paramKeys": []
 				}
 			}
@@ -4396,6 +4593,9 @@ const docTemplate = `{
 						"schema": {
 							"type": "file"
 						}
+					},
+					"302": {
+						"description": "redirect to the official icon URL"
 					}
 				},
 				"security": [
@@ -5192,6 +5392,17 @@ const docTemplate = `{
 			"post": {
 				"consumes": [
 					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/request.AppUpdateVersion"
+						}
+					}
 				],
 				"responses": {
 					"200": {
@@ -6517,6 +6728,41 @@ const docTemplate = `{
 					"formatZH": "compose [operation] [name]",
 					"paramKeys": []
 				}
+			}
+		},
+		"/containers/compose/pin": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.ComposePin"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Pin compose",
+				"tags": [
+					"Container Compose"
+				]
 			}
 		},
 		"/containers/compose/search": {
@@ -7848,6 +8094,14 @@ const docTemplate = `{
 		},
 		"/containers/list/stats": {
 			"get": {
+				"parameters": [
+					{
+						"description": "Comma-separated container IDs; omitted selects all containers",
+						"in": "query",
+						"name": "ids",
+						"type": "string"
+					}
+				],
 				"responses": {
 					"200": {
 						"description": "OK",
@@ -8607,6 +8861,14 @@ const docTemplate = `{
 				"consumes": [
 					"application/json"
 				],
+				"parameters": [
+					{
+						"description": "Only count containers",
+						"in": "query",
+						"name": "containersOnly",
+						"type": "boolean"
+					}
+				],
 				"produces": [
 					"application/json"
 				],
@@ -9192,23 +9454,43 @@ const docTemplate = `{
 				"consumes": [
 					"application/json"
 				],
+				"description": "Requires a panel login session and CSRF token. API Key authentication is not supported. This replaces the current account's legacy secret; existing clients using the previous secret must be updated. Independent API keys are unaffected.",
+				"produces": [
+					"application/json"
+				],
 				"responses": {
 					"200": {
-						"description": "OK",
+						"description": "code=200 with the new secret; authentication and business errors use envelope code 400, 401 or 500",
+						"headers": {
+							"Cache-Control": {
+								"description": "no-store",
+								"type": "string"
+							}
+						},
 						"schema": {
-							"type": "string"
+							"allOf": [
+								{
+									"$ref": "#/definitions/dto.Response"
+								},
+								{
+									"properties": {
+										"data": {
+											"type": "string"
+										}
+									},
+									"type": "object"
+								}
+							]
 						}
 					}
 				},
 				"security": [
 					{
-						"ApiKeyAuth": []
-					},
-					{
-						"Timestamp": []
+						"CSRFToken": [],
+						"PanelSession": []
 					}
 				],
-				"summary": "generate api key",
+				"summary": "Generate or reset the legacy API key",
 				"tags": [
 					"Auth"
 				],
@@ -9221,11 +9503,562 @@ const docTemplate = `{
 				}
 			}
 		},
+		"/core/auth/api/keys/create": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"description": "Accepts a panel login session with CSRF protection, or a valid API Key signature. The new key belongs to the authenticated account.\nrequestID is optional. Omitted or empty values are generated by the server. For idempotent retries, supply a UUID and reuse it with the same payload.\nA successful first request returns the plaintext secret. Repeating the same requestID and payload returns alreadyCreated=true and an empty apiKey; changing the payload for that requestID is rejected.\nOmitted expiresAt defaults to 90 days; explicit null means no expiration. Omitted apiKeyValidityTime defaults to 120 minutes; zero disables timestamp validation.\nAPI-created keys may have a longer lifetime or broader IP policy than the calling key. Revoking the calling key does not revoke keys it created.\nAuthentication and business errors use HTTP 200 with envelope code 400, 401 or 500; check code rather than HTTP status alone. Unknown fields and bodies larger than 32 KiB are rejected.",
+				"parameters": [
+					{
+						"description": "Key policy and an optional UUID requestID for idempotency",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.APIKeyCreate"
+						}
+					},
+					{
+						"description": "Optional ID of the authenticating independent key; omit for legacy keys",
+						"in": "header",
+						"name": "1Panel-Key-ID",
+						"type": "string"
+					},
+					{
+						"description": "Signature algorithm; omission accepts either supported algorithm",
+						"enum": [
+							"v1",
+							"md5",
+							"hmac-sha256"
+						],
+						"in": "header",
+						"name": "1Panel-Signature-Version",
+						"type": "string"
+					}
+				],
+				"produces": [
+					"application/json"
+				],
+				"responses": {
+					"200": {
+						"description": "code=200 on success; data is null on errors",
+						"headers": {
+							"Cache-Control": {
+								"description": "no-store",
+								"type": "string"
+							}
+						},
+						"schema": {
+							"allOf": [
+								{
+									"$ref": "#/definitions/dto.Response"
+								},
+								{
+									"properties": {
+										"data": {
+											"$ref": "#/definitions/dto.APIKeyCreated"
+										}
+									},
+									"type": "object"
+								}
+							]
+						}
+					},
+					"403": {
+						"description": "Invalid or missing CSRF token for a session request",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": [],
+						"Timestamp": []
+					},
+					{
+						"CSRFToken": [],
+						"PanelSession": []
+					}
+				],
+				"summary": "Create an API key for the current account",
+				"tags": [
+					"API Key"
+				]
+			}
+		},
+		"/core/auth/api/keys/delete": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"description": "Accepts a panel login session with CSRF protection, or a valid API Key signature. Only keys owned by the authenticated account can be deleted; id=legacy is not supported.\nSubmit the current revision returned by search. Deletion immediately revokes the key, destroys its stored secret and removes it from lists. Audit and idempotency records are retained. Already-revoked keys can be deleted; deletion cannot be undone.\nA key can delete itself; subsequent requests signed with it fail. Authentication and business errors use HTTP 200 with envelope code 400, 401 or 500.",
+				"parameters": [
+					{
+						"description": "Independent key ID and current revision",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.APIKeyMutation"
+						}
+					},
+					{
+						"description": "Optional ID of the authenticating independent key; omit for legacy keys",
+						"in": "header",
+						"name": "1Panel-Key-ID",
+						"type": "string"
+					},
+					{
+						"description": "Signature algorithm; omission accepts either supported algorithm",
+						"enum": [
+							"v1",
+							"md5",
+							"hmac-sha256"
+						],
+						"in": "header",
+						"name": "1Panel-Signature-Version",
+						"type": "string"
+					}
+				],
+				"produces": [
+					"application/json"
+				],
+				"responses": {
+					"200": {
+						"description": "code=200 on success; data is null on errors",
+						"schema": {
+							"allOf": [
+								{
+									"$ref": "#/definitions/dto.Response"
+								},
+								{
+									"properties": {
+										"data": {
+											"$ref": "#/definitions/dto.APIKeyMutationResult"
+										}
+									},
+									"type": "object"
+								}
+							]
+						}
+					},
+					"403": {
+						"description": "Invalid or missing CSRF token for a session request",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": [],
+						"Timestamp": []
+					},
+					{
+						"CSRFToken": [],
+						"PanelSession": []
+					}
+				],
+				"summary": "Delete an independent API key",
+				"tags": [
+					"API Key"
+				]
+			}
+		},
+		"/core/auth/api/keys/reveal": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"description": "Requires a panel login session and CSRF token. API Key authentication is not supported, including requests that also contain a valid session cookie; omit all 1Panel authentication headers.\nOnly the current account's independent keys can be revealed. Submit the current revision returned by search. Legacy, revoked and deleted keys are rejected; disabled or expired keys can still be revealed.\nSecret disclosure is audited. Authentication and business errors use HTTP 200 with envelope code 400, 401 or 500. The response must not be cached or logged.",
+				"parameters": [
+					{
+						"description": "Independent key ID and current revision",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.APIKeyMutation"
+						}
+					}
+				],
+				"produces": [
+					"application/json"
+				],
+				"responses": {
+					"200": {
+						"description": "code=200 on success; data is null on errors",
+						"headers": {
+							"Cache-Control": {
+								"description": "no-store",
+								"type": "string"
+							}
+						},
+						"schema": {
+							"allOf": [
+								{
+									"$ref": "#/definitions/dto.Response"
+								},
+								{
+									"properties": {
+										"data": {
+											"$ref": "#/definitions/dto.APIKeyRevealed"
+										}
+									},
+									"type": "object"
+								}
+							]
+						}
+					},
+					"403": {
+						"description": "Invalid or missing CSRF token",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					}
+				},
+				"security": [
+					{
+						"CSRFToken": [],
+						"PanelSession": []
+					}
+				],
+				"summary": "Reveal an independent API key's plaintext secret",
+				"tags": [
+					"API Key"
+				]
+			}
+		},
+		"/core/auth/api/keys/revoke": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"description": "Accepts a panel login session with CSRF protection, or a valid API Key signature. Only keys owned by the authenticated account can be revoked.\nSubmit the current revision returned by search. Revocation destroys the independent key's stored secret and cannot be undone; its metadata remains listed. For id=legacy, the legacy secret is cleared and API access is disabled.\nA key can revoke itself; subsequent requests signed with it fail. Keys previously created by the revoked key remain independent. Success increments the revision and closes associated terminal sessions.\nAuthentication and business errors use HTTP 200 with envelope code 400, 401 or 500.",
+				"parameters": [
+					{
+						"description": "Key ID and current revision",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.APIKeyMutation"
+						}
+					},
+					{
+						"description": "Optional ID of the authenticating independent key; omit for legacy keys",
+						"in": "header",
+						"name": "1Panel-Key-ID",
+						"type": "string"
+					},
+					{
+						"description": "Signature algorithm; omission accepts either supported algorithm",
+						"enum": [
+							"v1",
+							"md5",
+							"hmac-sha256"
+						],
+						"in": "header",
+						"name": "1Panel-Signature-Version",
+						"type": "string"
+					}
+				],
+				"produces": [
+					"application/json"
+				],
+				"responses": {
+					"200": {
+						"description": "code=200 on success; data is null on errors",
+						"schema": {
+							"allOf": [
+								{
+									"$ref": "#/definitions/dto.Response"
+								},
+								{
+									"properties": {
+										"data": {
+											"$ref": "#/definitions/dto.APIKeyMutationResult"
+										}
+									},
+									"type": "object"
+								}
+							]
+						}
+					},
+					"403": {
+						"description": "Invalid or missing CSRF token for a session request",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": [],
+						"Timestamp": []
+					},
+					{
+						"CSRFToken": [],
+						"PanelSession": []
+					}
+				],
+				"summary": "Revoke an API key",
+				"tags": [
+					"API Key"
+				]
+			}
+		},
+		"/core/auth/api/keys/search": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"description": "Accepts a panel login session with CSRF protection, or a valid API Key signature. The authenticated account determines ownership; another account cannot be selected in the request.\nReturns key metadata and masked hints, never plaintext secrets. The legacy key is included when present; deleted keys are excluded.\nAuthentication and business errors use HTTP 200 with envelope code 400, 401 or 500; check code rather than HTTP status alone.",
+				"parameters": [
+					{
+						"description": "Pagination and revoked-key filter",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.APIKeySearch"
+						}
+					},
+					{
+						"description": "Optional ID of the authenticating independent key; omit for legacy keys",
+						"in": "header",
+						"name": "1Panel-Key-ID",
+						"type": "string"
+					},
+					{
+						"description": "Signature algorithm; omission accepts either supported algorithm",
+						"enum": [
+							"v1",
+							"md5",
+							"hmac-sha256"
+						],
+						"in": "header",
+						"name": "1Panel-Signature-Version",
+						"type": "string"
+					}
+				],
+				"produces": [
+					"application/json"
+				],
+				"responses": {
+					"200": {
+						"description": "code=200 on success; data is null on errors",
+						"headers": {
+							"Cache-Control": {
+								"description": "no-store",
+								"type": "string"
+							}
+						},
+						"schema": {
+							"allOf": [
+								{
+									"$ref": "#/definitions/dto.Response"
+								},
+								{
+									"properties": {
+										"data": {
+											"$ref": "#/definitions/dto.APIKeyPage"
+										}
+									},
+									"type": "object"
+								}
+							]
+						}
+					},
+					"403": {
+						"description": "Invalid or missing CSRF token for a session request",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": [],
+						"Timestamp": []
+					},
+					{
+						"CSRFToken": [],
+						"PanelSession": []
+					}
+				],
+				"summary": "List the current account's API keys",
+				"tags": [
+					"API Key"
+				]
+			}
+		},
+		"/core/auth/api/keys/status": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"description": "Accepts a panel login session with CSRF protection, or a valid API Key signature. Only keys owned by the authenticated account can be changed; id=legacy is supported.\nSubmit the current revision returned by search. Revoked or deleted keys cannot be enabled; expired keys must first receive a future expiration time. Disabling a key also closes its active terminal sessions.\nSuccess increments the revision; search again before another mutation. Authentication and business errors use HTTP 200 with envelope code 400, 401 or 500.",
+				"parameters": [
+					{
+						"description": "Key ID, current revision and Enable or Disable status",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.APIKeyStatus"
+						}
+					},
+					{
+						"description": "Optional ID of the authenticating independent key; omit for legacy keys",
+						"in": "header",
+						"name": "1Panel-Key-ID",
+						"type": "string"
+					},
+					{
+						"description": "Signature algorithm; omission accepts either supported algorithm",
+						"enum": [
+							"v1",
+							"md5",
+							"hmac-sha256"
+						],
+						"in": "header",
+						"name": "1Panel-Signature-Version",
+						"type": "string"
+					}
+				],
+				"produces": [
+					"application/json"
+				],
+				"responses": {
+					"200": {
+						"description": "code=200 on success; data is null on errors",
+						"schema": {
+							"allOf": [
+								{
+									"$ref": "#/definitions/dto.Response"
+								},
+								{
+									"properties": {
+										"data": {
+											"$ref": "#/definitions/dto.APIKeyMutationResult"
+										}
+									},
+									"type": "object"
+								}
+							]
+						}
+					},
+					"403": {
+						"description": "Invalid or missing CSRF token for a session request",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": [],
+						"Timestamp": []
+					},
+					{
+						"CSRFToken": [],
+						"PanelSession": []
+					}
+				],
+				"summary": "Enable or disable an API key",
+				"tags": [
+					"API Key"
+				]
+			}
+		},
+		"/core/auth/api/keys/update": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"description": "Accepts a panel login session with CSRF protection, or a valid API Key signature. Only keys owned by the authenticated account can be changed.\nSubmit the current revision returned by search; stale revisions are rejected. This replaces editable policy fields without changing the secret. expiresAt must be supplied as an RFC 3339 timestamp or null.\nUse id=legacy for the legacy key; its name is fixed and expiresAt must be null. Revoked or deleted independent keys cannot be updated.\nSuccess increments the revision; search again before another mutation. Authentication and business errors use HTTP 200 with envelope code 400, 401 or 500.",
+				"parameters": [
+					{
+						"description": "Key ID, current revision and complete editable policy",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.APIKeyUpdate"
+						}
+					},
+					{
+						"description": "Optional ID of the authenticating independent key; omit for legacy keys",
+						"in": "header",
+						"name": "1Panel-Key-ID",
+						"type": "string"
+					},
+					{
+						"description": "Signature algorithm; omission accepts either supported algorithm",
+						"enum": [
+							"v1",
+							"md5",
+							"hmac-sha256"
+						],
+						"in": "header",
+						"name": "1Panel-Signature-Version",
+						"type": "string"
+					}
+				],
+				"produces": [
+					"application/json"
+				],
+				"responses": {
+					"200": {
+						"description": "code=200 on success; data is null on errors",
+						"schema": {
+							"allOf": [
+								{
+									"$ref": "#/definitions/dto.Response"
+								},
+								{
+									"properties": {
+										"data": {
+											"$ref": "#/definitions/dto.APIKeyMutationResult"
+										}
+									},
+									"type": "object"
+								}
+							]
+						}
+					},
+					"403": {
+						"description": "Invalid or missing CSRF token for a session request",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": [],
+						"Timestamp": []
+					},
+					{
+						"CSRFToken": [],
+						"PanelSession": []
+					}
+				],
+				"summary": "Update an API key's policy",
+				"tags": [
+					"API Key"
+				]
+			}
+		},
 		"/core/auth/api/update": {
 			"post": {
 				"consumes": [
 					"application/json"
 				],
+				"description": "Requires a panel login session and CSRF token. API Key authentication is not supported. This updates only the current account's legacy API configuration.",
 				"parameters": [
 					{
 						"description": "request",
@@ -9237,30 +10070,35 @@ const docTemplate = `{
 						}
 					}
 				],
+				"produces": [
+					"application/json"
+				],
 				"responses": {
 					"200": {
-						"description": "OK"
+						"description": "code=200 on success; authentication and business errors use envelope code 400, 401 or 500",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
 					}
 				},
 				"security": [
 					{
-						"ApiKeyAuth": []
-					},
-					{
-						"Timestamp": []
+						"CSRFToken": [],
+						"PanelSession": []
 					}
 				],
-				"summary": "Update api config",
+				"summary": "Update the legacy API key configuration",
 				"tags": [
 					"Auth"
 				],
 				"x-panel-log": {
 					"BeforeFunctions": [],
 					"bodyKeys": [
-						"ipWhiteList"
+						"ipWhiteList",
+						"apiTrustedProxies"
 					],
-					"formatEN": "update api config =\u003e IP White List: [ipWhiteList]",
-					"formatZH": "更新 API 接口配置 =\u003e IP 白名单: [ipWhiteList]",
+					"formatEN": "update api config =\u003e IP Allowlist: [ipWhiteList], API Trusted Proxies: [apiTrustedProxies]",
+					"formatZH": "更新 API 接口配置 =\u003e IP 白名单: [ipWhiteList], API 可信代理: [apiTrustedProxies]",
 					"paramKeys": []
 				}
 			}
@@ -10513,6 +11351,89 @@ const docTemplate = `{
 				}
 			}
 		},
+		"/core/hosts/diagnostics/goroutines": {
+			"get": {
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.RuntimeGoroutineSnapshot"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Load Core grouped goroutine snapshot",
+				"tags": [
+					"RuntimeDiagnostics"
+				]
+			}
+		},
+		"/core/hosts/diagnostics/profiles": {
+			"post": {
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.RuntimeProfileCreate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"type": "file"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Capture Core runtime profile",
+				"tags": [
+					"RuntimeDiagnostics"
+				]
+			}
+		},
+		"/core/hosts/diagnostics/summary": {
+			"get": {
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.RuntimeDiagnosticsSummary"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Load Core runtime diagnostics summary",
+				"tags": [
+					"RuntimeDiagnostics"
+				]
+			}
+		},
 		"/core/logs/clean": {
 			"post": {
 				"consumes": [
@@ -11017,6 +11938,47 @@ const docTemplate = `{
 				}
 			}
 		},
+		"/core/settings/file/download": {
+			"get": {
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FileDownloadPreference"
+						}
+					}
+				},
+				"summary": "Load current user's file download preference",
+				"tags": [
+					"System Setting"
+				]
+			},
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.FileDownloadPreference"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"summary": "Update current user's file download preference",
+				"tags": [
+					"System Setting"
+				]
+			}
+		},
 		"/core/settings/interface": {
 			"get": {
 				"consumes": [
@@ -11495,7 +12457,7 @@ const docTemplate = `{
 						"name": "request",
 						"required": true,
 						"schema": {
-							"$ref": "#/definitions/dto.TerminalInfo"
+							"$ref": "#/definitions/dto.TerminalUpdate"
 						}
 					}
 				],
@@ -12728,6 +13690,136 @@ const docTemplate = `{
 					"formatZH": "切换快速跳转",
 					"paramKeys": []
 				}
+			}
+		},
+		"/dashboard/quick/directory": {
+			"get": {
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"items": {
+								"$ref": "#/definitions/model.QuickDirectory"
+							},
+							"type": "array"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "List quick directories",
+				"tags": [
+					"Dashboard"
+				]
+			},
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.QuickDirectoryCreate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Create quick directory",
+				"tags": [
+					"Dashboard"
+				]
+			}
+		},
+		"/dashboard/quick/directory/del": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.QuickDirectoryDelete"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Delete quick directory",
+				"tags": [
+					"Dashboard"
+				]
+			}
+		},
+		"/dashboard/quick/directory/update": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.QuickDirectoryUpdate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Update quick directory",
+				"tags": [
+					"Dashboard"
+				]
 			}
 		},
 		"/dashboard/quick/option": {
@@ -14821,9 +15913,26 @@ const docTemplate = `{
 		},
 		"/databases/redis/install/cli": {
 			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.RedisCliInstall"
+						}
+					}
+				],
 				"responses": {
 					"200": {
-						"description": "OK"
+						"description": "OK",
+						"schema": {
+							"type": "string"
+						}
 					}
 				},
 				"security": [
@@ -16591,6 +17700,41 @@ const docTemplate = `{
 				}
 			}
 		},
+		"/files/move/stop": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/request.FileMoveStopReq"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Stop file move task",
+				"tags": [
+					"File"
+				]
+			}
+		},
 		"/files/owner": {
 			"post": {
 				"consumes": [
@@ -17650,6 +18794,53 @@ const docTemplate = `{
 				]
 			}
 		},
+		"/files/wget/process/remove": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/request.FileProcessRemoveReq"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/response.FileProcessKeys"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Remove finished download progress records without deleting files",
+				"tags": [
+					"File"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"keys"
+					],
+					"formatEN": "Remove finished download records [keys]",
+					"formatZH": "移除已结束下载记录 [keys]",
+					"paramKeys": []
+				}
+			}
+		},
 		"/files/wget/stop": {
 			"post": {
 				"consumes": [
@@ -18320,7 +19511,7 @@ const docTemplate = `{
 					"200": {
 						"description": "OK",
 						"schema": {
-							"$ref": "#/definitions/dto.FirewallBaseInfo"
+							"$ref": "#/definitions/dto.FirewallSubsystemStatus"
 						}
 					}
 				},
@@ -18338,25 +19529,17 @@ const docTemplate = `{
 				]
 			}
 		},
-		"/hosts/firewall/batch": {
-			"post": {
-				"consumes": [
-					"application/json"
-				],
-				"parameters": [
-					{
-						"description": "request",
-						"in": "body",
-						"name": "request",
-						"required": true,
-						"schema": {
-							"$ref": "#/definitions/dto.BatchRuleOperate"
-						}
-					}
-				],
+		"/hosts/firewall/docker/endpoints": {
+			"get": {
 				"responses": {
 					"200": {
-						"description": "OK"
+						"description": "OK",
+						"schema": {
+							"items": {
+								"$ref": "#/definitions/dto.DockerPortGuardContainer"
+							},
+							"type": "array"
+						}
 					}
 				},
 				"security": [
@@ -18367,13 +19550,13 @@ const docTemplate = `{
 						"Timestamp": []
 					}
 				],
-				"summary": "Batch operate rule",
+				"summary": "List Docker published ports",
 				"tags": [
 					"Firewall"
 				]
 			}
 		},
-		"/hosts/firewall/filter/chain/status": {
+		"/hosts/firewall/docker/operate": {
 			"post": {
 				"consumes": [
 					"application/json"
@@ -18385,13 +19568,16 @@ const docTemplate = `{
 						"name": "request",
 						"required": true,
 						"schema": {
-							"$ref": "#/definitions/dto.OperationWithName"
+							"$ref": "#/definitions/dto.DockerPortGuardOperation"
 						}
 					}
 				],
 				"responses": {
 					"200": {
-						"description": "OK"
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FilterChainOperationResponse"
+						}
 					}
 				},
 				"security": [
@@ -18402,10 +19588,182 @@ const docTemplate = `{
 						"Timestamp": []
 					}
 				],
-				"summary": "load chain status with name",
+				"summary": "Operate Docker port guard",
+				"tags": [
+					"Firewall"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"operation"
+					],
+					"formatEN": "[operation] Docker port guard",
+					"formatZH": "[operation] Docker 端口防护",
+					"paramKeys": []
+				}
+			}
+		},
+		"/hosts/firewall/docker/policies/batch": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.DockerPortGuardPolicyBatch"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FilterChainOperationResponse"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Batch upsert Docker port guard policies",
+				"tags": [
+					"Firewall"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [],
+					"formatEN": "batch update Docker port guard policies",
+					"formatZH": "批量更新 Docker 端口防护策略",
+					"paramKeys": []
+				}
+			}
+		},
+		"/hosts/firewall/docker/policies/delete/batch": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.DockerPortGuardPolicyBatchDelete"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FilterChainOperationResponse"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Delete Docker port guard policies",
+				"tags": [
+					"Firewall"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [],
+					"formatEN": "delete Docker port guard policies",
+					"formatZH": "删除 Docker 端口防护策略",
+					"paramKeys": []
+				}
+			}
+		},
+		"/hosts/firewall/docker/ports": {
+			"get": {
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.DockerPortGuardList"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "List Docker port guard status and policies",
 				"tags": [
 					"Firewall"
 				]
+			}
+		},
+		"/hosts/firewall/family/operate": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallFamilyOperation"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FilterChainOperationResponse"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Initialize, repair or bind one firewall address family",
+				"tags": [
+					"Firewall"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"subsystem",
+						"family",
+						"operation"
+					],
+					"formatEN": "[operation] [subsystem] [family] firewall chains",
+					"formatZH": "[operation] [subsystem] [family] 防火墙链",
+					"paramKeys": []
+				}
 			}
 		},
 		"/hosts/firewall/filter/operate": {
@@ -18420,13 +19778,16 @@ const docTemplate = `{
 						"name": "request",
 						"required": true,
 						"schema": {
-							"$ref": "#/definitions/dto.IptablesOp"
+							"$ref": "#/definitions/dto.FilterChainOperation"
 						}
 					}
 				],
 				"responses": {
 					"200": {
-						"description": "OK"
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FilterChainOperationResponse"
+						}
 					}
 				},
 				"security": [
@@ -18437,7 +19798,7 @@ const docTemplate = `{
 						"Timestamp": []
 					}
 				],
-				"summary": "Apply/Unload/Init iptables filter",
+				"summary": "Apply/Unload/Init firewall filter chain",
 				"tags": [
 					"Firewall"
 				],
@@ -18446,31 +19807,23 @@ const docTemplate = `{
 					"bodyKeys": [
 						"operate"
 					],
-					"formatEN": "[operate] iptables filter firewall",
-					"formatZH": "[operate] iptables filter 防火墙",
+					"formatEN": "[operate] firewall filter chain",
+					"formatZH": "[operate] 防火墙过滤链",
 					"paramKeys": []
 				}
 			}
 		},
-		"/hosts/firewall/filter/rule/batch": {
+		"/hosts/firewall/forward/base": {
 			"post": {
 				"consumes": [
 					"application/json"
 				],
-				"parameters": [
-					{
-						"description": "request",
-						"in": "body",
-						"name": "request",
-						"required": true,
-						"schema": {
-							"$ref": "#/definitions/dto.IptablesBatchOperate"
-						}
-					}
-				],
 				"responses": {
 					"200": {
-						"description": "OK"
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallSubsystemStatus"
+						}
 					}
 				},
 				"security": [
@@ -18481,13 +19834,13 @@ const docTemplate = `{
 						"Timestamp": []
 					}
 				],
-				"summary": "Batch operate iptables filter rules",
+				"summary": "Load forwarding base info",
 				"tags": [
 					"Firewall"
 				]
 			}
 		},
-		"/hosts/firewall/filter/rule/operate": {
+		"/hosts/firewall/forward/enable": {
 			"post": {
 				"consumes": [
 					"application/json"
@@ -18499,13 +19852,16 @@ const docTemplate = `{
 						"name": "request",
 						"required": true,
 						"schema": {
-							"$ref": "#/definitions/dto.IptablesRuleOp"
+							"$ref": "#/definitions/dto.FirewallInitializationTask"
 						}
 					}
 				],
 				"responses": {
 					"200": {
-						"description": "OK"
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FilterChainOperationResponse"
+						}
 					}
 				},
 				"security": [
@@ -18516,23 +19872,20 @@ const docTemplate = `{
 						"Timestamp": []
 					}
 				],
-				"summary": "Operate iptables filter rule",
+				"summary": "Enable forwarding",
 				"tags": [
 					"Firewall"
 				],
 				"x-panel-log": {
 					"BeforeFunctions": [],
-					"bodyKeys": [
-						"operation",
-						"chain"
-					],
-					"formatEN": "[operation] filter rule to [chain]",
-					"formatZH": "[operation] filter规则到 [chain]",
+					"bodyKeys": [],
+					"formatEN": "initialize and enable port forwarding",
+					"formatZH": "初始化并启用端口转发",
 					"paramKeys": []
 				}
 			}
 		},
-		"/hosts/firewall/filter/rule/search": {
+		"/hosts/firewall/forward/operate": {
 			"post": {
 				"consumes": [
 					"application/json"
@@ -18544,7 +19897,52 @@ const docTemplate = `{
 						"name": "request",
 						"required": true,
 						"schema": {
-							"$ref": "#/definitions/dto.SearchPageWithType"
+							"$ref": "#/definitions/dto.ForwardRuleOperate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FilterChainOperationResponse"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Operate forwarding rules",
+				"tags": [
+					"Firewall"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [],
+					"formatEN": "update port forward rules",
+					"formatZH": "更新端口转发规则",
+					"paramKeys": []
+				}
+			}
+		},
+		"/hosts/firewall/forward/search": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.ForwardRuleSearch"
 						}
 					}
 				],
@@ -18564,97 +19962,10 @@ const docTemplate = `{
 						"Timestamp": []
 					}
 				],
-				"summary": "search iptables filter rules",
+				"summary": "Page forwarding rules",
 				"tags": [
 					"Firewall"
 				]
-			}
-		},
-		"/hosts/firewall/forward": {
-			"post": {
-				"consumes": [
-					"application/json"
-				],
-				"parameters": [
-					{
-						"description": "request",
-						"in": "body",
-						"name": "request",
-						"required": true,
-						"schema": {
-							"$ref": "#/definitions/dto.ForwardRuleOperate"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "OK"
-					}
-				},
-				"security": [
-					{
-						"ApiKeyAuth": []
-					},
-					{
-						"Timestamp": []
-					}
-				],
-				"summary": "Operate forward rule",
-				"tags": [
-					"Firewall"
-				],
-				"x-panel-log": {
-					"BeforeFunctions": [],
-					"bodyKeys": [],
-					"formatEN": "update port forward rules",
-					"formatZH": "更新端口转发规则",
-					"paramKeys": []
-				}
-			}
-		},
-		"/hosts/firewall/ip": {
-			"post": {
-				"consumes": [
-					"application/json"
-				],
-				"parameters": [
-					{
-						"description": "request",
-						"in": "body",
-						"name": "request",
-						"required": true,
-						"schema": {
-							"$ref": "#/definitions/dto.AddrRuleOperate"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "OK"
-					}
-				},
-				"security": [
-					{
-						"ApiKeyAuth": []
-					},
-					{
-						"Timestamp": []
-					}
-				],
-				"summary": "Operate Ip rule",
-				"tags": [
-					"Firewall"
-				],
-				"x-panel-log": {
-					"BeforeFunctions": [],
-					"bodyKeys": [
-						"strategy",
-						"address"
-					],
-					"formatEN": "create address rules [strategy][address]",
-					"formatZH": "添加 ip 规则 [strategy] [address]",
-					"paramKeys": []
-				}
 			}
 		},
 		"/hosts/firewall/operate": {
@@ -18669,13 +19980,16 @@ const docTemplate = `{
 						"name": "request",
 						"required": true,
 						"schema": {
-							"$ref": "#/definitions/dto.FirewallOperation"
+							"$ref": "#/definitions/dto.FirewallLifecycleOperation"
 						}
 					}
 				],
 				"responses": {
 					"200": {
-						"description": "OK"
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallLifecycleOperationResponse"
+						}
 					}
 				},
 				"security": [
@@ -18701,11 +20015,12 @@ const docTemplate = `{
 				}
 			}
 		},
-		"/hosts/firewall/port": {
+		"/hosts/firewall/rules": {
 			"post": {
 				"consumes": [
 					"application/json"
 				],
+				"description": "Creation and import return a taskID immediately; validation and execution results are written to the task log.",
 				"parameters": [
 					{
 						"description": "request",
@@ -18713,52 +20028,7 @@ const docTemplate = `{
 						"name": "request",
 						"required": true,
 						"schema": {
-							"$ref": "#/definitions/dto.PortRuleOperate"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "OK"
-					}
-				},
-				"security": [
-					{
-						"ApiKeyAuth": []
-					},
-					{
-						"Timestamp": []
-					}
-				],
-				"summary": "Create group",
-				"tags": [
-					"Firewall"
-				],
-				"x-panel-log": {
-					"BeforeFunctions": [],
-					"bodyKeys": [
-						"port",
-						"strategy"
-					],
-					"formatEN": "create port rules [strategy][port]",
-					"formatZH": "添加端口规则 [strategy] [port]",
-					"paramKeys": []
-				}
-			}
-		},
-		"/hosts/firewall/search": {
-			"post": {
-				"consumes": [
-					"application/json"
-				],
-				"parameters": [
-					{
-						"description": "request",
-						"in": "body",
-						"name": "request",
-						"required": true,
-						"schema": {
-							"$ref": "#/definitions/dto.RuleSearch"
+							"$ref": "#/definitions/dto.FirewallRuleCreate"
 						}
 					}
 				],
@@ -18766,7 +20036,19 @@ const docTemplate = `{
 					"200": {
 						"description": "OK",
 						"schema": {
-							"$ref": "#/definitions/dto.PageResult"
+							"$ref": "#/definitions/dto.FirewallRuleCreateResponse"
+						}
+					},
+					"400": {
+						"description": "Bad Request",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					},
+					"409": {
+						"description": "Conflict",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
 						}
 					}
 				},
@@ -18778,13 +20060,110 @@ const docTemplate = `{
 						"Timestamp": []
 					}
 				],
-				"summary": "Page firewall rules",
+				"summary": "Queue firewall rule creation",
+				"tags": [
+					"Firewall"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [],
+					"formatEN": "create firewall rules",
+					"formatZH": "添加防火墙规则",
+					"paramKeys": []
+				}
+			}
+		},
+		"/hosts/firewall/rules/backups": {
+			"get": {
+				"parameters": [
+					{
+						"default": "system",
+						"description": "Firewall subsystem",
+						"enum": [
+							"system",
+							"forwarding",
+							"docker"
+						],
+						"in": "query",
+						"name": "subsystem",
+						"type": "string"
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallRuleBackups"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "List firewall rule backups",
 				"tags": [
 					"Firewall"
 				]
 			}
 		},
-		"/hosts/firewall/update/addr": {
+		"/hosts/firewall/rules/delete": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"description": "Deletes non-whitelist rules by scope and instance key. Returns a taskID immediately; results are written to the task log.",
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallRuleDelete"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallRuleDeleteResponse"
+						}
+					},
+					"400": {
+						"description": "Bad Request",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Queue firewall rule deletion",
+				"tags": [
+					"Firewall"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [],
+					"formatEN": "delete firewall rules",
+					"formatZH": "删除防火墙规则",
+					"paramKeys": []
+				}
+			}
+		},
+		"/hosts/firewall/rules/native/detail": {
 			"post": {
 				"consumes": [
 					"application/json"
@@ -18796,7 +20175,313 @@ const docTemplate = `{
 						"name": "request",
 						"required": true,
 						"schema": {
-							"$ref": "#/definitions/dto.AddrRuleUpdate"
+							"$ref": "#/definitions/dto.FirewallNativeDetail"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"type": "string"
+						}
+					},
+					"400": {
+						"description": "Bad Request",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Load one provider-native firewall object definition",
+				"tags": [
+					"Firewall"
+				]
+			}
+		},
+		"/hosts/firewall/rules/reorder": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallRuleReorder"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					},
+					"400": {
+						"description": "Bad Request",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Reorder a firewall rule",
+				"tags": [
+					"Firewall"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [],
+					"formatEN": "reorder firewall rule",
+					"formatZH": "调整防火墙规则顺序",
+					"paramKeys": []
+				}
+			}
+		},
+		"/hosts/firewall/rules/reset": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallRuleReset"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallRuleResetResponse"
+						}
+					},
+					"400": {
+						"description": "Bad Request",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Reset firewall rules",
+				"tags": [
+					"Firewall"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [],
+					"formatEN": "reset firewall rules",
+					"formatZH": "重置防火墙规则",
+					"paramKeys": []
+				}
+			}
+		},
+		"/hosts/firewall/rules/search": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallRuleInventory"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallRuleInventoryResponse"
+						}
+					},
+					"400": {
+						"description": "Bad Request",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "List unified firewall v2 rules",
+				"tags": [
+					"Firewall"
+				]
+			}
+		},
+		"/hosts/firewall/rules/update": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallRuleUpdate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					},
+					"400": {
+						"description": "Bad Request",
+						"schema": {
+							"$ref": "#/definitions/dto.Response"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Update a firewall rule",
+				"tags": [
+					"Firewall"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [],
+					"formatEN": "update firewall rule",
+					"formatZH": "更新防火墙规则",
+					"paramKeys": []
+				}
+			}
+		},
+		"/hosts/firewall/settings": {
+			"get": {
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallSettings"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Load firewall settings",
+				"tags": [
+					"Firewall"
+				]
+			}
+		},
+		"/hosts/firewall/settings/ipv6": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallIPv6Operation"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.FilterChainOperationResponse"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Update firewall IPv6 support",
+				"tags": [
+					"Firewall"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"status"
+					],
+					"formatEN": "Set firewall IPv6 support to [status]",
+					"formatZH": "设置防火墙 IPv6 支持为 [status]",
+					"paramKeys": []
+				}
+			}
+		},
+		"/hosts/firewall/settings/operate": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallBackendOperation"
 						}
 					}
 				],
@@ -18813,17 +20498,29 @@ const docTemplate = `{
 						"Timestamp": []
 					}
 				],
-				"summary": "Update Ip rule",
+				"summary": "Operate firewall backend",
 				"tags": [
 					"Firewall"
-				]
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"subsystem",
+						"backend",
+						"operation"
+					],
+					"formatEN": "[operation] firewall [subsystem] backend [backend]",
+					"formatZH": "防火墙子系统 [subsystem] 后端 [operation] [backend]",
+					"paramKeys": []
+				}
 			}
 		},
-		"/hosts/firewall/update/description": {
+		"/hosts/firewall/settings/whitelist": {
 			"post": {
 				"consumes": [
 					"application/json"
 				],
+				"description": "Saves whitelist configuration and applies missing allowances; existing rules are not removed.",
 				"parameters": [
 					{
 						"description": "request",
@@ -18831,7 +20528,7 @@ const docTemplate = `{
 						"name": "request",
 						"required": true,
 						"schema": {
-							"$ref": "#/definitions/dto.UpdateFirewallDescription"
+							"$ref": "#/definitions/dto.FirewallPortWhitelistCreate"
 						}
 					}
 				],
@@ -18848,17 +20545,27 @@ const docTemplate = `{
 						"Timestamp": []
 					}
 				],
-				"summary": "Update rule description",
+				"summary": "Create firewall port whitelist rules",
 				"tags": [
 					"Firewall"
-				]
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"rule"
+					],
+					"formatEN": "create firewall port whitelist",
+					"formatZH": "创建防火墙端口白名单",
+					"paramKeys": []
+				}
 			}
 		},
-		"/hosts/firewall/update/port": {
+		"/hosts/firewall/settings/whitelist/delete": {
 			"post": {
 				"consumes": [
 					"application/json"
 				],
+				"description": "Removes whitelist configuration; existing firewall rules are not removed.",
 				"parameters": [
 					{
 						"description": "request",
@@ -18866,7 +20573,7 @@ const docTemplate = `{
 						"name": "request",
 						"required": true,
 						"schema": {
-							"$ref": "#/definitions/dto.PortRuleUpdate"
+							"$ref": "#/definitions/dto.FirewallPortWhitelistDelete"
 						}
 					}
 				],
@@ -18883,10 +20590,65 @@ const docTemplate = `{
 						"Timestamp": []
 					}
 				],
-				"summary": "Update port rule",
+				"summary": "Delete firewall port whitelist rules",
 				"tags": [
 					"Firewall"
-				]
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"rules"
+					],
+					"formatEN": "delete firewall port whitelist",
+					"formatZH": "删除防火墙端口白名单",
+					"paramKeys": []
+				}
+			}
+		},
+		"/hosts/firewall/settings/whitelist/update": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"description": "Saves whitelist configuration and applies missing allowances; existing rules are not removed.",
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.FirewallPortWhitelistUpdate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Update firewall port whitelist rules",
+				"tags": [
+					"Firewall"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"oldRule",
+						"rule"
+					],
+					"formatEN": "update firewall port whitelist",
+					"formatZH": "编辑防火墙端口白名单",
+					"paramKeys": []
+				}
 			}
 		},
 		"/hosts/info": {
@@ -18926,6 +20688,17 @@ const docTemplate = `{
 		},
 		"/hosts/monitor/clean": {
 			"post": {
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.MonitorClean"
+						}
+					}
+				],
 				"responses": {
 					"200": {
 						"description": "OK"
@@ -18939,15 +20712,17 @@ const docTemplate = `{
 						"Timestamp": []
 					}
 				],
-				"summary": "Clean monitor data",
+				"summary": "Clean host or GPU monitor data",
 				"tags": [
 					"Monitor"
 				],
 				"x-panel-log": {
 					"BeforeFunctions": [],
-					"bodyKeys": [],
-					"formatEN": "clean monitor datas",
-					"formatZH": "清空监控数据",
+					"bodyKeys": [
+						"type"
+					],
+					"formatEN": "clean [type] monitoring data",
+					"formatZH": "清空 [type] 监控数据",
 					"paramKeys": []
 				}
 			}
@@ -19667,6 +21442,18 @@ const docTemplate = `{
 						"in": "query",
 						"name": "command",
 						"type": "string"
+					},
+					{
+						"description": "session id to reattach",
+						"in": "query",
+						"name": "session",
+						"type": "string"
+					},
+					{
+						"description": "allow recovery after an unexpected disconnect",
+						"in": "query",
+						"name": "terminalPersistent",
+						"type": "boolean"
 					}
 				],
 				"responses": {
@@ -19688,6 +21475,88 @@ const docTemplate = `{
 				]
 			}
 		},
+		"/hosts/terminal/sessions/close": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.TerminalSessionClose"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Close a terminal session",
+				"tags": [
+					"Terminal"
+				]
+			}
+		},
+		"/hosts/terminal/sessions/closeAll": {
+			"post": {
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"tags": [
+					"Terminal"
+				]
+			}
+		},
+		"/hosts/terminal/sessions/search": {
+			"post": {
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"items": {
+								"$ref": "#/definitions/terminal.Info"
+							},
+							"type": "array"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "List the caller's live terminal sessions",
+				"tags": [
+					"Terminal"
+				]
+			}
+		},
 		"/hosts/terminal/ssh": {
 			"get": {
 				"parameters": [
@@ -19702,6 +21571,24 @@ const docTemplate = `{
 						"in": "query",
 						"name": "command",
 						"type": "string"
+					},
+					{
+						"description": "session id to reattach",
+						"in": "query",
+						"name": "session",
+						"type": "string"
+					},
+					{
+						"description": "session title shown in the session list",
+						"in": "query",
+						"name": "title",
+						"type": "string"
+					},
+					{
+						"description": "allow recovery after an unexpected disconnect",
+						"in": "query",
+						"name": "terminalPersistent",
+						"type": "boolean"
 					}
 				],
 				"responses": {
@@ -21092,11 +22979,9 @@ const docTemplate = `{
 				],
 				"x-panel-log": {
 					"BeforeFunctions": [],
-					"bodyKeys": [
-						"id"
-					],
-					"formatEN": "Delete runtime [id]",
-					"formatZH": "删除运行环境 [id]",
+					"bodyKeys": [],
+					"formatEN": "Delete runtime [name]",
+					"formatZH": "删除运行环境 [name]",
 					"paramKeys": []
 				}
 			}
@@ -21291,12 +23176,21 @@ const docTemplate = `{
 					"Runtime"
 				],
 				"x-panel-log": {
-					"BeforeFunctions": [],
-					"bodyKeys": [
-						"id"
+					"BeforeFunctions": [
+						{
+							"db": "runtimes",
+							"input_column": "id",
+							"input_value": "ID",
+							"isList": false,
+							"output_column": "name",
+							"output_value": "name"
+						}
 					],
-					"formatEN": "Operate runtime [id]",
-					"formatZH": "操作运行环境 [id]",
+					"bodyKeys": [
+						"ID"
+					],
+					"formatEN": "Operate runtime [name]",
+					"formatZH": "操作运行环境 [name]",
 					"paramKeys": []
 				}
 			}
@@ -25417,6 +27311,41 @@ const docTemplate = `{
 				}
 			}
 		},
+		"/websites/ca/import": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/request.WebsiteCAImport"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Import website CA from PEM or server files",
+				"tags": [
+					"Website CA"
+				]
+			}
+		},
 		"/websites/ca/obtain": {
 			"post": {
 				"consumes": [
@@ -25556,6 +27485,39 @@ const docTemplate = `{
 					}
 				],
 				"summary": "Page website ca",
+				"tags": [
+					"Website CA"
+				]
+			}
+		},
+		"/websites/ca/upload": {
+			"post": {
+				"consumes": [
+					"multipart/form-data"
+				],
+				"parameters": [
+					{
+						"description": "ZIP containing ca.crt and ca.key",
+						"in": "formData",
+						"name": "file",
+						"required": true,
+						"type": "file"
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Upload website CA archive",
 				"tags": [
 					"Website CA"
 				]
@@ -27181,14 +29143,14 @@ const docTemplate = `{
 						{
 							"db": "websites",
 							"input_column": "id",
-							"input_value": "websiteId",
+							"input_value": "websiteID",
 							"isList": false,
 							"output_column": "primary_domain",
 							"output_value": "domain"
 						}
 					],
 					"bodyKeys": [
-						"websiteId"
+						"websiteID"
 					],
 					"formatEN": "php version update [domain]",
 					"formatZH": "php 版本变更 [domain]",
@@ -28716,6 +30678,467 @@ const docTemplate = `{
 				]
 			}
 		},
+		"/websites/templates": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/request.WebsiteTemplateCreate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Create website template",
+				"tags": [
+					"Website Template"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"name"
+					],
+					"formatEN": "Create website template [name]",
+					"formatZH": "创建网站模板 [name]",
+					"paramKeys": []
+				}
+			}
+		},
+		"/websites/templates/del": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.OperateByID"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Delete website template",
+				"tags": [
+					"Website Template"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [
+						{
+							"db": "website_templates",
+							"input_column": "id",
+							"input_value": "id",
+							"isList": false,
+							"output_column": "name",
+							"output_value": "name"
+						}
+					],
+					"bodyKeys": [
+						"id"
+					],
+					"formatEN": "Delete website template [name]",
+					"formatZH": "删除网站模板 [name]",
+					"paramKeys": []
+				}
+			}
+		},
+		"/websites/templates/get": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.OperateByID"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/response.WebsiteTemplateDTO"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Get website template",
+				"tags": [
+					"Website Template"
+				]
+			}
+		},
+		"/websites/templates/outputs": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/request.WebsiteTemplateOutputCreate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Create website template output",
+				"tags": [
+					"Website Template"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"name"
+					],
+					"formatEN": "Generate template output [name]",
+					"formatZH": "生成模板产物 [name]",
+					"paramKeys": []
+				}
+			}
+		},
+		"/websites/templates/outputs/del": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.OperateByID"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Delete website template output",
+				"tags": [
+					"Website Template"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [
+						{
+							"db": "website_template_outputs",
+							"input_column": "id",
+							"input_value": "id",
+							"isList": false,
+							"output_column": "name",
+							"output_value": "name"
+						}
+					],
+					"bodyKeys": [
+						"id"
+					],
+					"formatEN": "Delete template output [name]",
+					"formatZH": "删除模板产物 [name]",
+					"paramKeys": []
+				}
+			}
+		},
+		"/websites/templates/outputs/get": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/dto.OperateByID"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/response.WebsiteTemplateOutputDTO"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Get website template output",
+				"tags": [
+					"Website Template"
+				]
+			}
+		},
+		"/websites/templates/outputs/search": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/request.WebsiteTemplateOutputSearch"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.PageResult"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Page website template outputs",
+				"tags": [
+					"Website Template"
+				]
+			}
+		},
+		"/websites/templates/preview": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/request.WebsitePreviewReq"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/response.WebsitePreviewDTO"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Preview website template",
+				"tags": [
+					"Website Template"
+				]
+			}
+		},
+		"/websites/templates/search": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/request.WebsiteTemplateSearch"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK",
+						"schema": {
+							"$ref": "#/definitions/dto.PageResult"
+						}
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Page website templates",
+				"tags": [
+					"Website Template"
+				]
+			}
+		},
+		"/websites/templates/update": {
+			"post": {
+				"consumes": [
+					"application/json"
+				],
+				"parameters": [
+					{
+						"description": "request",
+						"in": "body",
+						"name": "request",
+						"required": true,
+						"schema": {
+							"$ref": "#/definitions/request.WebsiteTemplateUpdate"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Update website template",
+				"tags": [
+					"Website Template"
+				],
+				"x-panel-log": {
+					"BeforeFunctions": [],
+					"bodyKeys": [
+						"name"
+					],
+					"formatEN": "Update website template [name]",
+					"formatZH": "更新网站模板 [name]",
+					"paramKeys": []
+				}
+			}
+		},
+		"/websites/templates/upload": {
+			"post": {
+				"consumes": [
+					"multipart/form-data"
+				],
+				"parameters": [
+					{
+						"description": "file",
+						"in": "formData",
+						"name": "file",
+						"required": true,
+						"type": "file"
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "OK"
+					}
+				},
+				"security": [
+					{
+						"ApiKeyAuth": []
+					},
+					{
+						"Timestamp": []
+					}
+				],
+				"summary": "Upload website template zip",
+				"tags": [
+					"Website Template"
+				]
+			}
+		},
 		"/websites/update": {
 			"post": {
 				"consumes": [
@@ -28801,46 +31224,280 @@ const docTemplate = `{
 		}
 	},
 	"definitions": {
-		"dto.AddrRuleOperate": {
+		"dto.APIKeyCreate": {
 			"properties": {
-				"address": {
+				"allowAppBinding": {
+					"default": false,
+					"type": "boolean"
+				},
+				"apiKeyValidityTime": {
+					"example": 120,
+					"maximum": 1440,
+					"minimum": 0,
+					"type": "integer"
+				},
+				"apiTrustedProxies": {
+					"example": "192.0.2.1",
+					"maxLength": 4096,
 					"type": "string"
 				},
 				"description": {
+					"example": "Used by the deployment service",
+					"maxLength": 256,
 					"type": "string"
 				},
-				"id": {
-					"type": "integer"
+				"expiresAt": {
+					"example": "2030-01-01T00:00:00Z",
+					"format": "date-time",
+					"type": "string",
+					"x-nullable": true
 				},
-				"operation": {
-					"enum": [
-						"add",
-						"remove"
-					],
+				"ipWhiteList": {
+					"example": "192.0.2.10",
+					"maxLength": 4096,
 					"type": "string"
 				},
-				"strategy": {
-					"enum": [
-						"accept",
-						"drop"
-					],
+				"name": {
+					"example": "Deployment automation",
+					"maxLength": 64,
+					"minLength": 1,
+					"type": "string"
+				},
+				"requestID": {
+					"description": "Optional client-generated UUID for idempotent retries. Omitted or empty values are generated by the server.",
+					"example": "df1a75a3-5f56-4fa3-9e7a-a573a853d894",
+					"format": "uuid",
 					"type": "string"
 				}
 			},
-			"required": [
-				"address",
-				"operation",
-				"strategy"
-			],
 			"type": "object"
 		},
-		"dto.AddrRuleUpdate": {
+		"dto.APIKeyCreated": {
 			"properties": {
-				"newRule": {
-					"$ref": "#/definitions/dto.AddrRuleOperate"
+				"alreadyCreated": {
+					"type": "boolean"
 				},
-				"oldRule": {
-					"$ref": "#/definitions/dto.AddrRuleOperate"
+				"apiKey": {
+					"type": "string"
+				},
+				"item": {
+					"$ref": "#/definitions/dto.APIKeyItem"
+				}
+			},
+			"type": "object"
+		},
+		"dto.APIKeyItem": {
+			"properties": {
+				"allowAppBinding": {
+					"example": false,
+					"type": "boolean"
+				},
+				"apiKeyValidityTime": {
+					"example": 120,
+					"type": "integer"
+				},
+				"apiTrustedProxies": {
+					"example": "192.0.2.1",
+					"type": "string"
+				},
+				"createdAt": {
+					"format": "date-time",
+					"type": "string",
+					"x-nullable": true
+				},
+				"description": {
+					"example": "Used by the deployment service",
+					"type": "string"
+				},
+				"expiresAt": {
+					"format": "date-time",
+					"type": "string",
+					"x-nullable": true
+				},
+				"id": {
+					"example": "8a8f0f77-1ec8-4d46-8f5a-0ea8807e2d8a",
+					"type": "string"
+				},
+				"ipWhiteList": {
+					"example": "192.0.2.10",
+					"type": "string"
+				},
+				"keyHint": {
+					"example": "abcd••••1234",
+					"type": "string"
+				},
+				"kind": {
+					"enum": [
+						"apiKey",
+						"legacy"
+					],
+					"example": "apiKey",
+					"type": "string"
+				},
+				"name": {
+					"example": "Deployment automation",
+					"type": "string"
+				},
+				"revision": {
+					"example": 1,
+					"minimum": 1,
+					"type": "integer"
+				},
+				"status": {
+					"enum": [
+						"Enable",
+						"Disable",
+						"Revoked",
+						"Expired"
+					],
+					"example": "Enable",
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.APIKeyMutation": {
+			"properties": {
+				"id": {
+					"example": "8a8f0f77-1ec8-4d46-8f5a-0ea8807e2d8a",
+					"type": "string"
+				},
+				"revision": {
+					"example": 1,
+					"minimum": 1,
+					"type": "integer"
+				}
+			},
+			"type": "object"
+		},
+		"dto.APIKeyMutationResult": {
+			"properties": {
+				"terminalClosePending": {
+					"type": "boolean"
+				}
+			},
+			"type": "object"
+		},
+		"dto.APIKeyPage": {
+			"properties": {
+				"items": {
+					"items": {
+						"$ref": "#/definitions/dto.APIKeyItem"
+					},
+					"type": "array"
+				},
+				"total": {
+					"type": "integer"
+				}
+			},
+			"type": "object"
+		},
+		"dto.APIKeyRevealed": {
+			"properties": {
+				"apiKey": {
+					"type": "string"
+				},
+				"id": {
+					"example": "8a8f0f77-1ec8-4d46-8f5a-0ea8807e2d8a",
+					"type": "string"
+				},
+				"revision": {
+					"example": 1,
+					"minimum": 1,
+					"type": "integer"
+				}
+			},
+			"type": "object"
+		},
+		"dto.APIKeySearch": {
+			"properties": {
+				"excludeRevoked": {
+					"default": false,
+					"type": "boolean"
+				},
+				"page": {
+					"example": 1,
+					"minimum": 1,
+					"type": "integer"
+				},
+				"pageSize": {
+					"example": 20,
+					"maximum": 100,
+					"minimum": 1,
+					"type": "integer"
+				}
+			},
+			"type": "object"
+		},
+		"dto.APIKeyStatus": {
+			"properties": {
+				"id": {
+					"example": "8a8f0f77-1ec8-4d46-8f5a-0ea8807e2d8a",
+					"type": "string"
+				},
+				"revision": {
+					"example": 1,
+					"minimum": 1,
+					"type": "integer"
+				},
+				"status": {
+					"enum": [
+						"Enable",
+						"Disable"
+					],
+					"example": "Disable",
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.APIKeyUpdate": {
+			"properties": {
+				"allowAppBinding": {
+					"default": false,
+					"type": "boolean"
+				},
+				"apiKeyValidityTime": {
+					"example": 120,
+					"maximum": 1440,
+					"minimum": 0,
+					"type": "integer"
+				},
+				"apiTrustedProxies": {
+					"example": "192.0.2.1",
+					"maxLength": 4096,
+					"type": "string"
+				},
+				"description": {
+					"example": "Used by the deployment service",
+					"maxLength": 256,
+					"type": "string"
+				},
+				"expiresAt": {
+					"example": "2030-01-01T00:00:00Z",
+					"format": "date-time",
+					"type": "string",
+					"x-nullable": true
+				},
+				"id": {
+					"example": "8a8f0f77-1ec8-4d46-8f5a-0ea8807e2d8a",
+					"type": "string"
+				},
+				"ipWhiteList": {
+					"example": "192.0.2.10",
+					"maxLength": 4096,
+					"type": "string"
+				},
+				"name": {
+					"example": "Deployment automation",
+					"maxLength": 64,
+					"minLength": 1,
+					"type": "string"
+				},
+				"revision": {
+					"example": 1,
+					"minimum": 1,
+					"type": "integer"
 				}
 			},
 			"type": "object"
@@ -28877,6 +31534,9 @@ const docTemplate = `{
 				"rememberApiKey": {
 					"type": "boolean"
 				},
+				"validateAvailability": {
+					"type": "boolean"
+				},
 				"verifyModel": {
 					"type": "string"
 				}
@@ -28907,6 +31567,9 @@ const docTemplate = `{
 				},
 				"apiType": {
 					"type": "string"
+				},
+				"appInstallId": {
+					"type": "integer"
 				},
 				"authMode": {
 					"type": "string"
@@ -29059,6 +31722,9 @@ const docTemplate = `{
 		},
 		"dto.AgentAccountSearch": {
 			"properties": {
+				"apiType": {
+					"type": "string"
+				},
 				"name": {
 					"type": "string"
 				},
@@ -29070,6 +31736,9 @@ const docTemplate = `{
 				},
 				"provider": {
 					"type": "string"
+				},
+				"textOnly": {
+					"type": "boolean"
 				}
 			},
 			"required": [
@@ -29105,6 +31774,9 @@ const docTemplate = `{
 					"type": "boolean"
 				},
 				"syncAgents": {
+					"type": "boolean"
+				},
+				"validateAvailability": {
 					"type": "boolean"
 				},
 				"verifyModel": {
@@ -29537,6 +32209,9 @@ const docTemplate = `{
 		},
 		"dto.AgentCreateReq": {
 			"properties": {
+				"accessHost": {
+					"type": "string"
+				},
 				"accountId": {
 					"type": "integer"
 				},
@@ -29547,7 +32222,9 @@ const docTemplate = `{
 					"enum": [
 						"openclaw",
 						"copaw",
-						"hermes-agent"
+						"hermes-agent",
+						"deepseek-harness",
+						"octop"
 					],
 					"type": "string"
 				},
@@ -29937,6 +32614,12 @@ const docTemplate = `{
 					},
 					"type": "array"
 				},
+				"builtinAvailable": {
+					"type": "boolean"
+				},
+				"builtinManaged": {
+					"type": "boolean"
+				},
 				"connectionMode": {
 					"type": "string"
 				},
@@ -29955,7 +32638,16 @@ const docTemplate = `{
 				"groupPolicy": {
 					"type": "string"
 				},
+				"groupSessionScope": {
+					"type": "string"
+				},
 				"installed": {
+					"type": "boolean"
+				},
+				"legacy": {
+					"type": "boolean"
+				},
+				"legacyConfigured": {
 					"type": "boolean"
 				},
 				"replyMode": {
@@ -30019,6 +32711,15 @@ const docTemplate = `{
 					],
 					"type": "string"
 				},
+				"groupSessionScope": {
+					"enum": [
+						"group",
+						"group_sender",
+						"group_topic",
+						"group_topic_sender"
+					],
+					"type": "string"
+				},
 				"replyMode": {
 					"type": "string"
 				},
@@ -30044,6 +32745,59 @@ const docTemplate = `{
 				"replyMode",
 				"requireMention"
 			],
+			"type": "object"
+		},
+		"dto.AgentFeishuSwitchReq": {
+			"properties": {
+				"agentId": {
+					"type": "integer"
+				},
+				"groupSessionScope": {
+					"enum": [
+						"group",
+						"group_sender",
+						"group_topic",
+						"group_topic_sender"
+					],
+					"type": "string"
+				},
+				"requireMention": {
+					"enum": [
+						"true",
+						"false"
+					],
+					"type": "string"
+				},
+				"streaming": {
+					"type": "boolean"
+				},
+				"taskID": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"agentId",
+				"groupSessionScope",
+				"requireMention",
+				"taskID"
+			],
+			"type": "object"
+		},
+		"dto.AgentFeishuTransition": {
+			"properties": {
+				"confirmed": {
+					"type": "boolean"
+				},
+				"groupSessionScope": {
+					"type": "string"
+				},
+				"requireMention": {
+					"type": "string"
+				},
+				"streaming": {
+					"type": "boolean"
+				}
+			},
 			"type": "object"
 		},
 		"dto.AgentHermesChatSessionDeleteReq": {
@@ -30116,6 +32870,9 @@ const docTemplate = `{
 		},
 		"dto.AgentItem": {
 			"properties": {
+				"accessHost": {
+					"type": "string"
+				},
 				"accountId": {
 					"type": "integer"
 				},
@@ -30217,6 +32974,12 @@ const docTemplate = `{
 					},
 					"type": "array"
 				},
+				"metadata": {
+					"items": {
+						"$ref": "#/definitions/dto.AgentModelMetadata"
+					},
+					"type": "array"
+				},
 				"model": {
 					"type": "string"
 				}
@@ -30237,6 +33000,12 @@ const docTemplate = `{
 					},
 					"type": "array"
 				},
+				"metadata": {
+					"items": {
+						"$ref": "#/definitions/dto.AgentModelMetadata"
+					},
+					"type": "array"
+				},
 				"model": {
 					"type": "string"
 				}
@@ -30244,6 +33013,34 @@ const docTemplate = `{
 			"required": [
 				"accountId",
 				"agentId",
+				"model"
+			],
+			"type": "object"
+		},
+		"dto.AgentModelMetadata": {
+			"properties": {
+				"contextWindow": {
+					"minimum": 0,
+					"type": "integer"
+				},
+				"inputMode": {
+					"enum": [
+						"auto",
+						"text",
+						"image"
+					],
+					"type": "string"
+				},
+				"maxTokens": {
+					"minimum": 0,
+					"type": "integer"
+				},
+				"model": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"inputMode",
 				"model"
 			],
 			"type": "object"
@@ -30290,9 +33087,7 @@ const docTemplate = `{
 				}
 			},
 			"required": [
-				"agentId",
-				"npmRegistry",
-				"userTimezone"
+				"agentId"
 			],
 			"type": "object"
 		},
@@ -30392,6 +33187,143 @@ const docTemplate = `{
 			],
 			"type": "object"
 		},
+		"dto.AgentPluginItem": {
+			"properties": {
+				"enabled": {
+					"type": "boolean"
+				},
+				"id": {
+					"type": "string"
+				},
+				"name": {
+					"type": "string"
+				},
+				"origin": {
+					"type": "string"
+				},
+				"version": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.AgentPluginMarketInstallReq": {
+			"properties": {
+				"agentId": {
+					"type": "integer"
+				},
+				"package": {
+					"maxLength": 200,
+					"type": "string"
+				},
+				"taskID": {
+					"type": "string"
+				},
+				"version": {
+					"maxLength": 100,
+					"type": "string"
+				}
+			},
+			"required": [
+				"agentId",
+				"package",
+				"taskID",
+				"version"
+			],
+			"type": "object"
+		},
+		"dto.AgentPluginOperateReq": {
+			"properties": {
+				"agentId": {
+					"type": "integer"
+				},
+				"operate": {
+					"enum": [
+						"enable",
+						"disable",
+						"update",
+						"uninstall"
+					],
+					"type": "string"
+				},
+				"pluginId": {
+					"maxLength": 200,
+					"type": "string"
+				},
+				"taskID": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"agentId",
+				"operate",
+				"pluginId",
+				"taskID"
+			],
+			"type": "object"
+		},
+		"dto.AgentPluginSearchItem": {
+			"properties": {
+				"categories": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"channel": {
+					"type": "string"
+				},
+				"description": {
+					"type": "string"
+				},
+				"downloads": {
+					"type": "integer"
+				},
+				"name": {
+					"type": "string"
+				},
+				"official": {
+					"type": "boolean"
+				},
+				"package": {
+					"type": "string"
+				},
+				"pluginId": {
+					"type": "string"
+				},
+				"score": {
+					"type": "number"
+				},
+				"verificationTier": {
+					"type": "string"
+				},
+				"version": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.AgentPluginSearchReq": {
+			"properties": {
+				"agentId": {
+					"type": "integer"
+				},
+				"keyword": {
+					"maxLength": 100,
+					"type": "string"
+				},
+				"limit": {
+					"maximum": 100,
+					"minimum": 1,
+					"type": "integer"
+				}
+			},
+			"required": [
+				"agentId",
+				"keyword"
+			],
+			"type": "object"
+		},
 		"dto.AgentPluginStatus": {
 			"properties": {
 				"currentVersion": {
@@ -30458,6 +33390,17 @@ const docTemplate = `{
 				"agentId",
 				"taskID",
 				"type"
+			],
+			"type": "object"
+		},
+		"dto.AgentPluginsReq": {
+			"properties": {
+				"agentId": {
+					"type": "integer"
+				}
+			},
+			"required": [
+				"agentId"
 			],
 			"type": "object"
 		},
@@ -30802,8 +33745,7 @@ const docTemplate = `{
 					"enum": [
 						"SystemIP",
 						"DockerSockPath",
-						"FileRecycleBin",
-						"FirewallPortWhiteList"
+						"FileRecycleBin"
 					],
 					"type": "string"
 				},
@@ -31292,8 +34234,30 @@ const docTemplate = `{
 			],
 			"type": "object"
 		},
+		"dto.AlertConfigStatusUpdate": {
+			"properties": {
+				"id": {
+					"type": "integer"
+				},
+				"status": {
+					"enum": [
+						"Enable",
+						"Disable"
+					],
+					"type": "string"
+				}
+			},
+			"required": [
+				"id",
+				"status"
+			],
+			"type": "object"
+		},
 		"dto.AlertConfigTest": {
 			"properties": {
+				"config": {
+					"type": "string"
+				},
 				"displayName": {
 					"type": "string"
 				},
@@ -31303,6 +34267,9 @@ const docTemplate = `{
 				},
 				"host": {
 					"type": "string"
+				},
+				"id": {
+					"type": "integer"
 				},
 				"password": {
 					"type": "string"
@@ -31314,6 +34281,9 @@ const docTemplate = `{
 					"type": "string"
 				},
 				"sender": {
+					"type": "string"
+				},
+				"type": {
 					"type": "string"
 				},
 				"userName": {
@@ -31332,6 +34302,9 @@ const docTemplate = `{
 				},
 				"id": {
 					"type": "integer"
+				},
+				"revision": {
+					"type": "string"
 				},
 				"status": {
 					"type": "string"
@@ -31386,11 +34359,17 @@ const docTemplate = `{
 				"count": {
 					"type": "integer"
 				},
+				"endTime": {
+					"type": "string"
+				},
 				"page": {
 					"type": "integer"
 				},
 				"pageSize": {
 					"type": "integer"
+				},
+				"startTime": {
+					"type": "string"
 				},
 				"status": {
 					"type": "string"
@@ -31505,6 +34484,9 @@ const docTemplate = `{
 				},
 				"apiKeyValidityTime": {
 					"type": "integer"
+				},
+				"apiTrustedProxies": {
+					"type": "string"
 				},
 				"ipWhiteList": {
 					"type": "string"
@@ -31727,6 +34709,12 @@ const docTemplate = `{
 				"dockerCompose": {
 					"type": "string"
 				},
+				"feishuConfigured": {
+					"type": "boolean"
+				},
+				"feishuLegacy": {
+					"type": "boolean"
+				},
 				"version": {
 					"type": "string"
 				}
@@ -31883,23 +34871,6 @@ const docTemplate = `{
 			],
 			"type": "object"
 		},
-		"dto.BatchRuleOperate": {
-			"properties": {
-				"rules": {
-					"items": {
-						"$ref": "#/definitions/dto.PortRuleOperate"
-					},
-					"type": "array"
-				},
-				"type": {
-					"type": "string"
-				}
-			},
-			"required": [
-				"type"
-			],
-			"type": "object"
-		},
 		"dto.BindInfo": {
 			"properties": {
 				"bindAddress": {
@@ -32000,11 +34971,14 @@ const docTemplate = `{
 			"properties": {
 				"quicks": {
 					"items": {
-						"$ref": "#/definitions/dto.QuickJump"
+						"$ref": "#/definitions/dto.QuickVisibility"
 					},
 					"type": "array"
 				}
 			},
+			"required": [
+				"quicks"
+			],
 			"type": "object"
 		},
 		"dto.ChangeRedisPass": {
@@ -32495,6 +35469,9 @@ const docTemplate = `{
 		},
 		"dto.ComposeCreate": {
 			"properties": {
+				"dirName": {
+					"type": "string"
+				},
 				"env": {
 					"type": "string"
 				},
@@ -32578,6 +35555,20 @@ const docTemplate = `{
 			"required": [
 				"name",
 				"operation"
+			],
+			"type": "object"
+		},
+		"dto.ComposePin": {
+			"properties": {
+				"isPinned": {
+					"type": "boolean"
+				},
+				"name": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"name"
 			],
 			"type": "object"
 		},
@@ -32824,6 +35815,9 @@ const docTemplate = `{
 		"dto.ContainerListStats": {
 			"properties": {
 				"containerID": {
+					"type": "string"
+				},
+				"containerName": {
 					"type": "string"
 				},
 				"cpuPercent": {
@@ -33291,6 +36285,14 @@ const docTemplate = `{
 				"alertTitle": {
 					"type": "string"
 				},
+				"alertTriggerMode": {
+					"enum": [
+						"failed",
+						"success",
+						"both"
+					],
+					"type": "string"
+				},
 				"appID": {
 					"type": "string"
 				},
@@ -33420,6 +36422,14 @@ const docTemplate = `{
 				"alertTitle": {
 					"type": "string"
 				},
+				"alertTriggerMode": {
+					"enum": [
+						"failed",
+						"success",
+						"both"
+					],
+					"type": "string"
+				},
 				"apps": {
 					"items": {
 						"$ref": "#/definitions/dto.TransHelper"
@@ -33547,6 +36557,15 @@ const docTemplate = `{
 				},
 				"apiKeyValidityTime": {
 					"type": "integer"
+				},
+				"apiTrustedProxies": {
+					"type": "string"
+				},
+				"authSource": {
+					"type": "string"
+				},
+				"authSourceStatus": {
+					"type": "string"
 				},
 				"complexitySetting": {
 					"type": "string"
@@ -33876,6 +36895,12 @@ const docTemplate = `{
 				},
 				"netBytesSent": {
 					"type": "integer"
+				},
+				"npuData": {
+					"items": {
+						"$ref": "#/definitions/dto.NPUInfo"
+					},
+					"type": "array"
 				},
 				"procs": {
 					"type": "integer"
@@ -34356,6 +37381,300 @@ const docTemplate = `{
 			],
 			"type": "object"
 		},
+		"dto.DockerPortGuardBase": {
+			"properties": {
+				"backend": {
+					"type": "string"
+				},
+				"bound": {
+					"type": "boolean"
+				},
+				"initialized": {
+					"type": "boolean"
+				},
+				"ipv4": {
+					"$ref": "#/definitions/dto.DockerPortGuardFamilyStatus"
+				},
+				"ipv6": {
+					"$ref": "#/definitions/dto.DockerPortGuardFamilyStatus"
+				},
+				"ipv6Enabled": {
+					"type": "boolean"
+				},
+				"isExist": {
+					"type": "boolean"
+				},
+				"message": {
+					"type": "string"
+				},
+				"name": {
+					"type": "string"
+				},
+				"version": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.DockerPortGuardContainer": {
+			"properties": {
+				"application": {
+					"type": "string"
+				},
+				"compose": {
+					"type": "string"
+				},
+				"endpoints": {
+					"items": {
+						"$ref": "#/definitions/dto.DockerPortGuardEndpoint"
+					},
+					"type": "array"
+				},
+				"key": {
+					"type": "string"
+				},
+				"name": {
+					"type": "string"
+				},
+				"portGroups": {
+					"items": {
+						"$ref": "#/definitions/dto.DockerPortGuardPortGroup"
+					},
+					"type": "array"
+				}
+			},
+			"type": "object"
+		},
+		"dto.DockerPortGuardEndpoint": {
+			"properties": {
+				"application": {
+					"type": "string"
+				},
+				"compose": {
+					"type": "string"
+				},
+				"containerID": {
+					"type": "string"
+				},
+				"containerName": {
+					"type": "string"
+				},
+				"containerPort": {
+					"type": "integer"
+				},
+				"containerState": {
+					"type": "string"
+				},
+				"effective": {
+					"type": "boolean"
+				},
+				"family": {
+					"type": "string"
+				},
+				"hostIP": {
+					"type": "string"
+				},
+				"hostPort": {
+					"type": "integer"
+				},
+				"managementReason": {
+					"type": "string"
+				},
+				"managementTarget": {
+					"type": "string"
+				},
+				"mode": {
+					"type": "string"
+				},
+				"policyUUID": {
+					"type": "string"
+				},
+				"protocol": {
+					"type": "string"
+				},
+				"sources": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"trafficPath": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.DockerPortGuardFamilyStatus": {
+			"properties": {
+				"bound": {
+					"type": "boolean"
+				},
+				"effective": {
+					"type": "boolean"
+				},
+				"initialized": {
+					"type": "boolean"
+				},
+				"partial": {
+					"type": "boolean"
+				},
+				"reason": {
+					"type": "string"
+				},
+				"state": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.DockerPortGuardList": {
+			"properties": {
+				"base": {
+					"$ref": "#/definitions/dto.DockerPortGuardBase"
+				},
+				"containers": {
+					"items": {
+						"$ref": "#/definitions/dto.DockerPortGuardContainer"
+					},
+					"type": "array"
+				},
+				"orphanPolicies": {
+					"items": {
+						"$ref": "#/definitions/dto.DockerPortGuardEndpoint"
+					},
+					"type": "array"
+				}
+			},
+			"type": "object"
+		},
+		"dto.DockerPortGuardOperation": {
+			"properties": {
+				"backupFile": {
+					"maxLength": 255,
+					"type": "string"
+				},
+				"operation": {
+					"enum": [
+						"initialize",
+						"bind",
+						"unbind"
+					],
+					"type": "string"
+				},
+				"taskID": {
+					"maxLength": 64,
+					"type": "string"
+				}
+			},
+			"required": [
+				"operation"
+			],
+			"type": "object"
+		},
+		"dto.DockerPortGuardPolicy": {
+			"properties": {
+				"family": {
+					"enum": [
+						"ipv4",
+						"ipv6"
+					],
+					"type": "string"
+				},
+				"hostIP": {
+					"maxLength": 45,
+					"type": "string"
+				},
+				"hostPort": {
+					"minimum": 1,
+					"type": "integer"
+				},
+				"mode": {
+					"enum": [
+						"deny_sources",
+						"allow_sources",
+						"deny_all",
+						"accept_sources",
+						"accept_all"
+					],
+					"type": "string"
+				},
+				"protocol": {
+					"enum": [
+						"tcp",
+						"udp"
+					],
+					"type": "string"
+				},
+				"sources": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				}
+			},
+			"required": [
+				"family",
+				"hostIP",
+				"hostPort",
+				"mode",
+				"protocol",
+				"sources"
+			],
+			"type": "object"
+		},
+		"dto.DockerPortGuardPolicyBatch": {
+			"properties": {
+				"import": {
+					"type": "boolean"
+				},
+				"policies": {
+					"items": {
+						"$ref": "#/definitions/dto.DockerPortGuardPolicy"
+					},
+					"minItems": 1,
+					"type": "array"
+				}
+			},
+			"required": [
+				"policies"
+			],
+			"type": "object"
+		},
+		"dto.DockerPortGuardPolicyBatchDelete": {
+			"properties": {
+				"uuids": {
+					"items": {
+						"type": "string"
+					},
+					"minItems": 1,
+					"type": "array"
+				}
+			},
+			"required": [
+				"uuids"
+			],
+			"type": "object"
+		},
+		"dto.DockerPortGuardPortGroup": {
+			"properties": {
+				"endpoint": {
+					"$ref": "#/definitions/dto.DockerPortGuardEndpoint"
+				},
+				"endpoints": {
+					"items": {
+						"$ref": "#/definitions/dto.DockerPortGuardEndpoint"
+					},
+					"type": "array"
+				},
+				"key": {
+					"type": "string"
+				},
+				"label": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
 		"dto.DockerStatus": {
 			"properties": {
 				"isActive": {
@@ -34505,6 +37824,14 @@ const docTemplate = `{
 			],
 			"type": "object"
 		},
+		"dto.FileDownloadPreference": {
+			"properties": {
+				"useServerFilename": {
+					"type": "boolean"
+				}
+			},
+			"type": "object"
+		},
 		"dto.FileManageAIInfo": {
 			"properties": {
 				"aiAccountId": {
@@ -34527,34 +37854,232 @@ const docTemplate = `{
 			],
 			"type": "object"
 		},
-		"dto.FirewallBaseInfo": {
+		"dto.FilterChainOperation": {
 			"properties": {
-				"isActive": {
-					"type": "boolean"
-				},
-				"isBind": {
-					"type": "boolean"
-				},
-				"isExist": {
-					"type": "boolean"
-				},
-				"isInit": {
-					"type": "boolean"
-				},
 				"name": {
 					"type": "string"
 				},
-				"pingStatus": {
+				"operate": {
+					"enum": [
+						"init-base",
+						"bind-base",
+						"unbind-base"
+					],
 					"type": "string"
 				},
-				"version": {
+				"taskID": {
+					"maxLength": 64,
+					"type": "string"
+				}
+			},
+			"required": [
+				"name",
+				"operate"
+			],
+			"type": "object"
+		},
+		"dto.FilterChainOperationResponse": {
+			"properties": {
+				"queued": {
+					"type": "boolean"
+				},
+				"taskID": {
 					"type": "string"
 				}
 			},
 			"type": "object"
 		},
-		"dto.FirewallOperation": {
+		"dto.FirewallBackendFamilyStatus": {
 			"properties": {
+				"available": {
+					"type": "boolean"
+				},
+				"bound": {
+					"type": "boolean"
+				},
+				"initialized": {
+					"type": "boolean"
+				},
+				"partial": {
+					"type": "boolean"
+				},
+				"raInterfaces": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"reason": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallBackendGroup": {
+			"properties": {
+				"current": {
+					"type": "string"
+				},
+				"options": {
+					"items": {
+						"$ref": "#/definitions/dto.FirewallBackendOption"
+					},
+					"type": "array"
+				},
+				"selected": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallBackendOperation": {
+			"properties": {
+				"backend": {
+					"enum": [
+						"firewalld",
+						"ufw",
+						"iptables",
+						"nftables"
+					],
+					"type": "string"
+				},
+				"operation": {
+					"enum": [
+						"select",
+						"initialize",
+						"cleanup"
+					],
+					"type": "string"
+				},
+				"subsystem": {
+					"enum": [
+						"system",
+						"forwarding",
+						"docker"
+					],
+					"type": "string"
+				}
+			},
+			"required": [
+				"backend",
+				"operation",
+				"subsystem"
+			],
+			"type": "object"
+		},
+		"dto.FirewallBackendOption": {
+			"properties": {
+				"active": {
+					"type": "boolean"
+				},
+				"bound": {
+					"type": "boolean"
+				},
+				"implementation": {
+					"type": "string"
+				},
+				"initialized": {
+					"type": "boolean"
+				},
+				"installed": {
+					"type": "boolean"
+				},
+				"ipv4": {
+					"$ref": "#/definitions/dto.FirewallBackendFamilyStatus"
+				},
+				"ipv6": {
+					"$ref": "#/definitions/dto.FirewallBackendFamilyStatus"
+				},
+				"message": {
+					"type": "string"
+				},
+				"name": {
+					"type": "string"
+				},
+				"supportReason": {
+					"type": "string"
+				},
+				"supported": {
+					"type": "boolean"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallFamilyOperation": {
+			"properties": {
+				"backend": {
+					"enum": [
+						"iptables",
+						"nftables"
+					],
+					"type": "string"
+				},
+				"family": {
+					"enum": [
+						"ipv4",
+						"ipv6"
+					],
+					"type": "string"
+				},
+				"operation": {
+					"enum": [
+						"initialize",
+						"repair",
+						"bind"
+					],
+					"type": "string"
+				},
+				"subsystem": {
+					"enum": [
+						"system",
+						"forwarding",
+						"docker"
+					],
+					"type": "string"
+				}
+			},
+			"required": [
+				"backend",
+				"family",
+				"operation",
+				"subsystem"
+			],
+			"type": "object"
+		},
+		"dto.FirewallIPv6Operation": {
+			"properties": {
+				"status": {
+					"enum": [
+						"Enable",
+						"Disable"
+					],
+					"type": "string"
+				}
+			},
+			"required": [
+				"status"
+			],
+			"type": "object"
+		},
+		"dto.FirewallInitializationTask": {
+			"properties": {
+				"backupFile": {
+					"maxLength": 255,
+					"type": "string"
+				},
+				"taskID": {
+					"maxLength": 64,
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallLifecycleOperation": {
+			"properties": {
+				"backupFile": {
+					"maxLength": 255,
+					"type": "string"
+				},
 				"operation": {
 					"enum": [
 						"start",
@@ -34572,6 +38097,529 @@ const docTemplate = `{
 			"required": [
 				"operation"
 			],
+			"type": "object"
+		},
+		"dto.FirewallLifecycleOperationResponse": {
+			"properties": {
+				"queued": {
+					"type": "boolean"
+				},
+				"taskID": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallNativeDetail": {
+			"properties": {
+				"name": {
+					"type": "string"
+				},
+				"nativeKind": {
+					"allOf": [
+						{
+							"$ref": "#/definitions/filter.NativeKind"
+						}
+					],
+					"enum": [
+						"zone_service",
+						"ufw_application"
+					]
+				},
+				"permanent": {
+					"type": "boolean"
+				},
+				"provider": {
+					"enum": [
+						"firewalld",
+						"ufw"
+					],
+					"type": "string"
+				}
+			},
+			"required": [
+				"name",
+				"nativeKind",
+				"provider"
+			],
+			"type": "object"
+		},
+		"dto.FirewallPortWhitelistCreate": {
+			"properties": {
+				"rule": {
+					"$ref": "#/definitions/filter.PortWhitelist"
+				}
+			},
+			"required": [
+				"rule"
+			],
+			"type": "object"
+		},
+		"dto.FirewallPortWhitelistDelete": {
+			"properties": {
+				"rule": {
+					"$ref": "#/definitions/filter.PortWhitelist"
+				}
+			},
+			"required": [
+				"rule"
+			],
+			"type": "object"
+		},
+		"dto.FirewallPortWhitelistUpdate": {
+			"properties": {
+				"oldRule": {
+					"$ref": "#/definitions/filter.PortWhitelist"
+				},
+				"rule": {
+					"$ref": "#/definitions/filter.PortWhitelist"
+				}
+			},
+			"required": [
+				"oldRule",
+				"rule"
+			],
+			"type": "object"
+		},
+		"dto.FirewallRuleBackup": {
+			"properties": {
+				"modifiedAt": {
+					"type": "integer"
+				},
+				"name": {
+					"type": "string"
+				},
+				"provider": {
+					"type": "string"
+				},
+				"ruleCount": {
+					"type": "integer"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallRuleBackups": {
+			"properties": {
+				"directory": {
+					"type": "string"
+				},
+				"files": {
+					"items": {
+						"$ref": "#/definitions/dto.FirewallRuleBackup"
+					},
+					"type": "array"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallRuleCreate": {
+			"properties": {
+				"backupFile": {
+					"maxLength": 255,
+					"type": "string"
+				},
+				"initialize": {
+					"type": "boolean"
+				},
+				"items": {
+					"items": {
+						"$ref": "#/definitions/dto.FirewallRuleCreateItem"
+					},
+					"type": "array"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallRuleCreateFailure": {
+			"properties": {
+				"error": {
+					"type": "string"
+				},
+				"index": {
+					"type": "integer"
+				},
+				"rule": {
+					"$ref": "#/definitions/filter.FirewallRule"
+				},
+				"status": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallRuleCreateItem": {
+			"properties": {
+				"parseStatus": {
+					"$ref": "#/definitions/filter.ParseStatus"
+				},
+				"raw": {
+					"type": "string"
+				},
+				"rule": {
+					"$ref": "#/definitions/filter.FirewallRule"
+				},
+				"sourceKind": {
+					"enum": [
+						"user",
+						"imported"
+					],
+					"type": "string"
+				}
+			},
+			"required": [
+				"rule"
+			],
+			"type": "object"
+		},
+		"dto.FirewallRuleCreateResponse": {
+			"properties": {
+				"errors": {
+					"items": {
+						"$ref": "#/definitions/dto.FirewallRuleCreateFailure"
+					},
+					"type": "array"
+				},
+				"failed": {
+					"type": "integer"
+				},
+				"queued": {
+					"type": "boolean"
+				},
+				"skipped": {
+					"type": "integer"
+				},
+				"succeeded": {
+					"type": "integer"
+				},
+				"taskID": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallRuleDelete": {
+			"properties": {
+				"targets": {
+					"items": {
+						"$ref": "#/definitions/dto.FirewallRuleDeleteItem"
+					},
+					"minItems": 1,
+					"type": "array"
+				}
+			},
+			"required": [
+				"targets"
+			],
+			"type": "object"
+		},
+		"dto.FirewallRuleDeleteFailure": {
+			"properties": {
+				"error": {
+					"type": "string"
+				},
+				"index": {
+					"type": "integer"
+				},
+				"instanceKey": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallRuleDeleteItem": {
+			"properties": {
+				"instanceKey": {
+					"maxLength": 128,
+					"type": "string"
+				},
+				"observed": {
+					"$ref": "#/definitions/filter.ObservedRule"
+				},
+				"scope": {
+					"$ref": "#/definitions/filter.Scope"
+				}
+			},
+			"required": [
+				"instanceKey",
+				"observed",
+				"scope"
+			],
+			"type": "object"
+		},
+		"dto.FirewallRuleDeleteResponse": {
+			"properties": {
+				"errors": {
+					"items": {
+						"$ref": "#/definitions/dto.FirewallRuleDeleteFailure"
+					},
+					"type": "array"
+				},
+				"failed": {
+					"type": "integer"
+				},
+				"queued": {
+					"type": "boolean"
+				},
+				"succeeded": {
+					"type": "integer"
+				},
+				"taskID": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallRuleInventory": {
+			"properties": {
+				"actions": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"all": {
+					"type": "boolean"
+				},
+				"excludeChains": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"families": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"info": {
+					"type": "string"
+				},
+				"page": {
+					"type": "integer"
+				},
+				"pageSize": {
+					"type": "integer"
+				},
+				"scope": {
+					"$ref": "#/definitions/filter.Scope"
+				},
+				"scopes": {
+					"items": {
+						"$ref": "#/definitions/filter.Scope"
+					},
+					"maxItems": 16,
+					"type": "array"
+				}
+			},
+			"required": [
+				"page",
+				"pageSize"
+			],
+			"type": "object"
+		},
+		"dto.FirewallRuleInventoryResponse": {
+			"properties": {
+				"allTotal": {
+					"type": "integer"
+				},
+				"ipv4Range": {
+					"$ref": "#/definitions/filter.PositionRange"
+				},
+				"ipv6Range": {
+					"$ref": "#/definitions/filter.PositionRange"
+				},
+				"items": {
+					"items": {
+						"$ref": "#/definitions/filter.InventoryItem"
+					},
+					"type": "array"
+				},
+				"notices": {
+					"items": {
+						"$ref": "#/definitions/filter.ScopeNotice"
+					},
+					"type": "array"
+				},
+				"total": {
+					"type": "integer"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallRuleReorder": {
+			"properties": {
+				"instanceKey": {
+					"maxLength": 128,
+					"type": "string"
+				},
+				"priority": {
+					"type": "integer"
+				},
+				"scope": {
+					"$ref": "#/definitions/filter.Scope"
+				},
+				"targetPosition": {
+					"type": "integer"
+				}
+			},
+			"required": [
+				"instanceKey",
+				"scope"
+			],
+			"type": "object"
+		},
+		"dto.FirewallRuleReset": {
+			"properties": {
+				"backup": {
+					"default": true,
+					"type": "boolean"
+				},
+				"provider": {
+					"enum": [
+						"firewalld",
+						"ufw",
+						"iptables",
+						"nftables"
+					],
+					"type": "string"
+				},
+				"subsystem": {
+					"enum": [
+						"system",
+						"forwarding",
+						"docker"
+					],
+					"type": "string"
+				},
+				"withDockerRestart": {
+					"type": "boolean"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallRuleResetResponse": {
+			"properties": {
+				"backupPath": {
+					"type": "string"
+				},
+				"disabled": {
+					"type": "boolean"
+				},
+				"removed": {
+					"type": "integer"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallRuleUpdate": {
+			"properties": {
+				"description": {
+					"type": "string"
+				},
+				"instanceKey": {
+					"maxLength": 128,
+					"type": "string"
+				},
+				"orderIndex": {
+					"type": "integer"
+				},
+				"priority": {
+					"type": "integer"
+				},
+				"rule": {
+					"$ref": "#/definitions/filter.FirewallRule"
+				},
+				"scope": {
+					"$ref": "#/definitions/filter.Scope"
+				}
+			},
+			"required": [
+				"instanceKey",
+				"scope"
+			],
+			"type": "object"
+		},
+		"dto.FirewallSettings": {
+			"properties": {
+				"docker": {
+					"$ref": "#/definitions/dto.FirewallBackendGroup"
+				},
+				"forwarding": {
+					"$ref": "#/definitions/dto.FirewallBackendGroup"
+				},
+				"ipv6Enabled": {
+					"type": "boolean"
+				},
+				"panelPort": {
+					"type": "string"
+				},
+				"pingStatus": {
+					"type": "string"
+				},
+				"portWhiteList": {
+					"items": {
+						"$ref": "#/definitions/filter.PortWhitelist"
+					},
+					"type": "array"
+				},
+				"sshPort": {
+					"type": "string"
+				},
+				"system": {
+					"$ref": "#/definitions/dto.FirewallBackendGroup"
+				}
+			},
+			"type": "object"
+		},
+		"dto.FirewallSubsystemStatus": {
+			"properties": {
+				"backend": {
+					"type": "string"
+				},
+				"conflictBackend": {
+					"type": "string"
+				},
+				"ipv4": {
+					"$ref": "#/definitions/dto.FirewallBackendFamilyStatus"
+				},
+				"ipv6": {
+					"$ref": "#/definitions/dto.FirewallBackendFamilyStatus"
+				},
+				"ipv6Enabled": {
+					"type": "boolean"
+				},
+				"isActive": {
+					"type": "boolean"
+				},
+				"isBind": {
+					"type": "boolean"
+				},
+				"isExist": {
+					"type": "boolean"
+				},
+				"isInit": {
+					"type": "boolean"
+				},
+				"lifecycleTaskID": {
+					"type": "string"
+				},
+				"message": {
+					"type": "string"
+				},
+				"name": {
+					"type": "string"
+				},
+				"pingStatus": {
+					"type": "string"
+				},
+				"reason": {
+					"type": "string"
+				},
+				"version": {
+					"type": "string"
+				}
+			},
 			"type": "object"
 		},
 		"dto.ForBuckets": {
@@ -34612,54 +38660,95 @@ const docTemplate = `{
 		},
 		"dto.ForwardRuleOperate": {
 			"properties": {
-				"forceDelete": {
+				"import": {
 					"type": "boolean"
 				},
 				"rules": {
 					"items": {
-						"properties": {
-							"interface": {
-								"type": "string"
-							},
-							"num": {
-								"type": "string"
-							},
-							"operation": {
-								"enum": [
-									"add",
-									"remove"
-								],
-								"type": "string"
-							},
-							"port": {
-								"type": "string"
-							},
-							"protocol": {
-								"enum": [
-									"tcp",
-									"udp",
-									"tcp/udp"
-								],
-								"type": "string"
-							},
-							"targetIP": {
-								"type": "string"
-							},
-							"targetPort": {
-								"type": "string"
-							}
-						},
-						"required": [
-							"operation",
-							"port",
-							"protocol",
-							"targetPort"
-						],
-						"type": "object"
+						"$ref": "#/definitions/dto.ForwardRuleOperation"
 					},
+					"minItems": 1,
 					"type": "array"
 				}
 			},
+			"required": [
+				"rules"
+			],
+			"type": "object"
+		},
+		"dto.ForwardRuleOperation": {
+			"properties": {
+				"family": {
+					"enum": [
+						"ipv4",
+						"ipv6"
+					],
+					"type": "string"
+				},
+				"interface": {
+					"type": "string"
+				},
+				"num": {
+					"type": "string"
+				},
+				"operation": {
+					"enum": [
+						"add",
+						"remove"
+					],
+					"type": "string"
+				},
+				"port": {
+					"type": "string"
+				},
+				"protocol": {
+					"enum": [
+						"tcp",
+						"udp",
+						"tcp/udp"
+					],
+					"type": "string"
+				},
+				"targetIP": {
+					"type": "string"
+				},
+				"targetPort": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"operation",
+				"port",
+				"protocol",
+				"targetPort"
+			],
+			"type": "object"
+		},
+		"dto.ForwardRuleSearch": {
+			"properties": {
+				"all": {
+					"type": "boolean"
+				},
+				"info": {
+					"type": "string"
+				},
+				"page": {
+					"type": "integer"
+				},
+				"pageSize": {
+					"type": "integer"
+				},
+				"status": {
+					"type": "string"
+				},
+				"strategy": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"page",
+				"pageSize"
+			],
 			"type": "object"
 		},
 		"dto.FtpBaseInfo": {
@@ -34742,6 +38831,12 @@ const docTemplate = `{
 		},
 		"dto.GPUInfo": {
 			"properties": {
+				"busID": {
+					"type": "string"
+				},
+				"chipIndex": {
+					"type": "integer"
+				},
 				"fanSpeed": {
 					"type": "string"
 				},
@@ -34763,6 +38858,9 @@ const docTemplate = `{
 				"memoryUsage": {
 					"type": "string"
 				},
+				"npuIndex": {
+					"type": "integer"
+				},
 				"performanceState": {
 					"type": "string"
 				},
@@ -34776,6 +38874,9 @@ const docTemplate = `{
 					"type": "string"
 				},
 				"temperature": {
+					"type": "string"
+				},
+				"type": {
 					"type": "string"
 				}
 			},
@@ -35210,101 +39311,6 @@ const docTemplate = `{
 			},
 			"type": "object"
 		},
-		"dto.IptablesBatchOperate": {
-			"properties": {
-				"rules": {
-					"items": {
-						"$ref": "#/definitions/dto.IptablesRuleOp"
-					},
-					"type": "array"
-				}
-			},
-			"type": "object"
-		},
-		"dto.IptablesOp": {
-			"properties": {
-				"name": {
-					"enum": [
-						"1PANEL_INPUT",
-						"1PANEL_OUTPUT",
-						"1PANEL_BASIC"
-					],
-					"type": "string"
-				},
-				"operate": {
-					"enum": [
-						"init-base",
-						"init-forward",
-						"init-advance",
-						"bind-base",
-						"unbind-base",
-						"bind",
-						"unbind"
-					],
-					"type": "string"
-				}
-			},
-			"required": [
-				"name",
-				"operate"
-			],
-			"type": "object"
-		},
-		"dto.IptablesRuleOp": {
-			"properties": {
-				"chain": {
-					"enum": [
-						"1PANEL_BASIC",
-						"1PANEL_BASIC_BEFORE",
-						"1PANEL_INPUT",
-						"1PANEL_OUTPUT"
-					],
-					"type": "string"
-				},
-				"description": {
-					"type": "string"
-				},
-				"dstIP": {
-					"type": "string"
-				},
-				"dstPort": {
-					"type": "integer"
-				},
-				"id": {
-					"type": "integer"
-				},
-				"operation": {
-					"enum": [
-						"add",
-						"remove"
-					],
-					"type": "string"
-				},
-				"protocol": {
-					"type": "string"
-				},
-				"srcIP": {
-					"type": "string"
-				},
-				"srcPort": {
-					"type": "integer"
-				},
-				"strategy": {
-					"enum": [
-						"accept",
-						"drop",
-						"reject"
-					],
-					"type": "string"
-				}
-			},
-			"required": [
-				"chain",
-				"operation",
-				"strategy"
-			],
-			"type": "object"
-		},
 		"dto.LauncherOption": {
 			"properties": {
 				"isShow": {
@@ -35385,6 +39391,9 @@ const docTemplate = `{
 		},
 		"dto.Login": {
 			"properties": {
+				"authSource": {
+					"type": "string"
+				},
 				"captcha": {
 					"type": "string"
 				},
@@ -35450,6 +39459,9 @@ const docTemplate = `{
 				},
 				"needCaptcha": {
 					"type": "boolean"
+				},
+				"panelCache": {
+					"type": "string"
 				},
 				"panelName": {
 					"type": "string"
@@ -35755,6 +39767,21 @@ const docTemplate = `{
 			],
 			"type": "object"
 		},
+		"dto.MonitorClean": {
+			"properties": {
+				"type": {
+					"enum": [
+						"host",
+						"gpu"
+					],
+					"type": "string"
+				}
+			},
+			"required": [
+				"type"
+			],
+			"type": "object"
+		},
 		"dto.MonitorData": {
 			"properties": {
 				"date": {
@@ -35775,9 +39802,78 @@ const docTemplate = `{
 		},
 		"dto.MonitorGPUData": {
 			"properties": {
+				"aiCPUUtil": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"bucketSeconds": {
+					"type": "integer"
+				},
+				"computeUtil": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"copyUtil": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"ctrlCPUUtil": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
 				"date": {
 					"items": {
 						"type": "string"
+					},
+					"type": "array"
+				},
+				"ddrBandwidth": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"ddrTotal": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"ddrUsed": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"decoderUtil": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"encoderUtil": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"fanRPM": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"frequencyValue": {
+					"items": {
+						"type": "number"
 					},
 					"type": "array"
 				},
@@ -35796,7 +39892,85 @@ const docTemplate = `{
 					},
 					"type": "array"
 				},
+				"hbmBandwidth": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"hbmTotal": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"hbmUsed": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"hotspotTemperature": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"hugepagesTotal": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"hugepagesUsed": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"jpegUtil": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"mediaFrequency": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"mediaUtil": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"memoryActivity": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"memoryBandwidth": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"memoryFrequencyValue": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
 				"memoryPercent": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"memoryTemperatureValue": {
 					"items": {
 						"type": "number"
 					},
@@ -35809,6 +39983,12 @@ const docTemplate = `{
 					"type": "array"
 				},
 				"memoryUsed": {
+					"items": {
+						"type": "number"
+					},
+					"type": "array"
+				},
+				"ofaUtil": {
 					"items": {
 						"type": "number"
 					},
@@ -35834,13 +40014,16 @@ const docTemplate = `{
 				},
 				"processCount": {
 					"items": {
-						"type": "integer"
+						"type": "number"
 					},
 					"type": "array"
 				},
+				"sampleCount": {
+					"type": "integer"
+				},
 				"speedValue": {
 					"items": {
-						"type": "integer"
+						"type": "number"
 					},
 					"type": "array"
 				},
@@ -35855,8 +40038,21 @@ const docTemplate = `{
 		},
 		"dto.MonitorGPUSearch": {
 			"properties": {
+				"aggregation": {
+					"enum": [
+						"avg",
+						"max"
+					],
+					"type": "string"
+				},
+				"deviceID": {
+					"type": "string"
+				},
 				"endTime": {
 					"type": "string"
+				},
+				"legacy": {
+					"type": "boolean"
 				},
 				"productName": {
 					"type": "string"
@@ -35906,6 +40102,15 @@ const docTemplate = `{
 				"defaultNetwork": {
 					"type": "string"
 				},
+				"gpuMonitorInterval": {
+					"type": "string"
+				},
+				"gpuMonitorStatus": {
+					"type": "string"
+				},
+				"gpuMonitorStoreDays": {
+					"type": "string"
+				},
 				"monitorInterval": {
 					"type": "string"
 				},
@@ -35913,6 +40118,15 @@ const docTemplate = `{
 					"type": "string"
 				},
 				"monitorStoreDays": {
+					"type": "string"
+				},
+				"vllmMonitorInterval": {
+					"type": "string"
+				},
+				"vllmMonitorStatus": {
+					"type": "string"
+				},
+				"vllmMonitorStoreDays": {
 					"type": "string"
 				}
 			},
@@ -35925,6 +40139,12 @@ const docTemplate = `{
 						"MonitorStatus",
 						"MonitorStoreDays",
 						"MonitorInterval",
+						"GPUMonitorStatus",
+						"GPUMonitorStoreDays",
+						"GPUMonitorInterval",
+						"VLLMMonitorStatus",
+						"VLLMMonitorStoreDays",
+						"VLLMMonitorInterval",
 						"DefaultNetwork",
 						"DefaultIO"
 					],
@@ -36330,6 +40550,12 @@ const docTemplate = `{
 				"database": {
 					"type": "string"
 				},
+				"dbs": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
 				"description": {
 					"type": "string"
 				},
@@ -36524,6 +40750,65 @@ const docTemplate = `{
 			},
 			"type": "object"
 		},
+		"dto.NPUInfo": {
+			"properties": {
+				"aiCore": {
+					"type": "string"
+				},
+				"busID": {
+					"type": "string"
+				},
+				"chipIndex": {
+					"type": "integer"
+				},
+				"hbmTotal": {
+					"type": "string"
+				},
+				"hbmUsed": {
+					"type": "string"
+				},
+				"health": {
+					"type": "string"
+				},
+				"hugepagesTotal": {
+					"type": "string"
+				},
+				"hugepagesUsed": {
+					"type": "string"
+				},
+				"index": {
+					"type": "integer"
+				},
+				"memTotal": {
+					"type": "string"
+				},
+				"memUsed": {
+					"type": "string"
+				},
+				"memoryTotal": {
+					"type": "string"
+				},
+				"memoryUsed": {
+					"type": "string"
+				},
+				"npuIndex": {
+					"type": "integer"
+				},
+				"powerDraw": {
+					"type": "string"
+				},
+				"productName": {
+					"type": "string"
+				},
+				"temperature": {
+					"type": "string"
+				},
+				"type": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
 		"dto.NetworkCreate": {
 			"properties": {
 				"auxAddress": {
@@ -36605,7 +40890,8 @@ const docTemplate = `{
 				"ssl",
 				"cache",
 				"http-per",
-				"proxy-cache"
+				"proxy-cache",
+				"brotli"
 			],
 			"type": "string",
 			"x-enum-varnames": [
@@ -36614,8 +40900,23 @@ const docTemplate = `{
 				"SSL",
 				"CACHE",
 				"HttpPer",
-				"ProxyCache"
+				"ProxyCache",
+				"Brotli"
 			]
+		},
+		"dto.NginxModuleArtifact": {
+			"properties": {
+				"checksum": {
+					"type": "string"
+				},
+				"name": {
+					"type": "string"
+				},
+				"path": {
+					"type": "string"
+				}
+			},
+			"type": "object"
 		},
 		"dto.NginxUpstream": {
 			"properties": {
@@ -36776,17 +41077,6 @@ const docTemplate = `{
 				},
 				"websiteID": {
 					"type": "integer"
-				}
-			},
-			"type": "object"
-		},
-		"dto.OllamaModelDropList": {
-			"properties": {
-				"id": {
-					"type": "integer"
-				},
-				"name": {
-					"type": "string"
 				}
 			},
 			"type": "object"
@@ -37181,65 +41471,6 @@ const docTemplate = `{
 			},
 			"type": "object"
 		},
-		"dto.PortRuleOperate": {
-			"properties": {
-				"address": {
-					"type": "string"
-				},
-				"chain": {
-					"type": "string"
-				},
-				"description": {
-					"type": "string"
-				},
-				"id": {
-					"type": "integer"
-				},
-				"operation": {
-					"enum": [
-						"add",
-						"remove"
-					],
-					"type": "string"
-				},
-				"port": {
-					"type": "string"
-				},
-				"protocol": {
-					"enum": [
-						"tcp",
-						"udp",
-						"tcp/udp"
-					],
-					"type": "string"
-				},
-				"strategy": {
-					"enum": [
-						"accept",
-						"drop"
-					],
-					"type": "string"
-				}
-			},
-			"required": [
-				"operation",
-				"port",
-				"protocol",
-				"strategy"
-			],
-			"type": "object"
-		},
-		"dto.PortRuleUpdate": {
-			"properties": {
-				"newRule": {
-					"$ref": "#/definitions/dto.PortRuleOperate"
-				},
-				"oldRule": {
-					"$ref": "#/definitions/dto.PortRuleOperate"
-				}
-			},
-			"type": "object"
-		},
 		"dto.PortUpdate": {
 			"properties": {
 				"serverPort": {
@@ -37479,6 +41710,15 @@ const docTemplate = `{
 				},
 				"editableBaseUrl": {
 					"type": "boolean"
+				},
+				"models": {
+					"items": {
+						"$ref": "#/definitions/dto.ProviderModelInfo"
+					},
+					"type": "array"
+				},
+				"supportsModelDiscovery": {
+					"type": "boolean"
 				}
 			},
 			"type": "object"
@@ -37552,6 +41792,55 @@ const docTemplate = `{
 			},
 			"type": "object"
 		},
+		"dto.QuickDirectoryCreate": {
+			"properties": {
+				"alias": {
+					"type": "string"
+				},
+				"path": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"path"
+			],
+			"type": "object"
+		},
+		"dto.QuickDirectoryDelete": {
+			"properties": {
+				"id": {
+					"type": "integer"
+				},
+				"legacy": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"id"
+			],
+			"type": "object"
+		},
+		"dto.QuickDirectoryUpdate": {
+			"properties": {
+				"alias": {
+					"type": "string"
+				},
+				"id": {
+					"type": "integer"
+				},
+				"legacy": {
+					"type": "boolean"
+				},
+				"path": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"id",
+				"path"
+			],
+			"type": "object"
+		},
 		"dto.QuickJump": {
 			"properties": {
 				"alias": {
@@ -37579,6 +41868,20 @@ const docTemplate = `{
 					"type": "string"
 				}
 			},
+			"type": "object"
+		},
+		"dto.QuickVisibility": {
+			"properties": {
+				"id": {
+					"type": "integer"
+				},
+				"isShow": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"id"
+			],
 			"type": "object"
 		},
 		"dto.RecordFileSize": {
@@ -37637,6 +41940,14 @@ const docTemplate = `{
 				"page",
 				"pageSize"
 			],
+			"type": "object"
+		},
+		"dto.RedisCliInstall": {
+			"properties": {
+				"taskID": {
+					"type": "string"
+				}
+			},
 			"type": "object"
 		},
 		"dto.RedisConf": {
@@ -37845,6 +42156,9 @@ const docTemplate = `{
 					"type": "integer"
 				},
 				"data": {},
+				"errorCode": {
+					"type": "string"
+				},
 				"message": {
 					"type": "string"
 				}
@@ -37857,12 +42171,6 @@ const docTemplate = `{
 					"type": "string"
 				},
 				"encryptionMode": {
-					"enum": [
-						"rsa",
-						"ed25519",
-						"ecdsa",
-						"dsa"
-					],
 					"type": "string"
 				},
 				"id": {
@@ -37884,37 +42192,6 @@ const docTemplate = `{
 					"type": "string"
 				}
 			},
-			"required": [
-				"encryptionMode"
-			],
-			"type": "object"
-		},
-		"dto.RuleSearch": {
-			"properties": {
-				"info": {
-					"type": "string"
-				},
-				"page": {
-					"type": "integer"
-				},
-				"pageSize": {
-					"type": "integer"
-				},
-				"status": {
-					"type": "string"
-				},
-				"strategy": {
-					"type": "string"
-				},
-				"type": {
-					"type": "string"
-				}
-			},
-			"required": [
-				"page",
-				"pageSize",
-				"type"
-			],
 			"type": "object"
 		},
 		"dto.RunningTime": {
@@ -38504,6 +42781,9 @@ const docTemplate = `{
 		},
 		"dto.SearchWithPage": {
 			"properties": {
+				"excludeAppStore": {
+					"type": "boolean"
+				},
 				"info": {
 					"type": "string"
 				},
@@ -38559,6 +42839,9 @@ const docTemplate = `{
 					"type": "string"
 				},
 				"noAuthSetting": {
+					"type": "string"
+				},
+				"panelCache": {
 					"type": "string"
 				},
 				"panelName": {
@@ -39066,6 +43349,62 @@ const docTemplate = `{
 				},
 				"scrollback": {
 					"type": "string"
+				},
+				"showTerminalButton": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"dto.TerminalSessionClose": {
+			"properties": {
+				"id": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"id"
+			],
+			"type": "object"
+		},
+		"dto.TerminalUpdate": {
+			"properties": {
+				"backgroundColor": {
+					"type": "string"
+				},
+				"cursorBlink": {
+					"type": "string"
+				},
+				"cursorStyle": {
+					"type": "string"
+				},
+				"fontFamily": {
+					"type": "string"
+				},
+				"fontSize": {
+					"type": "string"
+				},
+				"foregroundColor": {
+					"type": "string"
+				},
+				"letterSpacing": {
+					"type": "string"
+				},
+				"lineHeight": {
+					"type": "string"
+				},
+				"scrollSensitivity": {
+					"type": "string"
+				},
+				"scrollback": {
+					"type": "string"
+				},
+				"showTerminalButton": {
+					"enum": [
+						"Enable",
+						"Disable"
+					],
+					"type": "string"
 				}
 			},
 			"type": "object"
@@ -39112,45 +43451,6 @@ const docTemplate = `{
 			},
 			"required": [
 				"id"
-			],
-			"type": "object"
-		},
-		"dto.UpdateFirewallDescription": {
-			"properties": {
-				"chain": {
-					"type": "string"
-				},
-				"description": {
-					"type": "string"
-				},
-				"dstIP": {
-					"type": "string"
-				},
-				"dstPort": {
-					"type": "string"
-				},
-				"protocol": {
-					"type": "string"
-				},
-				"srcIP": {
-					"type": "string"
-				},
-				"srcPort": {
-					"type": "string"
-				},
-				"strategy": {
-					"enum": [
-						"accept",
-						"drop"
-					],
-					"type": "string"
-				},
-				"type": {
-					"type": "string"
-				}
-			},
-			"required": [
-				"strategy"
 			],
 			"type": "object"
 		},
@@ -39279,6 +43579,9 @@ const docTemplate = `{
 				"deviceName": {
 					"type": "string"
 				},
+				"gpuUtil": {
+					"type": "string"
+				},
 				"memory": {
 					"type": "string"
 				},
@@ -39286,6 +43589,9 @@ const docTemplate = `{
 					"type": "string"
 				},
 				"memoryUtil": {
+					"type": "string"
+				},
+				"pciBdfAddress": {
 					"type": "string"
 				},
 				"power": {
@@ -39379,6 +43685,283 @@ const docTemplate = `{
 				}
 			},
 			"type": "object"
+		},
+		"filter.Action": {
+			"enum": [
+				"accept",
+				"drop",
+				"reject"
+			],
+			"type": "string",
+			"x-enum-varnames": [
+				"ActionAccept",
+				"ActionDrop",
+				"ActionReject"
+			]
+		},
+		"filter.Direction": {
+			"enum": [
+				"input"
+			],
+			"type": "string",
+			"x-enum-varnames": [
+				"DirectionInput"
+			]
+		},
+		"filter.FirewallRule": {
+			"properties": {
+				"action": {
+					"$ref": "#/definitions/filter.Action"
+				},
+				"connectionStates": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"description": {
+					"type": "string"
+				},
+				"destinationAddress": {
+					"type": "string"
+				},
+				"destinationPort": {
+					"type": "string"
+				},
+				"interface": {
+					"type": "string"
+				},
+				"nativeKind": {
+					"$ref": "#/definitions/filter.NativeKind"
+				},
+				"orderBucket": {
+					"type": "string"
+				},
+				"orderIndex": {
+					"type": "integer"
+				},
+				"priority": {
+					"type": "integer"
+				},
+				"protocol": {
+					"type": "string"
+				},
+				"scope": {
+					"$ref": "#/definitions/filter.Scope"
+				},
+				"sourceAddress": {
+					"type": "string"
+				},
+				"sourcePort": {
+					"type": "string"
+				},
+				"uuid": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"filter.InventoryItem": {
+			"properties": {
+				"descriptionID": {
+					"type": "string"
+				},
+				"isWhitelist": {
+					"type": "boolean"
+				},
+				"observed": {
+					"$ref": "#/definitions/filter.ObservedRule"
+				},
+				"rule": {
+					"$ref": "#/definitions/filter.FirewallRule"
+				}
+			},
+			"type": "object"
+		},
+		"filter.Locator": {
+			"properties": {
+				"canonical": {
+					"type": "string"
+				},
+				"nativeId": {
+					"type": "string"
+				},
+				"position": {
+					"type": "integer"
+				},
+				"provider": {
+					"type": "string"
+				},
+				"scopeKey": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"filter.NativeKind": {
+			"enum": [
+				"rule",
+				"zone_port",
+				"rich_rule",
+				"ufw_rule",
+				"ufw_application",
+				"opaque",
+				"zone_service"
+			],
+			"type": "string",
+			"x-enum-varnames": [
+				"NativeKindRule",
+				"NativeKindZonePort",
+				"NativeKindRichRule",
+				"NativeKindUFWRule",
+				"NativeKindUFWApplication",
+				"NativeKindOpaque",
+				"NativeKindZoneService"
+			]
+		},
+		"filter.ObservedRule": {
+			"properties": {
+				"instanceKey": {
+					"type": "string"
+				},
+				"locator": {
+					"$ref": "#/definitions/filter.Locator"
+				},
+				"marker": {
+					"type": "string"
+				},
+				"parseStatus": {
+					"$ref": "#/definitions/filter.ParseStatus"
+				},
+				"persistence": {
+					"$ref": "#/definitions/filter.PersistenceStatus"
+				},
+				"protected": {
+					"type": "boolean"
+				},
+				"raw": {
+					"type": "string"
+				},
+				"rule": {
+					"$ref": "#/definitions/filter.FirewallRule"
+				},
+				"uncertainFields": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				}
+			},
+			"type": "object"
+		},
+		"filter.ParseStatus": {
+			"enum": [
+				"supported",
+				"partial",
+				"opaque"
+			],
+			"type": "string",
+			"x-enum-varnames": [
+				"ParseStatusSupported",
+				"ParseStatusPartial",
+				"ParseStatusOpaque"
+			]
+		},
+		"filter.PersistenceStatus": {
+			"enum": [
+				"converged",
+				"runtime_only",
+				"permanent_only"
+			],
+			"type": "string",
+			"x-enum-varnames": [
+				"PersistenceStatusConverged",
+				"PersistenceStatusRuntimeOnly",
+				"PersistenceStatusPermanentOnly"
+			]
+		},
+		"filter.PortWhitelist": {
+			"properties": {
+				"port": {
+					"type": "string"
+				},
+				"protocol": {
+					"type": "string"
+				},
+				"sources": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"type": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"filter.PositionRange": {
+			"properties": {
+				"max": {
+					"type": "integer"
+				},
+				"min": {
+					"type": "integer"
+				}
+			},
+			"type": "object"
+		},
+		"filter.Scope": {
+			"properties": {
+				"chain": {
+					"type": "string"
+				},
+				"direction": {
+					"$ref": "#/definitions/filter.Direction"
+				},
+				"family": {
+					"type": "string"
+				},
+				"provider": {
+					"type": "string"
+				},
+				"table": {
+					"type": "string"
+				},
+				"zone": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"filter.ScopeNotice": {
+			"properties": {
+				"code": {
+					"$ref": "#/definitions/filter.ScopeNoticeCode"
+				},
+				"values": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				}
+			},
+			"type": "object"
+		},
+		"filter.ScopeNoticeCode": {
+			"enum": [
+				"managed_scope_inactive",
+				"runtime_permanent_mismatch",
+				"managed_scope_missing",
+				"family_unavailable"
+			],
+			"type": "string",
+			"x-enum-varnames": [
+				"ScopeNoticeManagedScopeInactive",
+				"ScopeNoticeRuntimePermanentMismatch",
+				"ScopeNoticeManagedScopeMissing",
+				"ScopeNoticeFamilyUnavailable"
+			]
 		},
 		"mfa.Otp": {
 			"properties": {
@@ -39544,6 +44127,12 @@ const docTemplate = `{
 				"message": {
 					"type": "string"
 				},
+				"modelAccountBaseURL": {
+					"type": "string"
+				},
+				"modelAccountBaseURLType": {
+					"type": "string"
+				},
 				"name": {
 					"type": "string"
 				},
@@ -39558,6 +44147,9 @@ const docTemplate = `{
 				},
 				"status": {
 					"type": "string"
+				},
+				"syncModelAccount": {
+					"type": "boolean"
 				},
 				"updatedAt": {
 					"type": "string"
@@ -39592,6 +44184,29 @@ const docTemplate = `{
 					"type": "string"
 				},
 				"type": {
+					"type": "string"
+				},
+				"updatedAt": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"model.QuickDirectory": {
+			"properties": {
+				"alias": {
+					"type": "string"
+				},
+				"createdAt": {
+					"type": "string"
+				},
+				"id": {
+					"type": "integer"
+				},
+				"legacy": {
+					"type": "boolean"
+				},
+				"path": {
 					"type": "string"
 				},
 				"updatedAt": {
@@ -40052,6 +44667,18 @@ const docTemplate = `{
 				"memoryUnit": {
 					"type": "string"
 				},
+				"modelAccountBaseURL": {
+					"type": "string"
+				},
+				"modelAccountBaseURLType": {
+					"enum": [
+						"container",
+						"localhost",
+						"systemIP",
+						"custom"
+					],
+					"type": "string"
+				},
 				"name": {
 					"type": "string"
 				},
@@ -40088,6 +44715,9 @@ const docTemplate = `{
 				},
 				"specifyIP": {
 					"type": "string"
+				},
+				"syncModelAccount": {
+					"type": "boolean"
 				},
 				"taskID": {
 					"type": "string"
@@ -40172,6 +44802,9 @@ const docTemplate = `{
 				},
 				"favorite": {
 					"type": "boolean"
+				},
+				"feishuTransition": {
+					"$ref": "#/definitions/dto.AgentFeishuTransition"
 				},
 				"forceDelete": {
 					"type": "boolean"
@@ -40272,6 +44905,18 @@ const docTemplate = `{
 				"memoryUnit": {
 					"type": "string"
 				},
+				"modelAccountBaseURL": {
+					"type": "string"
+				},
+				"modelAccountBaseURLType": {
+					"enum": [
+						"container",
+						"localhost",
+						"systemIP",
+						"custom"
+					],
+					"type": "string"
+				},
 				"params": {
 					"additionalProperties": true,
 					"type": "object"
@@ -40290,6 +44935,9 @@ const docTemplate = `{
 				},
 				"specifyIP": {
 					"type": "string"
+				},
+				"syncModelAccount": {
+					"type": "boolean"
 				},
 				"type": {
 					"type": "string"
@@ -41171,6 +45819,9 @@ const docTemplate = `{
 					},
 					"type": "array"
 				},
+				"taskID": {
+					"type": "string"
+				},
 				"type": {
 					"type": "string"
 				}
@@ -41179,6 +45830,17 @@ const docTemplate = `{
 				"newPath",
 				"oldPaths",
 				"type"
+			],
+			"type": "object"
+		},
+		"request.FileMoveStopReq": {
+			"properties": {
+				"taskID": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"taskID"
 			],
 			"type": "object"
 		},
@@ -41245,6 +45907,22 @@ const docTemplate = `{
 			},
 			"required": [
 				"paths"
+			],
+			"type": "object"
+		},
+		"request.FileProcessRemoveReq": {
+			"properties": {
+				"keys": {
+					"items": {
+						"type": "string"
+					},
+					"maxItems": 1000,
+					"minItems": 1,
+					"type": "array"
+				}
+			},
+			"required": [
+				"keys"
 			],
 			"type": "object"
 		},
@@ -41423,6 +46101,9 @@ const docTemplate = `{
 					"type": "string"
 				},
 				"useProxy": {
+					"type": "boolean"
+				},
+				"useServerFilename": {
 					"type": "boolean"
 				}
 			},
@@ -41954,8 +46635,17 @@ const docTemplate = `{
 		},
 		"request.NginxBuildReq": {
 			"properties": {
+				"force": {
+					"type": "boolean"
+				},
 				"mirror": {
 					"type": "string"
+				},
+				"modules": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
 				},
 				"taskID": {
 					"type": "string"
@@ -42035,8 +46725,20 @@ const docTemplate = `{
 		},
 		"request.NginxModuleUpdate": {
 			"properties": {
+				"buildMode": {
+					"enum": [
+						"dynamic",
+						"static"
+					],
+					"type": "string"
+				},
 				"enable": {
 					"type": "boolean"
+				},
+				"loadOrder": {
+					"maximum": 9999,
+					"minimum": 0,
+					"type": "integer"
 				},
 				"name": {
 					"type": "string"
@@ -42053,6 +46755,13 @@ const docTemplate = `{
 					"type": "string"
 				},
 				"params": {
+					"type": "string"
+				},
+				"provider": {
+					"enum": [
+						"local",
+						"prebuilt"
+					],
 					"type": "string"
 				},
 				"script": {
@@ -42733,6 +47442,9 @@ const docTemplate = `{
 		},
 		"request.RuntimeUpdate": {
 			"properties": {
+				"appDetailId": {
+					"type": "integer"
+				},
 				"clean": {
 					"type": "boolean"
 				},
@@ -43199,6 +47911,38 @@ const docTemplate = `{
 			],
 			"type": "object"
 		},
+		"request.WebsiteCAImport": {
+			"properties": {
+				"certificate": {
+					"type": "string"
+				},
+				"certificatePath": {
+					"type": "string"
+				},
+				"name": {
+					"maxLength": 128,
+					"type": "string"
+				},
+				"privateKey": {
+					"type": "string"
+				},
+				"privateKeyPath": {
+					"type": "string"
+				},
+				"type": {
+					"enum": [
+						"paste",
+						"local"
+					],
+					"type": "string"
+				}
+			},
+			"required": [
+				"name",
+				"type"
+			],
+			"type": "object"
+		},
 		"request.WebsiteCAObtain": {
 			"properties": {
 				"autoRenew": {
@@ -43385,6 +48129,9 @@ const docTemplate = `{
 				},
 				"taskID": {
 					"type": "string"
+				},
+				"templateOutputID": {
+					"type": "integer"
 				},
 				"type": {
 					"type": "string"
@@ -43836,6 +48583,23 @@ const docTemplate = `{
 			},
 			"required": [
 				"websiteID"
+			],
+			"type": "object"
+		},
+		"request.WebsitePreviewReq": {
+			"properties": {
+				"templateID": {
+					"type": "integer"
+				},
+				"variableValues": {
+					"additionalProperties": {
+						"type": "string"
+					},
+					"type": "object"
+				}
+			},
+			"required": [
+				"templateID"
 			],
 			"type": "object"
 		},
@@ -44326,6 +49090,132 @@ const docTemplate = `{
 			],
 			"type": "object"
 		},
+		"request.WebsiteTemplateCreate": {
+			"properties": {
+				"content": {
+					"type": "string"
+				},
+				"filePath": {
+					"type": "string"
+				},
+				"name": {
+					"type": "string"
+				},
+				"remark": {
+					"type": "string"
+				},
+				"type": {
+					"enum": [
+						"single",
+						"multi"
+					],
+					"type": "string"
+				},
+				"variables": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"name",
+				"type"
+			],
+			"type": "object"
+		},
+		"request.WebsiteTemplateOutputCreate": {
+			"properties": {
+				"name": {
+					"type": "string"
+				},
+				"templateID": {
+					"type": "integer"
+				},
+				"variableValues": {
+					"additionalProperties": {
+						"type": "string"
+					},
+					"type": "object"
+				}
+			},
+			"required": [
+				"name",
+				"templateID"
+			],
+			"type": "object"
+		},
+		"request.WebsiteTemplateOutputSearch": {
+			"properties": {
+				"page": {
+					"type": "integer"
+				},
+				"pageSize": {
+					"type": "integer"
+				},
+				"templateID": {
+					"type": "integer"
+				}
+			},
+			"required": [
+				"page",
+				"pageSize"
+			],
+			"type": "object"
+		},
+		"request.WebsiteTemplateSearch": {
+			"properties": {
+				"name": {
+					"type": "string"
+				},
+				"page": {
+					"type": "integer"
+				},
+				"pageSize": {
+					"type": "integer"
+				},
+				"type": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"page",
+				"pageSize"
+			],
+			"type": "object"
+		},
+		"request.WebsiteTemplateUpdate": {
+			"properties": {
+				"content": {
+					"type": "string"
+				},
+				"filePath": {
+					"type": "string"
+				},
+				"id": {
+					"type": "integer"
+				},
+				"name": {
+					"type": "string"
+				},
+				"remark": {
+					"type": "string"
+				},
+				"type": {
+					"enum": [
+						"single",
+						"multi"
+					],
+					"type": "string"
+				},
+				"variables": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"id",
+				"name",
+				"type"
+			],
+			"type": "object"
+		},
 		"request.WebsiteUpdate": {
 			"properties": {
 				"IPV6": {
@@ -44390,6 +49280,23 @@ const docTemplate = `{
 			],
 			"type": "object"
 		},
+		"request.AppUpdateVersion": {
+			"properties": {
+				"appInstallID": {
+					"type": "integer"
+				},
+				"loadCompose": {
+					"type": "boolean"
+				},
+				"updateVersion": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"appInstallID"
+			],
+			"type": "object"
+		},
 		"response.AppConfig": {
 			"properties": {
 				"advanced": {
@@ -44397,6 +49304,9 @@ const docTemplate = `{
 				},
 				"allowPort": {
 					"type": "boolean"
+				},
+				"appKey": {
+					"type": "string"
 				},
 				"containerName": {
 					"type": "string"
@@ -44416,10 +49326,25 @@ const docTemplate = `{
 				"hostMode": {
 					"type": "boolean"
 				},
+				"httpPort": {
+					"type": "integer"
+				},
+				"isEdit": {
+					"type": "boolean"
+				},
 				"memoryLimit": {
 					"type": "number"
 				},
 				"memoryUnit": {
+					"type": "string"
+				},
+				"modelAccountBaseURL": {
+					"type": "string"
+				},
+				"modelAccountBaseURLType": {
+					"type": "string"
+				},
+				"name": {
 					"type": "string"
 				},
 				"params": {
@@ -44445,6 +49370,9 @@ const docTemplate = `{
 				},
 				"specifyIP": {
 					"type": "string"
+				},
+				"syncModelAccount": {
+					"type": "boolean"
 				},
 				"type": {
 					"type": "string"
@@ -44650,6 +49578,12 @@ const docTemplate = `{
 				"lastBackupAt": {
 					"type": "string"
 				},
+				"modelAccountBaseURL": {
+					"type": "string"
+				},
+				"modelAccountBaseURLType": {
+					"type": "string"
+				},
 				"name": {
 					"type": "string"
 				},
@@ -44675,6 +49609,9 @@ const docTemplate = `{
 				},
 				"gpuSupport": {
 					"type": "boolean"
+				},
+				"icon": {
+					"type": "string"
 				},
 				"id": {
 					"type": "integer"
@@ -45266,6 +50203,17 @@ const docTemplate = `{
 			},
 			"type": "object"
 		},
+		"response.FileProcessKeys": {
+			"properties": {
+				"keys": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				}
+			},
+			"type": "object"
+		},
 		"response.FileRemarksRes": {
 			"properties": {
 				"remarks": {
@@ -45582,6 +50530,9 @@ const docTemplate = `{
 		},
 		"response.NginxBuildConfig": {
 			"properties": {
+				"dynamicSupported": {
+					"type": "boolean"
+				},
 				"mirror": {
 					"type": "string"
 				},
@@ -45615,8 +50566,32 @@ const docTemplate = `{
 		},
 		"response.NginxModule": {
 			"properties": {
+				"artifacts": {
+					"items": {
+						"$ref": "#/definitions/dto.NginxModuleArtifact"
+					},
+					"type": "array"
+				},
+				"buildMode": {
+					"type": "string"
+				},
+				"buildStatus": {
+					"type": "string"
+				},
+				"custom": {
+					"type": "boolean"
+				},
 				"enable": {
 					"type": "boolean"
+				},
+				"lastError": {
+					"type": "string"
+				},
+				"loadOrder": {
+					"type": "integer"
+				},
+				"loadStatus": {
+					"type": "string"
 				},
 				"name": {
 					"type": "string"
@@ -45625,6 +50600,9 @@ const docTemplate = `{
 					"type": "string"
 				},
 				"params": {
+					"type": "string"
+				},
+				"provider": {
 					"type": "string"
 				},
 				"script": {
@@ -46443,6 +51421,14 @@ const docTemplate = `{
 			},
 			"type": "object"
 		},
+		"response.WebsitePreviewDTO": {
+			"properties": {
+				"html": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
 		"response.WebsiteRealIP": {
 			"properties": {
 				"ipFrom": {
@@ -46590,6 +51576,127 @@ const docTemplate = `{
 				}
 			},
 			"type": "object"
+		},
+		"response.WebsiteTemplateDTO": {
+			"properties": {
+				"content": {
+					"type": "string"
+				},
+				"createdAt": {
+					"type": "string"
+				},
+				"filePath": {
+					"type": "string"
+				},
+				"id": {
+					"type": "integer"
+				},
+				"name": {
+					"type": "string"
+				},
+				"remark": {
+					"type": "string"
+				},
+				"type": {
+					"description": "single | multi",
+					"type": "string"
+				},
+				"updatedAt": {
+					"type": "string"
+				},
+				"variables": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"response.WebsiteTemplateOutputDTO": {
+			"properties": {
+				"createdAt": {
+					"type": "string"
+				},
+				"id": {
+					"type": "integer"
+				},
+				"name": {
+					"type": "string"
+				},
+				"outputPath": {
+					"type": "string"
+				},
+				"templateID": {
+					"type": "integer"
+				},
+				"templateName": {
+					"type": "string"
+				},
+				"templateType": {
+					"type": "string"
+				},
+				"updatedAt": {
+					"type": "string"
+				},
+				"variableValues": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		},
+		"terminal.Info": {
+			"properties": {
+				"attached": {
+					"type": "boolean"
+				},
+				"createdAt": {
+					"type": "string"
+				},
+				"detachedAt": {
+					"description": "zero while attached",
+					"type": "string"
+				},
+				"hostId": {
+					"type": "integer"
+				},
+				"id": {
+					"type": "string"
+				},
+				"kind": {
+					"type": "string"
+				},
+				"persistent": {
+					"type": "boolean"
+				},
+				"title": {
+					"type": "string"
+				}
+			},
+			"type": "object"
+		}
+	},
+	"securityDefinitions": {
+		"ApiKeyAuth": {
+			"description": "Signed API Key authentication. Send the signature, never the plaintext API Key, in 1Panel-Token.\nSupported formats: hex(HMAC-SHA256(API-Key, '1panel:' + UnixTimestamp)) or md5('1panel' + API-Key + UnixTimestamp).\nSend the matching Unix timestamp in 1Panel-Timestamp. Optionally set 1Panel-Signature-Version to hmac-sha256, v1 or md5; omission accepts either algorithm.\nIndependent keys may include their ID in 1Panel-Key-ID to select the credential; omit that header for a legacy key.\n` + "`" + `` + "`" + `` + "`" + `\neg:\ncurl -X GET \"http://{host}:{port}/api/v2/toolbox/device/base\" \\\n-H \"1Panel-Token: \u003c1panel_token\u003e\" \\\n-H \"1Panel-Timestamp: \u003ccurrent_unix_timestamp\u003e\"\n` + "`" + `` + "`" + `` + "`" + `\n- ` + "`" + `1Panel-Token` + "`" + ` is the key for the panel API Key.",
+			"in": "header",
+			"name": "1Panel-Token",
+			"type": "apiKey"
+		},
+		"CSRFToken": {
+			"description": "For session-authenticated POST requests, copy the current pcsrftoken cookie value into X-CSRF-Token. API Key authentication does not require a CSRF token. Session-only endpoints reject 1Panel authentication headers even when a valid session cookie is present.",
+			"in": "header",
+			"name": "X-CSRF-Token",
+			"type": "apiKey"
+		},
+		"PanelSession": {
+			"description": "Existing panel login session: psession=\u003csession-cookie\u003e. Swagger 2.0 represents the cookie as a header; browsers send the established cookie automatically and cannot set Cookie manually. Use a logged-in same-origin browser for session-only operations.",
+			"in": "header",
+			"name": "Cookie",
+			"type": "apiKey"
+		},
+		"Timestamp": {
+			"description": "- ` + "`" + `1Panel-Timestamp` + "`" + ` is the Unix timestamp of the current time in seconds.",
+			"in": "header",
+			"name": "1Panel-Timestamp",
+			"type": "apiKey"
 		}
 	}
 }`

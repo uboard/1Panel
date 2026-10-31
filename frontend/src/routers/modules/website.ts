@@ -44,6 +44,52 @@ const webSiteRouter = {
             },
         },
         {
+            path: '/websites/ssl/ca',
+            name: 'SSL-CA',
+            component: () => import('@/views/website/ssl/ca/index.vue'),
+            hidden: true,
+            meta: {
+                activeMenu: '/websites/ssl',
+                title: 'menu.ssl',
+                detail: 'ssl.selfSigned',
+                permission: 'website_cert_view',
+            },
+        },
+        {
+            path: '/websites/ssl/acme-account',
+            name: 'SSL-ACME',
+            component: () => import('@/views/website/ssl/acme-account/index.vue'),
+            hidden: true,
+            meta: {
+                activeMenu: '/websites/ssl',
+                title: 'menu.ssl',
+                detail: 'website.acmeAccountManage',
+                permission: 'website_cert_view',
+            },
+        },
+        {
+            path: '/websites/ssl/dns-account',
+            name: 'SSL-DNS',
+            component: () => import('@/views/website/ssl/dns-account/index.vue'),
+            hidden: true,
+            meta: {
+                activeMenu: '/websites/ssl',
+                title: 'menu.ssl',
+                detail: 'website.dnsAccountManage',
+                permission: 'website_cert_view',
+            },
+        },
+        {
+            path: '/websites/templates',
+            name: 'WebsiteTemplate',
+            component: () => import('@/views/website/template/index.vue'),
+            meta: {
+                icon: 'p-file-html',
+                title: 'menu.template',
+                permission: 'website_view',
+            },
+        },
+        {
             path: '/websites/runtimes/php',
             name: 'PHP',
             component: () => import('@/views/website/runtime/php/index.vue'),

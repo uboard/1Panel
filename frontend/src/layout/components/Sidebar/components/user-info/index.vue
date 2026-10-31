@@ -1,6 +1,14 @@
 <template>
     <DrawerPro v-model="open" :header="$t('xpack.user.userInfo')">
         <div v-loading="loading">
+            <el-alert
+                v-if="isLDAPUser"
+                class="mb-4"
+                :title="$t('xpack.ldap.localCredentialsManaged')"
+                type="info"
+                :closable="false"
+                show-icon
+            />
             <el-form ref="userRef" label-position="top" :model="form" :rules="userRules">
                 <input
                     class="hidden-autofill-field"
@@ -17,7 +25,13 @@
                     tabindex="-1"
                 />
                 <el-form-item :label="$t('commons.login.username')" prop="name">
-                    <el-input type="primary" v-model="form.name" name="profile-name" autocomplete="off" />
+                    <el-input
+                        type="text"
+                        v-model="form.name"
+                        name="profile-name"
+                        autocomplete="off"
+                        :disabled="isLDAPUser"
+                    />
                 </el-form-item>
                 <el-form-item :label="$t('commons.login.password')" prop="password">
                     <el-input
@@ -27,10 +41,11 @@
                         v-model.trim="form.password"
                         name="profile-new-password"
                         autocomplete="new-password"
+                        :disabled="isLDAPUser"
                     />
-                    <span class="input-help">{{ $t('setting.passwordEmptyTip') }}</span>
+                    <span v-if="!isLDAPUser" class="input-help">{{ $t('setting.passwordEmptyTip') }}</span>
                 </el-form-item>
-                <el-form-item v-if="form.password" :label="$t('setting.oldPassword')" prop="oldPassword">
+                <el-form-item v-if="form.password && !isLDAPUser" :label="$t('setting.oldPassword')" prop="oldPassword">
                     <el-input
                         type="password"
                         show-password
@@ -123,23 +138,10 @@
                             </el-tooltip>
                         </span>
                     </template>
-                    <div class="setting-action-row">
-                        <el-switch
-                            @change="handleApi"
-                            v-model="form.apiInterfaceStatus"
-                            active-value="Enable"
-                            inactive-value="Disable"
-                        />
-                        <el-button
-                            v-if="form.apiInterfaceStatus === 'Enable'"
-                            link
-                            type="primary"
-                            @click="openApiDetail"
-                        >
-                            {{ $t('commons.button.view') }}
-                        </el-button>
-                    </div>
-                    <span class="input-help">{{ $t('setting.apiInterfaceHelper') }}</span>
+                    <el-button @click="openApiManagement">
+                        {{ $t('apiKeyManagement.manage') }}
+                    </el-button>
+                    <span class="input-help">{{ $t('apiKeyManagement.personalEntry') }}</span>
                 </el-form-item>
             </el-form>
         </div>
@@ -147,7 +149,7 @@
             <el-button :disabled="loading" @click="open = false">
                 {{ $t('commons.button.cancel') }}
             </el-button>
-            <el-button :disabled="loading" type="primary" @click="onSubmit(userRef)">
+            <el-button :disabled="loading || isLDAPUser" type="primary" @click="onSubmit(userRef)">
                 {{ $t('commons.button.confirm') }}
             </el-button>
         </template>
@@ -319,51 +321,10 @@
             </el-button>
         </template>
     </DialogPro>
-
-    <DialogPro v-model="apiDialogOpen" :title="$t('setting.apiInterface')" size="large" @close="handleApiDialogClose">
-        <el-form ref="apiRef" :model="form" @submit.prevent v-loading="loading" label-position="top" :rules="apiRules">
-            <el-form-item :label="$t('setting.apiKey')" prop="apiKey">
-                <el-input v-model="form.apiKey" readonly class="api-key-input" />
-                <el-button-group>
-                    <CopyButton class="copy_button" :isIcon="false" :content="form.apiKey" />
-                    <el-button @click="resetApiKey()">
-                        {{ $t('commons.button.reset') }}
-                    </el-button>
-                </el-button-group>
-                <span class="input-help">{{ $t('setting.apiKeyHelper') }}</span>
-            </el-form-item>
-            <el-form-item :label="$t('setting.ipWhiteList')" prop="ipWhiteList">
-                <el-input
-                    type="textarea"
-                    :placeholder="$t('setting.ipWhiteListEgs')"
-                    :rows="4"
-                    v-model="form.ipWhiteList"
-                />
-                <span class="input-help">{{ $t('setting.ipWhiteListHelper') }}</span>
-            </el-form-item>
-            <el-form-item :label="$t('setting.apiKeyValidityTime')" prop="apiKeyValidityTime">
-                <el-input :placeholder="$t('setting.apiKeyValidityTimeEgs')" v-model.number="form.apiKeyValidityTime">
-                    <template #append>{{ $t('commons.units.minute') }}</template>
-                </el-input>
-                <span class="input-help">
-                    {{ $t('setting.apiKeyValidityTimeHelper') }}
-                </span>
-            </el-form-item>
-        </el-form>
-        <template #footer>
-            <el-button :disabled="loading" @click="handleApiDialogClose">
-                {{ $t('commons.button.cancel') }}
-            </el-button>
-            <el-button :disabled="loading" type="primary" @click="onSaveApi(apiRef)">
-                {{ $t('commons.button.save') }}
-            </el-button>
-        </template>
-    </DialogPro>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
 import { ElMessageBox, FormInstance } from 'element-plus';
 import { Check, Close, QuestionFilled } from '@element-plus/icons-vue';
 import DrawerPro from '@/components/drawer-pro/index.vue';
@@ -372,41 +333,36 @@ import { Login } from '@/api/interface/auth';
 import {
     bindMFA,
     closeMFA,
-    generateApiKey,
     loadMFA,
     passkeyDelete,
     passkeyList as fetchPasskeyList,
     passkeyRegisterBegin,
     passkeyRegisterFinish,
-    updateApiConfig,
     updateUserInfo,
 } from '@/api/modules/auth';
 import { Setting } from '@/api/interface/setting';
 import { getSettingBaseInfo, getSettingInfo, updateSetting } from '@/api/modules/setting';
 import i18n from '@/lang';
+import router from '@/routers';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 import { base64UrlToBuffer, bufferToBase64Url } from '@/utils/auth';
 import { MsgError, MsgSuccess } from '@/utils/message';
+import { routerToNameWithQuery } from '@/utils/router';
 import { checkNumberRange, Rules } from '@/global/form-rules';
-import { checkCidr, checkCidrV6, checkIpV4V6 } from '@/utils/validate';
 
 const props = defineProps<{ currentUser?: Login.AuthInfo }>();
 const emit = defineEmits<{ (e: 'search'): void }>();
 
 const complexityVerification = ref(false);
 const { globalStore, docsUrl, entrance, isFxplay } = useGlobalStore();
-const router = useRouter();
 const open = ref(false);
 const loading = ref(false);
 const userRef = ref<FormInstance>();
 const mfaFormRef = ref<FormInstance>();
-const apiRef = ref<FormInstance>();
 const mfaDialogOpen = ref(false);
 const passkeyPrereqDialogOpen = ref(false);
 const passkeyDialogOpen = ref(false);
-const apiDialogOpen = ref(false);
 const savedMfaStatus = ref('');
-const savedApiStatus = ref('');
 const qrImage = ref();
 const passkeyActiveTab = ref('keys');
 const passkeyLoading = ref(false);
@@ -428,10 +384,6 @@ const form = reactive({
     oldPassword: '',
     mfaStatus: 'Disable',
     mfaInterval: 30,
-    apiInterfaceStatus: 'Disable',
-    apiKey: '',
-    ipWhiteList: '',
-    apiKeyValidityTime: 120,
 });
 const mfaForm = reactive({
     title: '1Panel',
@@ -442,6 +394,7 @@ const mfaForm = reactive({
 const passkeyForm = reactive({
     name: '',
 });
+const isLDAPUser = computed(() => (props.currentUser?.authSource || '').toLowerCase() === 'ldap');
 
 const passkeyPrereqBindDomain = computed(() => hasBindDomain.value);
 const passkeyPrereqHttps = computed(() => window.isSecureContext);
@@ -494,12 +447,6 @@ const mfaRules = reactive({
     title: [Rules.requiredInput],
     interval: [Rules.number, checkNumberRange(15, 60)],
 });
-const apiRules = reactive({
-    ipWhiteList: [Rules.requiredInput, { validator: checkIPs, trigger: 'blur' }],
-    apiKey: [Rules.requiredInput],
-    apiKeyValidityTime: [Rules.requiredInput, Rules.integerNumberWith0],
-});
-
 const getUserFormFields = () => {
     const fields = ['name', 'password'];
     if (form.password) {
@@ -507,7 +454,6 @@ const getUserFormFields = () => {
     }
     return fields;
 };
-const apiFormFields = ['apiKey', 'ipWhiteList', 'apiKeyValidityTime'];
 
 const openDrawer = async () => {
     if (!props.currentUser) {
@@ -516,14 +462,6 @@ const openDrawer = async () => {
     loadComplexitySetting();
     syncCurrentUser(props.currentUser);
     open.value = true;
-};
-
-const syncApiConfig = (currentUser: Login.AuthInfo) => {
-    form.apiInterfaceStatus = currentUser.apiInterfaceStatus || 'Disable';
-    form.apiKey = currentUser.apiKey;
-    form.ipWhiteList = currentUser.ipWhiteList;
-    form.apiKeyValidityTime = currentUser.apiKeyValidityTime;
-    savedApiStatus.value = form.apiInterfaceStatus;
 };
 
 const syncCurrentUser = (currentUser: Login.AuthInfo) => {
@@ -535,62 +473,7 @@ const syncCurrentUser = (currentUser: Login.AuthInfo) => {
     form.mfaInterval = currentUser.mfaInterval;
     savedMfaStatus.value = form.mfaStatus;
     mfaDialogOpen.value = false;
-    apiDialogOpen.value = false;
-    syncApiConfig(currentUser);
 };
-
-const ensureApiKey = async () => {
-    if (form.apiInterfaceStatus === 'Enable' && !form.apiKey) {
-        await generateApiKey().then((res) => {
-            form.apiKey = res.data;
-        });
-    }
-};
-
-const resetApiKey = async () => {
-    ElMessageBox.confirm(i18n.global.t('setting.apiKeyResetHelper'), i18n.global.t('setting.apiKeyReset'), {
-        confirmButtonText: i18n.global.t('commons.button.confirm'),
-        cancelButtonText: i18n.global.t('commons.button.cancel'),
-    })
-        .then(async () => {
-            loading.value = true;
-            await generateApiKey()
-                .then((res) => {
-                    loading.value = false;
-                    form.apiKey = res.data;
-                    MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-                })
-                .catch(() => {
-                    loading.value = false;
-                });
-        })
-        .catch(() => {
-            loading.value = false;
-        });
-};
-
-function checkIPs(rule: any, value: any, callback: any) {
-    if (form.ipWhiteList !== '') {
-        let addr = form.ipWhiteList.split('\n');
-        for (const item of addr) {
-            if (item === '') {
-                continue;
-            }
-            if (item.indexOf('/') !== -1) {
-                if (item.indexOf(':') !== -1) {
-                    if (checkCidrV6(item)) {
-                        return callback(new Error(i18n.global.t('firewall.addressFormatError')));
-                    }
-                } else if (checkCidr(item)) {
-                    return callback(new Error(i18n.global.t('firewall.addressFormatError')));
-                }
-            } else if (checkIpV4V6(item)) {
-                return callback(new Error(i18n.global.t('firewall.addressFormatError')));
-            }
-        }
-    }
-    callback();
-}
 
 const loadComplexitySetting = async () => {
     const res = await getSettingBaseInfo();
@@ -640,16 +523,6 @@ const handleMfaDialogClose = () => {
     form.mfaStatus = savedMfaStatus.value;
 };
 
-const handleApiDialogClose = () => {
-    apiDialogOpen.value = false;
-    form.apiInterfaceStatus = savedApiStatus.value;
-};
-
-const openApiDetail = async () => {
-    await ensureApiKey();
-    apiDialogOpen.value = true;
-};
-
 const openPasskeyDrawer = async () => {
     const settingRes = await loadPasskeySettingInfo();
     hasBindDomain.value = !!settingRes?.data.bindDomain?.trim().length;
@@ -671,7 +544,7 @@ const handlePasskeyConfigureDomain = () => {
     passkeyPrereqDialogOpen.value = false;
     passkeyDialogOpen.value = false;
     open.value = false;
-    router.push({ name: 'Safe' });
+    routerToNameWithQuery('Safe', { uncached: 'true' });
 };
 
 const handlePasskeyPrereqDialogClose = () => {
@@ -812,6 +685,7 @@ const buildPasskeyAttestation = (credential: PublicKeyCredential) => {
 
 const onSubmit = async (formEl: FormInstance | undefined) => {
     if (!formEl) return;
+    if (isLDAPUser.value) return;
     const valid = await formEl.validateField(getUserFormFields(), () => {});
     if (!valid) return;
     const needReLogin = form.name !== props.currentUser?.name || !!form.password;
@@ -874,30 +748,6 @@ const onBindMFA = async (formEl: FormInstance | undefined) => {
         });
 };
 
-const onSaveApi = async (formEl: FormInstance | undefined) => {
-    if (!formEl) return;
-    const valid = await formEl.validateField(apiFormFields, () => {});
-    if (!valid) return;
-    const param = {
-        apiKey: form.apiKey,
-        ipWhiteList: form.ipWhiteList,
-        apiInterfaceStatus: form.apiInterfaceStatus,
-        apiKeyValidityTime: form.apiKeyValidityTime,
-    };
-    loading.value = true;
-    await updateApiConfig(param)
-        .then(() => {
-            loading.value = false;
-            apiDialogOpen.value = false;
-            savedApiStatus.value = form.apiInterfaceStatus;
-            emit('search');
-            MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-        })
-        .catch(() => {
-            loading.value = false;
-        });
-};
-
 const handleMFA = async () => {
     if (!form.mfaStatus) {
         return;
@@ -936,43 +786,9 @@ const handleMFA = async () => {
         });
 };
 
-const handleApi = async () => {
-    if (!form.apiInterfaceStatus) {
-        return;
-    }
-    if (form.apiInterfaceStatus === 'Enable') {
-        await ensureApiKey();
-        apiDialogOpen.value = true;
-        return;
-    }
-    ElMessageBox.confirm(i18n.global.t('setting.apiInterfaceClose'), i18n.global.t('setting.apiInterface'), {
-        confirmButtonText: i18n.global.t('commons.button.confirm'),
-        cancelButtonText: i18n.global.t('commons.button.cancel'),
-    })
-        .then(async () => {
-            loading.value = true;
-            form.apiInterfaceStatus = 'Disable';
-            let param = {
-                apiKey: form.apiKey,
-                ipWhiteList: form.ipWhiteList,
-                apiInterfaceStatus: form.apiInterfaceStatus,
-                apiKeyValidityTime: form.apiKeyValidityTime,
-            };
-            await updateApiConfig(param)
-                .then(() => {
-                    loading.value = false;
-                    apiDialogOpen.value = false;
-                    savedApiStatus.value = 'Disable';
-                    emit('search');
-                    MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-                })
-                .catch(() => {
-                    loading.value = false;
-                });
-        })
-        .catch(() => {
-            form.apiInterfaceStatus = 'Enable';
-        });
+const openApiManagement = () => {
+    open.value = false;
+    router.push({ path: '/settings/apikeys', query: { uncached: 'true' } });
 };
 
 defineExpose({
@@ -1005,10 +821,6 @@ defineExpose({
     gap: 12px;
 }
 
-.api-key-input {
-    width: calc(100% - 125px);
-}
-
 .tooltip-help-list {
     margin: 4px 0 0;
     padding-left: 18px;
@@ -1038,11 +850,6 @@ defineExpose({
 .help-icon {
     color: var(--el-text-color-secondary);
     cursor: help;
-}
-
-.copy_button {
-    border-radius: 0;
-    border-left-width: 0;
 }
 
 .passkey-prereq-dialog {
@@ -1097,10 +904,5 @@ defineExpose({
 .passkey-prereq-detail {
     font-size: 12px;
     color: var(--el-text-color-secondary);
-}
-
-:deep(.api-key-input .el-input__wrapper) {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
 }
 </style>
